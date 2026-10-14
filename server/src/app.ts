@@ -15,3 +15,4 @@ export function createApp(clientOrigin = process.env.CLIENT_ORIGIN ?? 'http://lo
 
   return app;
 }
+const unusedVariable = 1;
