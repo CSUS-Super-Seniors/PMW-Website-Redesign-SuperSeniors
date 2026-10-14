@@ -51,6 +51,15 @@ Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 | `PORT`          | API port (default 3001)             |
 | `CLIENT_ORIGIN` | Origin allowed by CORS (the client) |
 
+## Design tokens
+
+Colors, fonts, text styles, spacing, radius and shadows come from the Figma design system page and live in `client/src/styles/theme.css`. Run the client and open http://localhost:5173/design-tokens to see them all (development only).
+
+- Colors: `bg-dark-brown`, `text-neutral-600`, `bg-amber`, `border-neutral-300`, and so on. Tailwind's default palette is turned off, so only brand colors exist.
+- Text styles: one class per Figma text style, for example `type-h1`, `type-body-lg`, `type-button`, `type-overline`. Use `type-body-lg` for paragraphs on public pages.
+- Spacing: Tailwind's normal scale (4px steps) matches Figma, so `p-3` is 12px and `px-20` is 80px.
+- Never hard-code hex values or arbitrary colors like `bg-[#123456]`. A test fails the build if you do.
+
 ## Workflow
 
 1. Pull the latest `main`, then create a branch named after the Jira key: `SSPMW-123-short-description`.
