@@ -25,7 +25,7 @@ export function createAuthBackend(config: Config): AuthBackend {
       const { data, error } = await client
         .from('staff_profiles')
         .select('role,status')
-        .eq('user_id', userId)
+        .eq('id', userId)
         .maybeSingle();
       if (error) throw new Error('Staff profile lookup failed');
       return data;

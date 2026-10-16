@@ -9,7 +9,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const missing = required.filter((key) => !env[key]?.trim());
   if (missing.length)
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
-  const port = Number(env.PORT ?? 5000);
+  const port = Number(env.PORT ?? 3001);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error('PORT must be an integer between 1 and 65535');
   const clientOrigins = env.CLIENT_ORIGINS!.split(',').map((value) => value.trim());
