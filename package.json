@@ -14,7 +14,12 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:migration": "supabase migration new",
+    "db:migrate": "supabase migration up --local",
+    "db:reset": "supabase db reset --local"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -23,6 +28,7 @@
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
     "prettier": "^3.9.10",
+    "supabase": "2.120.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.71.2"
   }
