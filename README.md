@@ -42,6 +42,47 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 | `npm test`             | Vitest for both workspaces            |
 | `npm run build`        | Production build of client and server |
 
+## Local Supabase development
+
+Run all database commands from the repository root. Install project dependencies with `npm ci` first.
+
+**Docker Desktop must be installed and running before starting local Supabase.**
+
+| Command                                  | Description                                                                                                                            |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run db:start`                       | Starts the local Supabase database, Auth, Storage, and Studio services using Docker.                                                   |
+| `npm run db:stop`                        | Stops the local Supabase services.                                                                                                     |
+| `npm run db:migration -- migration_name` | Creates a timestamped SQL file in `supabase/migrations`. It does not apply the migration.                                              |
+| `npm run db:migrate`                     | Applies pending migrations to the running local database.                                                                              |
+| `npm run db:reset`                       | Rebuilds the local database by applying all migrations and then running `supabase/seed.sql`. **Deletes existing local database data.** |
+
+### Making schema changes
+
+1. Start local Supabase:
+
+   ```bash
+   npm run db:start
+   ```
+
+2. Create a migration with a descriptive name:
+
+   ```bash
+   npm run db:migration -- add_example_table
+   ```
+
+3. Add the schema changes to the generated SQL file.
+4. Apply the migration locally:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+5. Commit the migration file and submit it for review in a pull request.
+
+To verify that the schema can be rebuilt from scratch, run `npm run db:reset` when your existing local data can be discarded.
+
+Local Auth redirects use `http://localhost:5173`, matching the client development server. These database scripts operate on local Supabase; `db:migrate` and `db:reset` explicitly use `--local`.
+
 ## Environment variables
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
