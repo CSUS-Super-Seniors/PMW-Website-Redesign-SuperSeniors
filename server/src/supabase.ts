@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Config } from './config.js';
-export interface StaffProfile { role: string; status: string }
+export interface StaffProfile {
+  role: string;
+  status: string;
+}
 export interface AuthBackend {
   verifyToken(token: string): Promise<{ id: string } | null>;
   loadProfile(userId: string): Promise<StaffProfile | null>;
@@ -19,7 +22,11 @@ export function createAuthBackend(config: Config): AuthBackend {
       return data.user ? { id: data.user.id } : null;
     },
     async loadProfile(userId) {
-      const { data, error } = await client.from('staff_profiles').select('role,status').eq('user_id', userId).maybeSingle();
+      const { data, error } = await client
+        .from('staff_profiles')
+        .select('role,status')
+        .eq('user_id', userId)
+        .maybeSingle();
       if (error) throw new Error('Staff profile lookup failed');
       return data;
     },
