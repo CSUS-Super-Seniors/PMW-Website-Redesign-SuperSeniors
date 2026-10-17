@@ -1,25 +1,36 @@
-/* 
-Navigation labels - Desktop (top to bottom): Dashboard (/portal/dashboard). Inquiries(/portal/inquiries), Schedule (/portal/schedule), Customers(/portal/customers), Testimonials(/portal/testimonials), Reports(/portal/reports), Staff accounts(/portal/staff-accounts), Current Logged into account, Log out button
-Navigation labels - Mobile (left to right): Dashboard, Inquiries, Schedule, Customers, More [Testimonials, Reports, Staff accounts]
+import type { ComponentType } from 'react';
+import {
+  HomeIcon,
+  InboxIcon,
+  CalendarIcon,
+  PeopleIcon,
+  StarIcon,
+  ChartIcon,
+  LockIcon,
+} from '../components/icons';
 
-Employees do not see Inquiries, Customers, Reports, Staff accounts
- */
 type Role = 'Owner' | 'Employee';
 
 type NavItem = {
   label: string;
   path: string;
   roles: Role[];
+  icon: ComponentType<{ className?: string }>;
 };
 
 export const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/portal/dashboard', roles: ['Owner', 'Employee'] },
-  { label: 'Inquiries', path: '/portal/inquiries', roles: ['Owner'] },
-  { label: 'Schedule', path: '/portal/schedule', roles: ['Owner', 'Employee'] },
-  { label: 'Customers', path: '/portal/customers', roles: ['Owner'] },
-  { label: 'Testimonials', path: '/portal/testimonials', roles: ['Owner', 'Employee'] },
-  { label: 'Reports', path: '/portal/reports', roles: ['Owner'] },
-  { label: 'Staff accounts', path: '/portal/staff-accounts', roles: ['Owner'] },
+  { label: 'Dashboard', path: '/portal/dashboard', icon: HomeIcon, roles: ['Owner', 'Employee'] },
+  { label: 'Inquiries', path: '/portal/inquiries', icon: InboxIcon, roles: ['Owner'] },
+  { label: 'Schedule', path: '/portal/schedule', icon: CalendarIcon, roles: ['Owner', 'Employee'] },
+  { label: 'Customers', path: '/portal/customers', icon: PeopleIcon, roles: ['Owner'] },
+  {
+    label: 'Testimonials',
+    path: '/portal/testimonials',
+    icon: StarIcon,
+    roles: ['Owner', 'Employee'],
+  },
+  { label: 'Reports', path: '/portal/reports', icon: ChartIcon, roles: ['Owner'] },
+  { label: 'Staff accounts', path: '/portal/staff-accounts', icon: LockIcon, roles: ['Owner'] },
 ];
 
 export function getNavItemsForRole(userRole: Role): NavItem[] {
