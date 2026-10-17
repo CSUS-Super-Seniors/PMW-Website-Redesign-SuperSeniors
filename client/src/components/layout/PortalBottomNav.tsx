@@ -9,7 +9,10 @@ export default function PortalBottomNav() {
   const moreItems = getMoreItems('Owner');
 
   return (
-    <nav aria-label="Portal mobile" className="flex h-16 border-t border-neutral-300 bg-white">
+    <nav
+      aria-label="Portal mobile"
+      className="relative flex h-16 border-t border-neutral-300 bg-white"
+    >
       {items.map((items) => (
         <NavLink
           key={items.label}
