@@ -2,6 +2,8 @@ import { Route, Routes } from 'react-router';
 import PublicLayout from './components/layout/PublicLayout';
 import DesignTokensPage from './pages/DesignTokensPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import StaffLoginPage from './pages/StaffLoginPage';
+import { routes } from './config/site';
 
 function Home() {
   return (
@@ -20,6 +22,7 @@ export default function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
+        <Route path={routes.staffLogin} element={<StaffLoginPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
       {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
