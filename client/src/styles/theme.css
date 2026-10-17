@@ -1,0 +1,208 @@
+/*
+ * Design tokens for Peterson Mobile Woodworking (SSPMW-89).
+ *
+ * Source of truth: Figma "Peterson Mobile Woodworking - UI Mockup",
+ * page "01 Design System / Dimitry" (color styles, text styles, components).
+ * If a value here disagrees with Figma, Figma wins: update this file.
+ *
+ * Rules for the rest of the codebase:
+ * - Use these token classes (bg-dark-brown, text-neutral-600, type-h2, ...).
+ *   Never hard-code hex values or arbitrary colors like bg-[#123456].
+ * - Tailwind's default color palette is turned off on purpose, so only
+ *   brand colors are available.
+ */
+
+@theme {
+  /* ---------- Colors ---------- */
+  --color-*: initial;
+
+  /* Brand: text, primary actions, main call to action */
+  --color-dark-brown: #2a1b11;
+  --color-amber: #d49a3a;
+  --color-amber-dark: #b8802a;
+  --color-walnut: #7a4a21;
+
+  /* Neutral: warm grays, paper and cream backgrounds */
+  --color-neutral-800: #3d2413;
+  --color-neutral-600: #6b5a4c;
+  --color-neutral-400: #a3978a;
+  --color-neutral-300: #ddd3c2;
+  --color-neutral-100: #f3e9d8; /* "100 Cream" */
+  --color-neutral-50: #f6f2ea;
+  --color-white: #ffffff;
+
+  /* Feedback: status messages only */
+  --color-error: #b3261e;
+  --color-error-dark: #8c1d18;
+  --color-error-light: #fbeae8;
+  --color-success: #2e7d4f;
+  --color-success-light: #e7f4ec;
+  --color-warning: #9a6700;
+  --color-warning-light: #fff4d6;
+  --color-info: #1f5fa8;
+  --color-info-light: #e6f0fa;
+
+  /* Overlay: modal and lightbox backdrop (Dark Brown at 50%) */
+  --color-scrim: rgb(42 27 17 / 0.5);
+
+  /* Logo: reserved for the logo artwork only */
+  --color-logo-walnut: #3d2413;
+  --color-logo-amber: #d49a3a;
+  --color-logo-cream: #f3e9d8;
+
+  /* ---------- Fonts ---------- */
+  /* Jost for headings, Inter for body and interface text */
+  --font-heading: 'Jost Variable', 'Jost', 'Futura', 'Century Gothic', sans-serif;
+  --font-sans:
+    'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* ---------- Type scale (Figma text styles) ---------- */
+  --text-display: 4rem; /* 64 */
+  --text-display--line-height: 4.5rem; /* 72 */
+  --text-display--letter-spacing: 0.02em;
+  --text-h1: 2.5rem; /* 40 */
+  --text-h1--line-height: 3rem; /* 48 */
+  --text-h2: 2rem; /* 32 */
+  --text-h2--line-height: 2.5rem; /* 40 */
+  --text-h3: 1.5rem; /* 24 */
+  --text-h3--line-height: 2rem; /* 32 */
+  --text-h4: 1.25rem; /* 20 */
+  --text-h4--line-height: 1.75rem; /* 28 */
+  --text-body-lg: 1.125rem; /* 18: default paragraph size on public pages */
+  --text-body-lg--line-height: 1.75rem; /* 28 */
+  --text-body: 1rem; /* 16 */
+  --text-body--line-height: 1.5rem; /* 24 */
+  --text-body-sm: 0.875rem; /* 14 */
+  --text-body-sm--line-height: 1.25rem; /* 20 */
+  --text-caption: 0.75rem; /* 12 */
+  --text-caption--line-height: 1rem; /* 16 */
+  --text-ui: 0.9375rem; /* 15: buttons and nav links */
+  --text-ui--line-height: 1.25rem; /* 20 */
+
+  /* ---------- Spacing ---------- */
+  /*
+   * 4px base. Every spacing value in the Figma layouts is a multiple of 2px,
+   * so Tailwind's numeric classes map 1:1 (p-3 = 12px, gap-7 = 28px,
+   * px-20 = 80px, py-0.5 = 2px).
+   */
+  --spacing: 0.25rem;
+  --spacing-header: 5rem; /* 80: header height, desktop and phone */
+  --container-content: 80rem; /* 1280: content width inside a 1440 frame */
+
+  /* ---------- Radius ---------- */
+  --radius-sm: 0.25rem; /* 4: buttons, inputs */
+  --radius-md: 0.375rem; /* 6: admin sidebar items */
+  --radius-lg: 0.5rem; /* 8: cards */
+  --radius-xl: 0.75rem; /* 12 */
+  --radius-2xl: 1rem; /* 16 */
+  --radius-3xl: 1.5rem; /* 24 */
+  --radius-4xl: 2rem; /* 32 */
+
+  /* ---------- Shadows ---------- */
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.18); /* toasts, modals, dialogs */
+  --shadow-card: 0 4px 16px rgb(0 0 0 / 0.08);
+}
+
+/*
+ * Text styles. One class per Figma text style, so a component never sets
+ * font, size, weight and line height separately. Example:
+ *   <h1 className="type-h1">...</h1>
+ */
+@utility type-display {
+  font-family: var(--font-heading);
+  font-size: var(--text-display);
+  line-height: var(--text-display--line-height);
+  letter-spacing: var(--text-display--letter-spacing);
+  font-weight: 400;
+  text-transform: uppercase;
+}
+@utility type-h1 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h1);
+  line-height: var(--text-h1--line-height);
+  font-weight: 500;
+}
+@utility type-h2 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
+  line-height: var(--text-h2--line-height);
+  font-weight: 500;
+}
+@utility type-h3 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 500;
+}
+@utility type-h4 {
+  font-family: var(--font-heading);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 500;
+}
+@utility type-body-lg {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-lg);
+  line-height: var(--text-body-lg--line-height);
+  font-weight: 400;
+}
+@utility type-body {
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 400;
+}
+@utility type-body-sm {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  font-weight: 400;
+}
+@utility type-caption {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 400;
+}
+@utility type-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  font-weight: 500;
+}
+@utility type-button {
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  font-weight: 600;
+}
+@utility type-nav {
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  font-weight: 500;
+}
+@utility type-overline {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+@utility type-wordmark {
+  font-family: var(--font-heading);
+  font-size: var(--text-body);
+  line-height: 1.25rem;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+@utility type-monogram {
+  font-family: var(--font-heading);
+  font-size: var(--text-h4);
+  line-height: 1.5rem;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  text-transform: uppercase;
+}
