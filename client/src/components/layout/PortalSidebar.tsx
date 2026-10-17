@@ -24,11 +24,15 @@ export default function PortalSidebar() {
               <NavLink
                 to={item.path}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-md px-3 py-2.5 type-nav ${isActive ? 'bg-neutral-800' : ''}`
+                  `flex items-center gap-3 rounded-md px-3 py-2.5 type-nav ${isActive ? 'bg-neutral-800 text-white' : 'text-neutral-300'}`
                 }
               >
-                <item.icon className="size-6" />
-                {item.label}
+                {({ isActive }) => (
+                  <>
+                    <item.icon className={`size-6 ${isActive ? 'text-amber' : ''}`} />
+                    {item.label}
+                  </>
+                )}
               </NavLink>
             </li>
           ))}
