@@ -15,3 +15,11 @@ export type { ErrorBannerProps } from './ErrorBanner';
 
 export { InlineFieldError } from './InlineFieldError';
 export type { InlineFieldErrorProps } from './InlineFieldError';
+export { Input } from './Input';
+export type { InputProps } from './Input';
+
+export { Select } from './Select';
+export type { SelectProps } from './Select';
+
+export { Textarea } from './Textarea';
+export type { TextareaProps } from './Textarea';
