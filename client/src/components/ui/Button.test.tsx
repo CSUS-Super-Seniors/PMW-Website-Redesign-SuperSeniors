@@ -1,4 +1,3 @@
-
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Button } from './Button';
@@ -7,9 +6,7 @@ describe('Button', () => {
   it('renders its children', () => {
     render(<Button>Save changes</Button>);
 
-    expect(
-      screen.getByRole('button', { name: 'Save changes' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
   });
 
   it('uses the primary variant by default', () => {

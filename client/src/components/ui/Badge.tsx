@@ -1,15 +1,8 @@
-
 import type { HTMLAttributes } from 'react';
 
-export type BadgeVariant =
-  | 'default'
-  | 'success'
-  | 'warning'
-  | 'error'
-  | 'info';
+export type BadgeVariant = 'default' | 'success' | 'warning' | 'error' | 'info';
 
-export interface BadgeProps
-  extends HTMLAttributes<HTMLSpanElement> {
+export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
 }
 
@@ -21,12 +14,7 @@ const variantStyles: Record<BadgeVariant, string> = {
   info: 'bg-info-light text-dark-brown',
 };
 
-export function Badge({
-  variant = 'default',
-  className = '',
-  children,
-  ...props
-}: BadgeProps) {
+export function Badge({ variant = 'default', className = '', children, ...props }: BadgeProps) {
   const classes = [
     'type-label inline-flex items-center rounded-sm px-3 py-1',
     variantStyles[variant],
@@ -36,10 +24,7 @@ export function Badge({
     .join(' ');
 
   return (
-    <span
-      {...props}
-      className={classes}
-    >
+    <span {...props} className={classes}>
       {children}
     </span>
   );

@@ -1,20 +1,11 @@
-
 import type { InputHTMLAttributes, ReactNode } from 'react';
 
-export interface CheckboxProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
+export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   label: ReactNode;
 }
 
-export function Checkbox({
-  label,
-  id,
-  className = '',
-  disabled = false,
-  ...props
-}: CheckboxProps) {
-  const generatedId =
-    id ?? props.name ?? props['aria-label']?.toString() ?? 'checkbox';
+export function Checkbox({ label, id, className = '', disabled = false, ...props }: CheckboxProps) {
+  const generatedId = id ?? props.name ?? props['aria-label']?.toString() ?? 'checkbox';
 
   return (
     <div className="flex items-start gap-3">
