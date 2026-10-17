@@ -34,7 +34,7 @@ export default function PortalSidebar() {
       </nav>
       <div className="mt-auto flex flex-col gap-2 p-4">
         <div className="flex items-center gap-3 px-3 py-2">
-          <span className="flex size-9 items-center justify-center rounded-full bg-neutral-100 type-monogram text-dark-brown">
+          <span className="flex size-9 items-center justify-center rounded-full bg-neutral-100 type-label text-dark-brown">
             GP
           </span>
           <div>
