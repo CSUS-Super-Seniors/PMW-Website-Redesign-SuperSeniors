@@ -15,4 +15,13 @@ type NavItem = {
 export const navItems: NavItem[] = [
   { label: 'Dashboard', path: '/portal/dashboard', roles: ['Owner', 'Employee'] },
   { label: 'Inquiries', path: '/portal/inquiries', roles: ['Owner'] },
+  { label: 'Schedule', path: '/portal/schedule', roles: ['Owner', 'Employee'] },
+  { label: 'Customers', path: '/portal/customers', roles: ['Owner'] },
+  { label: 'Testimonials', path: '/portal/testimonials', roles: ['Owner', 'Employee'] },
+  { label: 'Reports', path: '/portal/reports', roles: ['Owner'] },
+  { label: 'Staff accounts', path: '/portal/staff-accounts', roles: ['Owner'] },
 ];
+
+export function getNavItemsForRole(userRole: Role): NavItem[] {
+  return navItems.filter((item) => item.roles.includes(userRole));
+}
