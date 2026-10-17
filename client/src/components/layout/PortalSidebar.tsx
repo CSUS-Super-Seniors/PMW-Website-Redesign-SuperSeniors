@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router';
 import { business } from '../../config/site';
 import { getNavItemsForRole } from '../../portal/navItems';
+import { LogoutIcon } from '../icons';
 import LogoMark from '../brand/LogoMark';
 
 export default function PortalSidebar() {
@@ -45,8 +46,9 @@ export default function PortalSidebar() {
         </div>
         <button
           type="button"
-          className="rounded-md px-3 py-3 text-left type-nav hover:bg-neutral-800"
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left type-nav hover:bg-neutral-800"
         >
+          <LogoutIcon className="size-6" />
           Log out
         </button>
       </div>
