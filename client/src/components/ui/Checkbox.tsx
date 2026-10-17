@@ -1,17 +1,18 @@
-import type { InputHTMLAttributes, ReactNode } from 'react';
+import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
   label: ReactNode;
 }
 
 export function Checkbox({ label, id, className = '', disabled = false, ...props }: CheckboxProps) {
-  const generatedId = id ?? props.name ?? props['aria-label']?.toString() ?? 'checkbox';
+  const generatedId = useId();
+  const checkboxId = id ?? generatedId;
 
   return (
     <div className="flex items-start gap-3">
       <input
         {...props}
-        id={generatedId}
+        id={checkboxId}
         type="checkbox"
         disabled={disabled}
         className={[
@@ -26,10 +27,9 @@ export function Checkbox({ label, id, className = '', disabled = false, ...props
           .join(' ')}
       />
       <label
-        htmlFor={generatedId}
+        htmlFor={checkboxId}
         className={[
           'type-body cursor-pointer text-dark-brown',
-          'peer-disabled:cursor-not-allowed',
           disabled ? 'cursor-not-allowed opacity-50' : '',
         ]
           .filter(Boolean)
