@@ -16,6 +16,7 @@ type NavItem = {
   path: string;
   roles: Role[];
   icon: ComponentType<{ className?: string }>;
+  dividerBefore?: boolean;
 };
 
 export const navItems: NavItem[] = [
@@ -30,7 +31,13 @@ export const navItems: NavItem[] = [
     roles: ['Owner', 'Employee'],
   },
   { label: 'Reports', path: '/portal/reports', icon: ChartIcon, roles: ['Owner'] },
-  { label: 'Staff accounts', path: '/portal/staff-accounts', icon: LockIcon, roles: ['Owner'] },
+  {
+    label: 'Staff accounts',
+    path: '/portal/staff-accounts',
+    icon: LockIcon,
+    dividerBefore: true,
+    roles: ['Owner'],
+  },
 ];
 
 export function getNavItemsForRole(userRole: Role): NavItem[] {
