@@ -22,16 +22,10 @@ export function Pagination({
   const startPage = Math.max(1, safeCurrentPage - siblingCount);
   const endPage = Math.min(totalPages, safeCurrentPage + siblingCount);
 
-  const pages = Array.from(
-    { length: endPage - startPage + 1 },
-    (_, index) => startPage + index,
-  );
+  const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index);
 
   return (
-    <nav
-      aria-label="Pagination"
-      className="flex flex-wrap items-center justify-center gap-2 py-4"
-    >
+    <nav aria-label="Pagination" className="flex flex-wrap items-center justify-center gap-2 py-4">
       <Button
         variant="outline"
         onClick={() => onPageChange(safeCurrentPage - 1)}

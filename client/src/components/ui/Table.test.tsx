@@ -70,7 +70,7 @@ describe('Table', () => {
     expect(screen.getByRole('table', { name: 'Customer list' })).toBeInTheDocument();
   });
 
-    it('works with pagination to display the selected page of records', async () => {
+  it('works with pagination to display the selected page of records', async () => {
     const { Pagination } = await import('./Pagination');
     const { useState } = await import('react');
 
