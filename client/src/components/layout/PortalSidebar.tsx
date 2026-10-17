@@ -8,7 +8,7 @@ export default function PortalSidebar() {
   const items = getNavItemsForRole('Owner');
 
   return (
-    <aside className="flex min-h-dvh w-62 flex-col bg-dark-brown text-neutral-100">
+    <aside className="hidden md:flex min-h-dvh w-62 flex-col bg-dark-brown text-neutral-100">
       <div className="flex items-center gap-3 px-7 pt-8 pb-5">
         <LogoMark title="" className="size-10" />
         <div>
