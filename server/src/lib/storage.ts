@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabaseAdmin } from './supabase.js';
 
 export const STORAGE_BUCKETS = ['inquiry photos', 'job media', 'gallery'] as const;
 
@@ -28,7 +27,7 @@ function validateLocation(bucket: StorageBucket, path: string): void {
 // Call only from trusted server code after checking that the
 // requester may upload to or view the specified file.
 // Passing a client explicitly allows isolated unit tests.
-export function createStorageHelper(client: Pick<SupabaseClient, 'storage'> = getSupabaseAdmin()) {
+export function createStorageHelper(client: Pick<SupabaseClient, 'storage'>) {
   async function createSignedUploadUrl(bucket: StorageBucket, path: string) {
     validateLocation(bucket, path);
 

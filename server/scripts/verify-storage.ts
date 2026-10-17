@@ -2,7 +2,8 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import { getSupabaseAdmin } from '../src/lib/supabase.js';
+import { loadConfig } from '../src/config.js';
+import { createSupabaseAdmin } from '../src/supabase.js';
 import { createStorageHelper, STORAGE_BUCKETS, type StorageBucket } from '../src/lib/storage.js';
 
 async function main() {
@@ -16,7 +17,7 @@ async function main() {
     'This verification script must target local Supabase.',
   );
 
-  const admin = getSupabaseAdmin();
+  const admin = createSupabaseAdmin(loadConfig());
   const storage = createStorageHelper(admin);
 
   // This client has ordinary anonymous permissions.
