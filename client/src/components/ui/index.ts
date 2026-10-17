@@ -6,3 +6,6 @@ export type { BadgeProps, BadgeVariant } from './Badge';
 
 export { Checkbox } from './Checkbox';
 export type { CheckboxProps } from './Checkbox';
+
+export { DateRangePicker } from './DateRangePicker';
+export type { DateRange, DateRangePickerProps } from './DateRangePicker';
