@@ -12,7 +12,7 @@ describe('getNavItemsForRole', () => {
     expect(items).toHaveLength(navItems.length);
   });
 
-  it('hides Customers, Reports, and Staff accoutns from an Employee', () => {
+  it('hides Customers, Reports, and Staff accounts from an Employee', () => {
     const labels = getNavItemsForRole('Employee').map((item) => item.label);
     expect(labels).not.toContain('Customers');
     expect(labels).not.toContain('Reports');
