@@ -17,13 +17,38 @@ type NavItem = {
   roles: Role[];
   icon: ComponentType<{ className?: string }>;
   dividerBefore?: boolean;
+  inBottomBar?: boolean;
 };
 
 export const navItems: NavItem[] = [
-  { label: 'Dashboard', path: '/portal/dashboard', icon: HomeIcon, roles: ['Owner', 'Employee'] },
-  { label: 'Inquiries', path: '/portal/inquiries', icon: InboxIcon, roles: ['Owner'] },
-  { label: 'Schedule', path: '/portal/schedule', icon: CalendarIcon, roles: ['Owner', 'Employee'] },
-  { label: 'Customers', path: '/portal/customers', icon: PeopleIcon, roles: ['Owner'] },
+  {
+    label: 'Dashboard',
+    path: '/portal/dashboard',
+    icon: HomeIcon,
+    inBottomBar: true,
+    roles: ['Owner', 'Employee'],
+  },
+  {
+    label: 'Inquiries',
+    path: '/portal/inquiries',
+    icon: InboxIcon,
+    inBottomBar: true,
+    roles: ['Owner'],
+  },
+  {
+    label: 'Schedule',
+    path: '/portal/schedule',
+    icon: CalendarIcon,
+    inBottomBar: true,
+    roles: ['Owner', 'Employee'],
+  },
+  {
+    label: 'Customers',
+    path: '/portal/customers',
+    icon: PeopleIcon,
+    inBottomBar: true,
+    roles: ['Owner'],
+  },
   {
     label: 'Testimonials',
     path: '/portal/testimonials',
@@ -42,4 +67,12 @@ export const navItems: NavItem[] = [
 
 export function getNavItemsForRole(userRole: Role): NavItem[] {
   return navItems.filter((item) => item.roles.includes(userRole));
+}
+
+export function getBottomBarItems(userRole: Role): NavItem[] {
+  return getNavItemsForRole(userRole).filter((item) => item.inBottomBar);
+}
+
+export function getMoreItems(userRole: Role): NavItem[] {
+  return getNavItemsForRole(userRole).filter((item) => !item.inBottomBar);
 }
