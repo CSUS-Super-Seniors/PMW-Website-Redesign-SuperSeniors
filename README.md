@@ -13,10 +13,10 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 
 ## Getting started
 
-Prerequisites: Node.js 22 and Git.
+Prerequisites: Node.js 22 and Git. Docker Desktop is also needed to run the local Supabase database (`npm run db:start`).
 
 ```bash
-git clone https://github.com/XplosiveCow/PMW-Website-Redesign-SuperSeniors.git
+git clone https://github.com/CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors.git
 cd PMW-Website-Redesign-SuperSeniors
 npm install
 cp server/.env.example server/.env
@@ -31,25 +31,50 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 
 ## Scripts (run from the repo root)
 
-| Script                 | What it does                          |
-| ---------------------- | ------------------------------------- |
-| `npm run dev:client`   | Start the Vite dev server             |
-| `npm run dev:server`   | Start the API with auto reload        |
-| `npm run lint`         | ESLint across client and server       |
-| `npm run format`       | Format everything with Prettier       |
-| `npm run format:check` | Check formatting (what CI runs)       |
-| `npm run typecheck`    | TypeScript check for both workspaces  |
-| `npm test`             | Vitest for both workspaces            |
-| `npm run build`        | Production build of client and server |
+| Script                           | What it does                                                                                        |
+| -------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `npm run dev:client`             | Start the Vite dev server                                                                           |
+| `npm run dev:server`             | Start the API with auto reload                                                                      |
+| `npm run lint`                   | ESLint across client and server                                                                     |
+| `npm run format`                 | Format everything with Prettier                                                                     |
+| `npm run format:check`           | Check formatting (what CI runs)                                                                     |
+| `npm run typecheck`              | TypeScript check for both workspaces                                                                |
+| `npm test`                       | Vitest for both workspaces                                                                          |
+| `npm run build`                  | Production build of client and server                                                               |
+| `npm run db:start`               | Start the local Supabase stack (needs Docker)                                                       |
+| `npm run db:stop`                | Stop the local Supabase stack                                                                       |
+| `npm run db:migration -- <name>` | Create a new empty migration file in `supabase/migrations` (does not apply it)                      |
+| `npm run db:migrate`             | Apply new migrations to the local database                                                          |
+| `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data |
 
 ## Environment variables
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 
-| Variable        | Purpose                             |
-| --------------- | ----------------------------------- |
-| `PORT`          | API port (default 3001)             |
-| `CLIENT_ORIGIN` | Origin allowed by CORS (the client) |
+| Variable                    | Purpose                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `PORT`                      | API port (default 3001)                                                                     |
+| `CLIENT_ORIGIN`             | Origin allowed by CORS (the client)                                                         |
+| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
+| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
+
+## Database
+
+The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
+
+### Local Supabase values for `server/.env`
+
+After `npm run db:start`, run `npx supabase status`. It prints the local API URL (`http://127.0.0.1:54321`) and both keys. Copy them into `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
+
+### Making schema changes
+
+1. `npm run db:start` to start the local database (Docker Desktop must be running).
+2. `npm run db:migration -- add_example_table` to create a migration file.
+3. Write the SQL in the new file in `supabase/migrations`.
+4. `npm run db:migrate` to apply it to your local database. Your local data is kept.
+5. Commit the migration file and open a pull request.
+6. Optional: `npm run db:reset` to check the schema rebuilds cleanly from every migration. This deletes your local data.
 
 ## Design tokens
 
