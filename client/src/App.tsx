@@ -1,4 +1,5 @@
 import { Route, Routes } from 'react-router';
+import RequireAuth from './auth/RequireAuth';
 import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
 import DesignTokensPage from './pages/DesignTokensPage';
@@ -20,6 +21,10 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route element={<RequireAuth />}>
+        {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
+        <Route path="/portal/*" element={<PlaceholderPage />} />
+      </Route>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
