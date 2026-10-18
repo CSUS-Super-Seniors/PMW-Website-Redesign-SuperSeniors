@@ -15,6 +15,13 @@ export type { ErrorBannerProps } from './ErrorBanner';
 
 export { InlineFieldError } from './InlineFieldError';
 export type { InlineFieldErrorProps } from './InlineFieldError';
+
+export { Table } from './Table';
+export type { TableProps, TableColumn } from './Table';
+
+export { Pagination } from './Pagination';
+export type { PaginationProps } from './Pagination';
+
 export { Input } from './Input';
 export type { InputProps } from './Input';
 
