@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfirmationDialog } from './ConfirmationDialog';
@@ -73,6 +73,43 @@ describe('ConfirmationDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm' }));
 
     expect(onConfirm).toHaveBeenCalledOnce();
+  });
+  it('prevents duplicate confirmations while the first confirmation is pending', async () => {
+    const user = userEvent.setup();
+    let resolveConfirmation!: () => void;
+
+    const onConfirm = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConfirmation = resolve;
+        }),
+    );
+
+    render(
+      <ConfirmationDialog
+        isOpen
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+        title="Delete item?"
+        message="Are you sure?"
+      />,
+    );
+
+    const confirmButton = screen.getByRole('button', { name: 'Confirm' });
+
+    await user.click(confirmButton);
+
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(confirmButton).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+    await user.click(confirmButton);
+
+    expect(onConfirm).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      resolveConfirmation();
+    });
   });
 
   it('uses the destructive button style when requested', () => {

@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
 
 export interface ConfirmationDialogProps {
   isOpen: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -24,14 +24,18 @@ export function ConfirmationDialog({
   destructive = false,
 }: ConfirmationDialogProps) {
   const [isConfirming, setIsConfirming] = useState(false);
+  const confirmationInProgress = useRef(false);
 
   const handleConfirm = async () => {
-    if (isConfirming) return;
+    if (confirmationInProgress.current) return;
 
+    confirmationInProgress.current = true;
     setIsConfirming(true);
+
     try {
-      onConfirm();
+      await onConfirm();
     } finally {
+      confirmationInProgress.current = false;
       setIsConfirming(false);
     }
   };

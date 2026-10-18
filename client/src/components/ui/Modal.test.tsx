@@ -68,6 +68,93 @@ describe('Modal', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('calls onClose when Escape is pressed while focus is outside the modal', () => {
+    const onClose = vi.fn();
+
+    render(
+      <Modal isOpen onClose={onClose} title="Example">
+        Modal content
+      </Modal>,
+    );
+
+    document.body.focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('only closes the top modal when Escape is pressed', () => {
+    const onCloseLower = vi.fn();
+    const onCloseUpper = vi.fn();
+
+    render(
+      <>
+        <Modal isOpen onClose={onCloseLower} title="Lower modal">
+          Lower content
+        </Modal>
+        <Modal isOpen onClose={onCloseUpper} title="Upper modal">
+          Upper content
+        </Modal>
+      </>,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onCloseUpper).toHaveBeenCalledOnce();
+    expect(onCloseLower).not.toHaveBeenCalled();
+  });
+
+  it('locks body scrolling while open and restores the previous overflow when closed', () => {
+    document.body.style.overflow = 'auto';
+
+    const { rerender } = render(
+      <Modal isOpen onClose={vi.fn()} title="Example">
+        Modal content
+      </Modal>,
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    rerender(
+      <Modal isOpen={false} onClose={vi.fn()} title="Example">
+        Modal content
+      </Modal>,
+    );
+
+    expect(document.body.style.overflow).toBe('auto');
+    document.body.style.overflow = '';
+  });
+
+  it('keeps body scrolling locked until the last nested modal closes', () => {
+    document.body.style.overflow = 'auto';
+
+    const lowerModal = (
+      <Modal isOpen onClose={vi.fn()} title="Lower modal">
+        Lower content
+      </Modal>
+    );
+
+    const { rerender, unmount } = render(
+      <>
+        {lowerModal}
+        <Modal isOpen onClose={vi.fn()} title="Upper modal">
+          Upper content
+        </Modal>
+      </>,
+    );
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    rerender(lowerModal);
+
+    expect(document.body.style.overflow).toBe('hidden');
+
+    unmount();
+
+    expect(document.body.style.overflow).toBe('auto');
+    document.body.style.overflow = '';
+  });
+
   it('keeps keyboard focus inside the modal when tabbing forward', async () => {
     const user = userEvent.setup();
 
