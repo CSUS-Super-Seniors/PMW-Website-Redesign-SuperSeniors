@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import type { SignInResult } from '../auth/AuthContext';
 import Logo from '../components/brand/Logo';
-import { Button, Checkbox, ErrorBanner, Input } from '../components/ui';
+import { Button, ErrorBanner, Input } from '../components/ui';
 import { routes } from '../config/site';
 
 type StaffLoginPageProps = {
@@ -84,7 +84,6 @@ export default function StaffLoginPage({
             autoComplete="current-password"
             error={errors.password}
           />
-          <Checkbox label="Keep me logged in on this device" />
           <Button type="submit" className="w-full" disabled={submitting}>
             Log in
           </Button>
