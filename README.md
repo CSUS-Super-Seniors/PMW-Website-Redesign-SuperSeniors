@@ -46,6 +46,7 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 | `npm run db:migration -- <name>` | Create a new empty migration file in `supabase/migrations` (does not apply it)                      |
 | `npm run db:migrate`             | Apply new migrations to the local database                                                          |
 | `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data |
+| `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase         |
 
 ## Environment variables
 
