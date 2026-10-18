@@ -25,6 +25,8 @@ export const routes = {
   privacy: '/privacy',
   terms: '/terms',
   staffLogin: '/staff/login',
+  staffForgotPassword: '/staff/forgot-password',
+  portalHome: '/portal/dashboard',
 } as const;
 
 export type NavLinkItem = { label: string; to: string };
