@@ -6,19 +6,14 @@ import { useAuth } from './AuthContext';
 import AuthProvider from './AuthProvider';
 
 const mocks = vi.hoisted(() => ({
+  getSupabase: vi.fn(),
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
 }));
 
 vi.mock('./supabaseClient', () => ({
-  supabase: {
-    auth: {
-      getSession: mocks.getSession,
-      onAuthStateChange: mocks.onAuthStateChange,
-      signInWithPassword: mocks.signInWithPassword,
-    },
-  },
+  getSupabase: mocks.getSupabase,
 }));
 
 function Probe() {
@@ -51,6 +46,13 @@ function renderProvider() {
 describe('AuthProvider', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.getSupabase.mockReturnValue({
+      auth: {
+        getSession: mocks.getSession,
+        onAuthStateChange: mocks.onAuthStateChange,
+        signInWithPassword: mocks.signInWithPassword,
+      },
+    });
     mocks.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
   });
 
@@ -109,5 +111,15 @@ describe('AuthProvider', () => {
     unmount();
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays signed out instead of crashing when Supabase is not configured', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.getSupabase.mockImplementation(() => {
+      throw new Error('Missing VITE_SUPABASE_URL');
+    });
+    renderProvider();
+
+    expect(await screen.findByText('signed out')).toBeInTheDocument();
   });
 });
