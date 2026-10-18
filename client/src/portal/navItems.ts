@@ -9,7 +9,7 @@ import {
   LockIcon,
 } from '../components/icons';
 
-type Role = 'Owner' | 'Employee';
+type Role = 'owner' | 'employee';
 
 type NavItem = {
   label: string;
@@ -26,42 +26,42 @@ export const navItems: NavItem[] = [
     path: '/portal/dashboard',
     icon: HomeIcon,
     inBottomBar: true,
-    roles: ['Owner', 'Employee'],
+    roles: ['owner', 'employee'],
   },
   {
     label: 'Inquiries',
     path: '/portal/inquiries',
     icon: InboxIcon,
     inBottomBar: true,
-    roles: ['Owner'],
+    roles: ['owner'],
   },
   {
     label: 'Schedule',
     path: '/portal/schedule',
     icon: CalendarIcon,
     inBottomBar: true,
-    roles: ['Owner', 'Employee'],
+    roles: ['owner', 'employee'],
   },
   {
     label: 'Customers',
     path: '/portal/customers',
     icon: PeopleIcon,
     inBottomBar: true,
-    roles: ['Owner'],
+    roles: ['owner'],
   },
   {
     label: 'Testimonials',
     path: '/portal/testimonials',
     icon: StarIcon,
-    roles: ['Owner', 'Employee'],
+    roles: ['owner', 'employee'],
   },
-  { label: 'Reports', path: '/portal/reports', icon: ChartIcon, roles: ['Owner'] },
+  { label: 'Reports', path: '/portal/reports', icon: ChartIcon, roles: ['owner'] },
   {
     label: 'Staff accounts',
     path: '/portal/staff-accounts',
     icon: LockIcon,
     dividerBefore: true,
-    roles: ['Owner'],
+    roles: ['owner'],
   },
 ];
 

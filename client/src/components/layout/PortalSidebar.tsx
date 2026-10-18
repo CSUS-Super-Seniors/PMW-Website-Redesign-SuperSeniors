@@ -5,7 +5,7 @@ import { LogoutIcon } from '../icons';
 import LogoMark from '../brand/LogoMark';
 
 export default function PortalSidebar() {
-  const items = getNavItemsForRole('Owner');
+  const items = getNavItemsForRole('owner');
 
   return (
     <aside className="hidden md:flex min-h-dvh w-62 flex-col bg-dark-brown text-neutral-100">
