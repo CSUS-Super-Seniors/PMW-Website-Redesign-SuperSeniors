@@ -16,6 +16,12 @@ export type { ErrorBannerProps } from './ErrorBanner';
 export { InlineFieldError } from './InlineFieldError';
 export type { InlineFieldErrorProps } from './InlineFieldError';
 
+export { Modal } from './Modal';
+export type { ModalProps } from './Modal';
+
+export { ConfirmationDialog } from './ConfirmationDialog';
+export type { ConfirmationDialogProps } from './ConfirmationDialog';
+
 export { Table } from './Table';
 export type { TableProps, TableColumn } from './Table';
 
