@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Button } from './Button';
 
 export interface ToastProps {
@@ -10,12 +10,21 @@ export interface ToastProps {
 }
 
 export function Toast({ message, onUndo, onDismiss, duration = 5000, className = '' }: ToastProps) {
-  useEffect(() => {
-    if (!onDismiss || duration <= 0) return;
+  const onDismissRef = useRef(onDismiss);
 
-    const timeoutId = window.setTimeout(onDismiss, duration);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    if (!onDismissRef.current || duration <= 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      onDismissRef.current?.();
+    }, duration);
+
     return () => window.clearTimeout(timeoutId);
-  }, [duration, onDismiss]);
+  }, [duration, message]);
 
   return (
     <div
