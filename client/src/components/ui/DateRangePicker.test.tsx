@@ -27,13 +27,20 @@ describe('DateRangePicker', () => {
     });
   });
 
-  it('sets the minimum end date to the selected start date', () => {
-    render(<DateRangePicker value={{ startDate: '2026-10-10', endDate: '' }} onChange={vi.fn()} />);
+  it('shows an error when the end date is earlier than the start date', () => {
+    render(
+      <DateRangePicker
+        value={{
+          startDate: '2026-10-10',
+          endDate: '2026-10-05',
+        }}
+        onChange={vi.fn()}
+      />,
+    );
 
-    const endDate = screen.getByLabelText('End date');
+    expect(screen.getByText('End date must be on or after the start date.')).toBeInTheDocument();
 
-    expect(endDate).toHaveAttribute('min', '2026-10-10');
-    expect(endDate).toBeEnabled();
+    expect(screen.getByLabelText('End date')).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('keeps the end date disabled until a start date is selected', () => {
@@ -62,7 +69,7 @@ describe('DateRangePicker', () => {
     });
   });
 
-  it('does not report an end date earlier than the start date', () => {
+  it('passes an earlier end date to the parent for validation', () => {
     const onChange = vi.fn();
 
     render(
@@ -73,7 +80,10 @@ describe('DateRangePicker', () => {
       target: { value: '2026-10-05' },
     });
 
-    expect(onChange).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith({
+      startDate: '2026-10-10',
+      endDate: '2026-10-05',
+    });
   });
 
   it('returns both selected dates to the parent', () => {
@@ -129,5 +139,28 @@ describe('DateRangePicker', () => {
 
     expect(startInputs[0].id).not.toBe(endInputs[0].id);
     expect(startInputs[1].id).not.toBe(endInputs[1].id);
+  });
+
+  it('clears the end date when the start date is cleared', () => {
+    const onChange = vi.fn();
+
+    render(
+      <DateRangePicker
+        value={{
+          startDate: '2026-10-01',
+          endDate: '2026-10-10',
+        }}
+        onChange={onChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Start date'), {
+      target: { value: '' },
+    });
+
+    expect(onChange).toHaveBeenCalledWith({
+      startDate: '',
+      endDate: '',
+    });
   });
 });

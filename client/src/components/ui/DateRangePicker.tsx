@@ -22,19 +22,17 @@ export function DateRangePicker({
   const id = useId();
   const startDateId = `${id}-start`;
   const endDateId = `${id}-end`;
+
+  const invalidDateOrder =
+    Boolean(value.startDate && value.endDate) && value.endDate < value.startDate;
+
   const handleStartDateChange = (startDate: string) => {
-    // Clear the end date if the new start date would make the range invalid.
-    const endDate = value.endDate && value.endDate < startDate ? '' : value.endDate;
+    const endDate = !startDate || (value.endDate && value.endDate < startDate) ? '' : value.endDate;
 
     onChange({ startDate, endDate });
   };
 
   const handleEndDateChange = (endDate: string) => {
-    // Guard against an invalid range even if a value bypasses browser validation.
-    if (endDate && value.startDate && endDate < value.startDate) {
-      return;
-    }
-
     onChange({ ...value, endDate });
   };
 
@@ -71,11 +69,17 @@ export function DateRangePicker({
               id={endDateId}
               type="date"
               value={value.endDate}
-              min={value.startDate || undefined}
               disabled={!value.startDate}
               onChange={(event) => handleEndDateChange(event.target.value)}
+              aria-invalid={invalidDateOrder}
+              aria-describedby={invalidDateOrder ? `${endDateId}-error` : undefined}
               className="type-body min-h-11 w-full min-w-0 rounded-sm border border-neutral-300 bg-white px-3 py-2 text-dark-brown focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber disabled:cursor-not-allowed disabled:opacity-50"
             />
+            {invalidDateOrder && (
+              <p id={`${endDateId}-error`} role="alert" className="type-body-sm text-error">
+                End date must be on or after the start date.
+              </p>
+            )}
           </div>
         </div>
       </fieldset>
