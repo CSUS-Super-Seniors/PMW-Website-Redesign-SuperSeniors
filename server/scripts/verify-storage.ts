@@ -50,7 +50,10 @@ async function main() {
     for (const bucket of STORAGE_BUCKETS) {
       const { data: config, error: configError } = await admin.storage.getBucket(bucket);
 
-      assert(!configError && config, `Cannot inspect bucket: ${bucket}`);
+      assert(
+        !configError && config,
+        `Cannot inspect bucket "${bucket}": ${configError?.message ?? 'No bucket data returned'}`,
+      );
       assert.equal(config.public, bucket === 'gallery');
       assert.equal(config.file_size_limit, (bucket === 'job media' ? 50 : 10) * 1024 * 1024);
 

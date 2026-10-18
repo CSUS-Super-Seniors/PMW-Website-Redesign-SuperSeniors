@@ -181,6 +181,9 @@ describe('storage location validation', () => {
     'records//photo.jpg',
     'records\\photo.jpg',
     'https://example.com/photo.jpg',
+    '%2e%2e/x',
+    'a?b',
+    'a#b',
   ])('rejects invalid path "%s" for uploads and views', async (badPath) => {
     const { helper, from } = setup();
 

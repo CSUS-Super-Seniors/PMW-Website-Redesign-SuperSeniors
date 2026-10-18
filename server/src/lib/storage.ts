@@ -7,6 +7,8 @@ export type StorageBucket = (typeof STORAGE_BUCKETS)[number];
 export const DEFAULT_VIEW_EXPIRY_SECONDS = 5 * 60;
 export const MAX_VIEW_EXPIRY_SECONDS = 15 * 60;
 
+const STORAGE_PATH_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
 function validateLocation(bucket: StorageBucket, path: string): void {
   if (!(STORAGE_BUCKETS as readonly string[]).includes(bucket)) {
     throw new Error('Unsupported storage bucket.');
@@ -15,10 +17,7 @@ function validateLocation(bucket: StorageBucket, path: string): void {
   if (
     typeof path !== 'string' ||
     !path.trim() ||
-    path.includes('\\') ||
-    path.includes('://') ||
-    path.includes('\0') ||
-    path.split('/').some((segment) => !segment || segment === '.' || segment === '..')
+    path.split('/').some((segment) => !STORAGE_PATH_SEGMENT_PATTERN.test(segment))
   ) {
     throw new Error('A valid relative storage path is required.');
   }
