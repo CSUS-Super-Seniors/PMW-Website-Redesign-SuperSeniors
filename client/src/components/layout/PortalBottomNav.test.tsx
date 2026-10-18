@@ -43,4 +43,20 @@ describe('PortalBottomNav', () => {
     await user.click(screen.getByRole('link', { name: 'Reports' }));
     expect(screen.queryByRole('link', { name: 'Reports' })).not.toBeInTheDocument();
   });
+
+  it('closes the menu when a bottom tab is tapped', async () => {
+    const user = userEvent.setup();
+    renderNav();
+    await user.click(moreButton());
+    await user.click(screen.getByRole('link', { name: 'Schedule' }));
+    expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes the menu when Escape is pressed', async () => {
+    const user = userEvent.setup();
+    renderNav();
+    await user.click(moreButton());
+    await user.keyboard('{Escape}');
+    expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
+  });
 });
