@@ -60,4 +60,28 @@ describe('Checkbox', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Accept terms' })).toHaveAttribute('name', 'terms');
   });
+  it('gives multiple checkboxes unique IDs and connects each label correctly', () => {
+    render(
+      <>
+        <Checkbox label="First checkbox" name="choice" />
+        <Checkbox label="Second checkbox" name="choice" />
+      </>,
+    );
+
+    const firstCheckbox = screen.getByRole('checkbox', {
+      name: 'First checkbox',
+    });
+    const secondCheckbox = screen.getByRole('checkbox', {
+      name: 'Second checkbox',
+    });
+
+    expect(firstCheckbox.id).not.toBe(secondCheckbox.id);
+    expect(firstCheckbox).not.toBeChecked();
+    expect(secondCheckbox).not.toBeChecked();
+
+    fireEvent.click(screen.getByText('Second checkbox'));
+
+    expect(firstCheckbox).not.toBeChecked();
+    expect(secondCheckbox).toBeChecked();
+  });
 });
