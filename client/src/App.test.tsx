@@ -11,7 +11,7 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
   const value: AuthContextValue = {
     session: null,
     loading: false,
-    signIn: () => Promise.resolve(false),
+    signIn: () => Promise.resolve('wrong-credentials'),
     ...auth,
   };
 

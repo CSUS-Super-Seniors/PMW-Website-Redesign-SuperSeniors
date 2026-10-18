@@ -1,20 +1,28 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
+import type { SignInResult } from '../auth/AuthContext';
 import Logo from '../components/brand/Logo';
 import { Button, Checkbox, ErrorBanner, Input } from '../components/ui';
 import { routes } from '../config/site';
 
 type StaffLoginPageProps = {
-  onSignIn?: (email: string, password: string) => Promise<boolean>;
+  onSignIn?: (email: string, password: string) => Promise<SignInResult>;
 };
 
 type FieldErrors = { email?: string; password?: string };
+type LoginProblem = Exclude<SignInResult, 'success'>;
+
+const problemMessages: Record<LoginProblem, string> = {
+  'wrong-credentials':
+    'Email or password is incorrect. Check both and try again, or reset your password.',
+  unreachable: 'We could not reach the server. Check your connection and try again.',
+};
 
 export default function StaffLoginPage({
-  onSignIn = () => Promise.resolve(false),
+  onSignIn = () => Promise.resolve('wrong-credentials'),
 }: StaffLoginPageProps) {
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [loginFailed, setLoginFailed] = useState(false);
+  const [loginProblem, setLoginProblem] = useState<LoginProblem | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -27,16 +35,23 @@ export default function StaffLoginPage({
     if (!email) nextErrors.email = 'Enter your email address.';
     if (!password) nextErrors.password = 'Enter your password.';
     setErrors(nextErrors);
-    setLoginFailed(false);
+    setLoginProblem(null);
     if (nextErrors.email || nextErrors.password) return;
 
     setSubmitting(true);
-    const signedIn = await onSignIn(email, password);
-    setSubmitting(false);
-    if (!signedIn) {
-      setLoginFailed(true);
+    let result: SignInResult;
+    try {
+      result = await onSignIn(email, password);
+    } catch {
+      result = 'unreachable';
+    } finally {
+      setSubmitting(false);
+    }
+
+    if (result === 'wrong-credentials') {
       setErrors({ password: 'Check your password and try again.' });
     }
+    if (result !== 'success') setLoginProblem(result);
   }
 
   return (
@@ -44,10 +59,10 @@ export default function StaffLoginPage({
       <Logo className="h-11 w-auto" />
       <div className="flex w-full max-w-110 flex-col gap-5 rounded-lg border border-neutral-300 bg-white p-6 md:p-10">
         <h1 className="type-h2">Staff login</h1>
-        {loginFailed ? (
+        {loginProblem ? (
           <ErrorBanner
-            message="Email or password is incorrect. Check both and try again, or reset your password."
-            onDismiss={() => setLoginFailed(false)}
+            message={problemMessages[loginProblem]}
+            onDismiss={() => setLoginProblem(null)}
           />
         ) : (
           <p className="type-body text-neutral-600">For Peterson Mobile Woodworking staff only.</p>

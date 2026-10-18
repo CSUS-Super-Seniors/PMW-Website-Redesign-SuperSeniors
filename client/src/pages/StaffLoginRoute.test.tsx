@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import { routes } from '../config/site';
 import StaffLoginRoute from './StaffLoginRoute';
+import type { SignInResult } from '../auth/AuthContext';
 
 const session = { user: { email: 'todd@example.com' } } as unknown as Session;
 
@@ -15,7 +16,7 @@ function renderLogin(auth: Partial<AuthContextValue>, entry: Entry = routes.staf
   const value: AuthContextValue = {
     session: null,
     loading: false,
-    signIn: () => Promise.resolve(false),
+    signIn: () => Promise.resolve('wrong-credentials'),
     ...auth,
   };
 
@@ -41,8 +42,8 @@ describe('StaffLoginRoute', () => {
 
   it('passes what was typed to the real sign-in', async () => {
     const user = userEvent.setup();
-    const signIn = vi.fn<(email: string, password: string) => Promise<boolean>>(() =>
-      Promise.resolve(true),
+    const signIn = vi.fn<(email: string, password: string) => Promise<SignInResult>>(() =>
+      Promise.resolve('success'),
     );
     renderLogin({ signIn });
 
@@ -55,7 +56,7 @@ describe('StaffLoginRoute', () => {
 
   it('shows the wrong email or password state when the sign-in fails', async () => {
     const user = userEvent.setup();
-    renderLogin({ signIn: () => Promise.resolve(false) });
+    renderLogin({ signIn: () => Promise.resolve('wrong-credentials') });
 
     await user.type(screen.getByLabelText('Email address'), 'todd@example.com');
     await user.type(screen.getByLabelText('Password'), 'not-the-password');

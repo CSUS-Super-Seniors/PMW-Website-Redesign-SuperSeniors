@@ -4,10 +4,11 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { routes } from '../config/site';
 import StaffLoginPage from './StaffLoginPage';
+import type { SignInResult } from '../auth/AuthContext';
 
-function renderPage(signedIn = true) {
-  const onSignIn = vi.fn<(email: string, password: string) => Promise<boolean>>(() =>
-    Promise.resolve(signedIn),
+function renderPage(result: SignInResult | Error = 'success') {
+  const onSignIn = vi.fn<(email: string, password: string) => Promise<SignInResult>>(() =>
+    result instanceof Error ? Promise.reject(result) : Promise.resolve(result),
   );
   render(
     <MemoryRouter>
@@ -47,7 +48,7 @@ describe('StaffLoginPage', () => {
 
   it('shows the wrong email or password state and keeps the email', async () => {
     const user = userEvent.setup();
-    const onSignIn = renderPage(false);
+    const onSignIn = renderPage('wrong-credentials');
 
     await user.type(emailField(), 'todd@example.com');
     await user.type(passwordField(), 'not-the-password');
@@ -61,7 +62,7 @@ describe('StaffLoginPage', () => {
 
   it('closes the wrong password banner when it is dismissed', async () => {
     const user = userEvent.setup();
-    renderPage(false);
+    renderPage('wrong-credentials');
 
     await user.type(emailField(), 'todd@example.com');
     await user.type(passwordField(), 'not-the-password');
@@ -73,7 +74,7 @@ describe('StaffLoginPage', () => {
 
   it('shows no errors after a successful sign-in', async () => {
     const user = userEvent.setup();
-    const onSignIn = renderPage(true);
+    const onSignIn = renderPage('success');
 
     await user.type(emailField(), 'todd@example.com');
     await user.type(passwordField(), 'the-right-password');
@@ -96,5 +97,29 @@ describe('StaffLoginPage', () => {
       'href',
       routes.home,
     );
+  });
+
+  it('shows a try again message when the server cannot be reached', async () => {
+    const user = userEvent.setup();
+    renderPage('unreachable');
+
+    await user.type(emailField(), 'todd@example.com');
+    await user.type(passwordField(), 'the-right-password');
+    await user.click(logInButton());
+
+    expect(await screen.findByText(/could not reach the server/)).toBeInTheDocument();
+    expect(screen.queryByText(/Email or password is incorrect/)).not.toBeInTheDocument();
+  });
+
+  it('re-enables the button when signing in throws', async () => {
+    const user = userEvent.setup();
+    renderPage(new Error('network down'));
+
+    await user.type(emailField(), 'todd@example.com');
+    await user.type(passwordField(), 'the-right-password');
+    await user.click(logInButton());
+
+    expect(await screen.findByText(/could not reach the server/)).toBeInTheDocument();
+    expect(logInButton()).toBeEnabled();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { AuthContext } from './AuthContext';
 import { getSupabase } from './supabaseClient';
+import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
+import { AuthContext, type SignInResult } from './AuthContext';
 
 /** Returns null (and logs why) instead of crashing when the env variables are missing. */
 function tryGetSupabase() {
@@ -33,10 +33,15 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, [supabase]);
 
-  async function signIn(email: string, password: string) {
-    if (!supabase) return false;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return !error;
+  async function signIn(email: string, password: string): Promise<SignInResult> {
+    if (!supabase) return 'unreachable';
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (!error) return 'success';
+      return isAuthRetryableFetchError(error) ? 'unreachable' : 'wrong-credentials';
+    } catch {
+      return 'unreachable';
+    }
   }
 
   return (

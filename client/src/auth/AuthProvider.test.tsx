@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuth } from './AuthContext';
 import AuthProvider from './AuthProvider';
+import { AuthRetryableFetchError } from '@supabase/supabase-js';
 
 const mocks = vi.hoisted(() => ({
   getSupabase: vi.fn(),
@@ -23,11 +24,7 @@ function Probe() {
   return (
     <div>
       <p>{loading ? 'loading' : session ? `signed in as ${session.user.email}` : 'signed out'}</p>
-      <button
-        onClick={async () =>
-          setResult((await signIn('todd@example.com', 'secret')) ? 'ok' : 'failed')
-        }
-      >
+      <button onClick={async () => setResult(await signIn('todd@example.com', 'secret'))}>
         sign in
       </button>
       <p>{result}</p>
@@ -82,7 +79,7 @@ describe('AuthProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'sign in' }));
 
-    expect(await screen.findByText('ok')).toBeInTheDocument();
+    expect(await screen.findByText('success')).toBeInTheDocument();
     expect(mocks.signInWithPassword).toHaveBeenCalledWith({
       email: 'todd@example.com',
       password: 'secret',
@@ -98,7 +95,7 @@ describe('AuthProvider', () => {
 
     await user.click(screen.getByRole('button', { name: 'sign in' }));
 
-    expect(await screen.findByText('failed')).toBeInTheDocument();
+    expect(await screen.findByText('wrong-credentials')).toBeInTheDocument();
   });
 
   it('stops listening for auth changes when it is removed', async () => {
@@ -121,5 +118,31 @@ describe('AuthProvider', () => {
     renderProvider();
 
     expect(await screen.findByText('signed out')).toBeInTheDocument();
+  });
+
+  it('reports unreachable when the network request fails', async () => {
+    const user = userEvent.setup();
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.signInWithPassword.mockResolvedValue({
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    });
+    renderProvider();
+    await screen.findByText('signed out');
+
+    await user.click(screen.getByRole('button', { name: 'sign in' }));
+
+    expect(await screen.findByText('unreachable')).toBeInTheDocument();
+  });
+
+  it('reports unreachable when Supabase throws instead of returning an error', async () => {
+    const user = userEvent.setup();
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.signInWithPassword.mockRejectedValue(new Error('network down'));
+    renderProvider();
+    await screen.findByText('signed out');
+
+    await user.click(screen.getByRole('button', { name: 'sign in' }));
+
+    expect(await screen.findByText('unreachable')).toBeInTheDocument();
   });
 });
