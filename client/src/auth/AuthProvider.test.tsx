@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -144,5 +144,37 @@ describe('AuthProvider', () => {
     await user.click(screen.getByRole('button', { name: 'sign in' }));
 
     expect(await screen.findByText('unreachable')).toBeInTheDocument();
+  });
+
+  it('signs the user in when Supabase reports a new session', async () => {
+    let notify: (event: string, session: unknown) => void = () => {};
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.onAuthStateChange.mockImplementation((callback) => {
+      notify = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    renderProvider();
+    await screen.findByText('signed out');
+
+    act(() => notify('SIGNED_IN', { user: { email: 'todd@example.com' } }));
+
+    expect(await screen.findByText('signed in as todd@example.com')).toBeInTheDocument();
+  });
+
+  it('signs the user out when Supabase reports the session ended', async () => {
+    let notify: (event: string, session: unknown) => void = () => {};
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { email: 'todd@example.com' } } },
+    });
+    mocks.onAuthStateChange.mockImplementation((callback) => {
+      notify = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    renderProvider();
+    await screen.findByText('signed in as todd@example.com');
+
+    act(() => notify('SIGNED_OUT', null));
+
+    expect(await screen.findByText('signed out')).toBeInTheDocument();
   });
 });
