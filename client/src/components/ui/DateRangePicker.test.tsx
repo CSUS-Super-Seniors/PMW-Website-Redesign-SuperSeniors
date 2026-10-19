@@ -39,14 +39,14 @@ describe('DateRangePicker', () => {
     );
 
     expect(screen.getByText('End date must be on or after the start date.')).toBeInTheDocument();
-
+    expect(screen.getByLabelText('End date')).toHaveClass('border-error');
     expect(screen.getByLabelText('End date')).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('keeps the end date disabled until a start date is selected', () => {
+  it('keeps the end date enabled when no start date is selected', () => {
     render(<DateRangePicker value={emptyRange} onChange={vi.fn()} />);
 
-    expect(screen.getByLabelText('End date')).toBeDisabled();
+    expect(screen.getByLabelText('End date')).toBeEnabled();
   });
 
   it('clears an existing end date when the start date moves past it', () => {
@@ -69,21 +69,20 @@ describe('DateRangePicker', () => {
     });
   });
 
-  it('passes an earlier end date to the parent for validation', () => {
+  it('does not pass an end date earlier than the start date to the parent', () => {
     const onChange = vi.fn();
 
     render(
       <DateRangePicker value={{ startDate: '2026-10-10', endDate: '' }} onChange={onChange} />,
     );
 
+    expect(screen.getByLabelText('End date')).toHaveAttribute('min', '2026-10-10');
+
     fireEvent.change(screen.getByLabelText('End date'), {
       target: { value: '2026-10-05' },
     });
 
-    expect(onChange).toHaveBeenCalledWith({
-      startDate: '2026-10-10',
-      endDate: '2026-10-05',
-    });
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('returns both selected dates to the parent', () => {
@@ -141,7 +140,7 @@ describe('DateRangePicker', () => {
     expect(startInputs[1].id).not.toBe(endInputs[1].id);
   });
 
-  it('clears the end date when the start date is cleared', () => {
+  it('preserves the end date when the start date becomes temporarily empty', () => {
     const onChange = vi.fn();
 
     render(
@@ -160,7 +159,12 @@ describe('DateRangePicker', () => {
 
     expect(onChange).toHaveBeenCalledWith({
       startDate: '',
-      endDate: '',
+      endDate: '2026-10-10',
     });
+  });
+  it('allows the legend to be customized', () => {
+    render(<DateRangePicker value={emptyRange} onChange={vi.fn()} legend="Registration dates" />);
+
+    expect(screen.getByRole('group', { name: 'Registration dates' })).toBeInTheDocument();
   });
 });

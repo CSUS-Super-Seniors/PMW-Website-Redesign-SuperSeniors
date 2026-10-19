@@ -1,5 +1,6 @@
 import { useId, type HTMLAttributes } from 'react';
 import { Button } from './Button';
+import { Input } from './Input';
 
 export interface DateRange {
   /** Start date in YYYY-MM-DD format, or an empty string. */
@@ -11,11 +12,13 @@ export interface DateRange {
 export interface DateRangePickerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onChange'> {
   value: DateRange;
   onChange: (range: DateRange) => void;
+  legend?: string;
 }
 
 export function DateRangePicker({
   value,
   onChange,
+  legend = 'Date range',
   className = '',
   ...props
 }: DateRangePickerProps) {
@@ -27,12 +30,15 @@ export function DateRangePicker({
     Boolean(value.startDate && value.endDate) && value.endDate < value.startDate;
 
   const handleStartDateChange = (startDate: string) => {
-    const endDate = !startDate || (value.endDate && value.endDate < startDate) ? '' : value.endDate;
+    const endDate = value.endDate && startDate && value.endDate < startDate ? '' : value.endDate;
 
     onChange({ startDate, endDate });
   };
 
   const handleEndDateChange = (endDate: string) => {
+    if (value.startDate && endDate && endDate < value.startDate) {
+      return;
+    }
     onChange({ ...value, endDate });
   };
 
@@ -45,42 +51,28 @@ export function DateRangePicker({
   return (
     <div {...props} className={classes}>
       <fieldset className="min-w-0">
-        <legend className="type-label mb-3 text-dark-brown">Date range</legend>
+        <legend className="type-label mb-3 text-dark-brown">{legend}</legend>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor={startDateId} className="type-label text-dark-brown">
-              Start date
-            </label>
-            <input
+            <Input
               id={startDateId}
+              label="Start date"
               type="date"
               value={value.startDate}
               onChange={(event) => handleStartDateChange(event.target.value)}
-              className="type-body min-h-11 w-full min-w-0 rounded-sm border border-neutral-300 bg-white px-3 py-2 text-dark-brown focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+              className="min-w-0"
             />
-          </div>
 
-          <div className="flex min-w-0 flex-col gap-2">
-            <label htmlFor={endDateId} className="type-label text-dark-brown">
-              End date
-            </label>
-            <input
+            <Input
               id={endDateId}
+              label="End date"
               type="date"
               value={value.endDate}
-              disabled={!value.startDate}
+              min={value.startDate || undefined}
               onChange={(event) => handleEndDateChange(event.target.value)}
-              aria-invalid={invalidDateOrder}
-              aria-describedby={invalidDateOrder ? `${endDateId}-error` : undefined}
-              className="type-body min-h-11 w-full min-w-0 rounded-sm border border-neutral-300 bg-white px-3 py-2 text-dark-brown focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber disabled:cursor-not-allowed disabled:opacity-50"
+              error={invalidDateOrder ? 'End date must be on or after the start date.' : undefined}
+              className="min-w-0"
             />
-            {invalidDateOrder && (
-              <p id={`${endDateId}-error`} role="alert" className="type-body-sm text-error">
-                End date must be on or after the start date.
-              </p>
-            )}
-          </div>
         </div>
       </fieldset>
 
