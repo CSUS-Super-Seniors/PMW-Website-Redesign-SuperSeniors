@@ -54,25 +54,25 @@ export function DateRangePicker({
         <legend className="type-label mb-3 text-dark-brown">{legend}</legend>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              id={startDateId}
-              label="Start date"
-              type="date"
-              value={value.startDate}
-              onChange={(event) => handleStartDateChange(event.target.value)}
-              className="min-w-0"
-            />
+          <Input
+            id={startDateId}
+            label="Start date"
+            type="date"
+            value={value.startDate}
+            onChange={(event) => handleStartDateChange(event.target.value)}
+            className="min-w-0"
+          />
 
-            <Input
-              id={endDateId}
-              label="End date"
-              type="date"
-              value={value.endDate}
-              min={value.startDate || undefined}
-              onChange={(event) => handleEndDateChange(event.target.value)}
-              error={invalidDateOrder ? 'End date must be on or after the start date.' : undefined}
-              className="min-w-0"
-            />
+          <Input
+            id={endDateId}
+            label="End date"
+            type="date"
+            value={value.endDate}
+            min={value.startDate || undefined}
+            onChange={(event) => handleEndDateChange(event.target.value)}
+            error={invalidDateOrder ? 'End date must be on or after the start date.' : undefined}
+            className="min-w-0"
+          />
         </div>
       </fieldset>
 
