@@ -51,4 +51,10 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Staff login' })).toBeInTheDocument();
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
   });
+
+  it('shows the portal navigation to a signed-in user', () => {
+    renderApp('/portal/dashboard', { session });
+
+    expect(screen.getByRole('navigation', { name: 'Portal' })).toBeInTheDocument();
+  });
 });
