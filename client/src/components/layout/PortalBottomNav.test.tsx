@@ -59,4 +59,29 @@ describe('PortalBottomNav', () => {
     await user.keyboard('{Escape}');
     expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
   });
+
+  it('closes the menu when the tab for the current page is tapped', async () => {
+    const user = userEvent.setup();
+    renderNav('/portal/dashboard');
+    await user.click(moreButton());
+    await user.click(screen.getByRole('link', { name: 'Dashboard' }));
+    expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('stays closed when you go to another tab and come back', async () => {
+    const user = userEvent.setup();
+    renderNav('/portal/dashboard');
+    await user.click(moreButton());
+    await user.click(screen.getByRole('link', { name: 'Inquiries' }));
+    await user.click(screen.getByRole('link', { name: 'Dashboard' }));
+    expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes the menu when you tap outside the bar', async () => {
+    const user = userEvent.setup();
+    renderNav();
+    await user.click(moreButton());
+    await user.click(document.body);
+    expect(moreButton()).toHaveAttribute('aria-expanded', 'false');
+  });
 });
