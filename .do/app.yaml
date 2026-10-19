@@ -51,5 +51,13 @@ static_sites:
     output_dir: client/dist
     catchall_document: index.html
 
+    envs:
+      - key: VITE_SUPABASE_URL
+        type: SECRET
+        scope: BUILD_TIME
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        type: SECRET
+        scope: BUILD_TIME
+
     routes:
       - path: /

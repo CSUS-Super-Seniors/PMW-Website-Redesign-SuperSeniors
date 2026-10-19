@@ -119,11 +119,17 @@ Both components deploy from the `main` branch after changes are merged.
 
 1. Confirm the DigitalOcean account has the required billing or promotional credits.
 2. Connect the `CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors` GitHub repository.
-3. In DigitalOcean App Platform, create an app using `.do/app.yaml`.
-4. Configure the API's encrypted environment variables:
-   - `SUPABASE_URL`: Supabase project URL.
-   - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key.
-5. Confirm the app configuration and estimated cost before creating the app.
+3. In DigitalOcean App Platform, select **Create App** and load `.do/app.yaml`.
+4. On the create-app environment variables screen, enter the Supabase values **before starting the first deployment**:
+   - **API service (runtime):**
+     - `SUPABASE_URL`: Supabase project URL.
+     - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (secret).
+   - **Web static site (build time):**
+     - `VITE_SUPABASE_URL`: Supabase project URL.
+     - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
+5. Confirm the environment variables and estimated cost before creating the app.
+
+Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
 
 The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_URL}`. Never commit real secret keys.
 
