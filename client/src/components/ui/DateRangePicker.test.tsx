@@ -1,8 +1,15 @@
+import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { DateRangePicker, type DateRange } from './DateRangePicker';
 
 const emptyRange: DateRange = { startDate: '', endDate: '' };
+
+function StatefulDateRangePicker({ initialValue }: { initialValue: DateRange }) {
+  const [value, setValue] = useState(initialValue);
+
+  return <DateRangePicker value={value} onChange={(range) => setValue(range)} />;
+}
 
 describe('DateRangePicker', () => {
   it('renders labeled start and end date inputs', () => {
@@ -27,20 +34,18 @@ describe('DateRangePicker', () => {
     });
   });
 
-  it('shows an error when the end date is earlier than the start date', () => {
-    render(
-      <DateRangePicker
-        value={{
-          startDate: '2026-10-10',
-          endDate: '2026-10-05',
-        }}
-        onChange={vi.fn()}
-      />,
-    );
+  it('passes an earlier end date through and shows the error', () => {
+    render(<StatefulDateRangePicker initialValue={{ startDate: '2026-10-10', endDate: '' }} />);
 
+    const endInput = screen.getByLabelText('End date');
+    expect(endInput).toHaveAttribute('min', '2026-10-10');
+
+    fireEvent.change(endInput, { target: { value: '2026-10-05' } });
+
+    expect(endInput).toHaveValue('2026-10-05');
     expect(screen.getByText('End date must be on or after the start date.')).toBeInTheDocument();
-    expect(screen.getByLabelText('End date')).toHaveClass('border-error');
-    expect(screen.getByLabelText('End date')).toHaveAttribute('aria-invalid', 'true');
+    expect(endInput).toHaveClass('border-error');
+    expect(endInput).toHaveAttribute('aria-invalid', 'true');
   });
 
   it('keeps the end date enabled when no start date is selected', () => {
@@ -49,7 +54,7 @@ describe('DateRangePicker', () => {
     expect(screen.getByLabelText('End date')).toBeEnabled();
   });
 
-  it('clears an existing end date when the start date moves past it', () => {
+  it('preserves an existing end date when the start date moves past it', () => {
     const onChange = vi.fn();
 
     render(
@@ -65,24 +70,8 @@ describe('DateRangePicker', () => {
 
     expect(onChange).toHaveBeenCalledWith({
       startDate: '2026-10-15',
-      endDate: '',
+      endDate: '2026-10-10',
     });
-  });
-
-  it('does not pass an end date earlier than the start date to the parent', () => {
-    const onChange = vi.fn();
-
-    render(
-      <DateRangePicker value={{ startDate: '2026-10-10', endDate: '' }} onChange={onChange} />,
-    );
-
-    expect(screen.getByLabelText('End date')).toHaveAttribute('min', '2026-10-10');
-
-    fireEvent.change(screen.getByLabelText('End date'), {
-      target: { value: '2026-10-05' },
-    });
-
-    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('returns both selected dates to the parent', () => {
@@ -166,5 +155,22 @@ describe('DateRangePicker', () => {
     render(<DateRangePicker value={emptyRange} onChange={vi.fn()} legend="Registration dates" />);
 
     expect(screen.getByRole('group', { name: 'Registration dates' })).toBeInTheDocument();
+  });
+
+  it('keeps end-date values while the year is typed', () => {
+    render(<StatefulDateRangePicker initialValue={{ startDate: '2026-10-10', endDate: '' }} />);
+
+    const endInput = screen.getByLabelText('End date');
+    const values = ['0002-10-20', '0020-10-20', '0202-10-20', '2026-10-20'];
+
+    for (const value of values) {
+      fireEvent.change(endInput, { target: { value } });
+      expect(endInput).toHaveValue(value);
+      expect(
+        screen.queryByText('End date must be on or after the start date.'),
+      ).not.toBeInTheDocument();
+    }
+
+    expect(endInput).toHaveValue('2026-10-20');
   });
 });

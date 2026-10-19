@@ -11,6 +11,7 @@ export interface DateRange {
 
 export interface DateRangePickerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onChange'> {
   value: DateRange;
+  /** Emits values as the user types; the range may be temporarily reversed. Consumers should validate 'startDate <= endBate' it before use. */
   onChange: (range: DateRange) => void;
   legend?: string;
 }
@@ -27,18 +28,14 @@ export function DateRangePicker({
   const endDateId = `${id}-end`;
 
   const invalidDateOrder =
-    Boolean(value.startDate && value.endDate) && value.endDate < value.startDate;
+    Boolean(value.startDate && value.endDate && value.endDate >= '1000') &&
+    value.endDate < value.startDate;
 
   const handleStartDateChange = (startDate: string) => {
-    const endDate = value.endDate && startDate && value.endDate < startDate ? '' : value.endDate;
-
-    onChange({ startDate, endDate });
+    onChange({ ...value, startDate });
   };
 
   const handleEndDateChange = (endDate: string) => {
-    if (value.startDate && endDate && endDate < value.startDate) {
-      return;
-    }
     onChange({ ...value, endDate });
   };
 
@@ -74,18 +71,18 @@ export function DateRangePicker({
             className="min-w-0"
           />
         </div>
-      </fieldset>
 
-      <div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleClear}
-          disabled={!value.startDate && !value.endDate}
-        >
-          Clear dates
-        </Button>
-      </div>
+        <div className="mt-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleClear}
+            disabled={!value.startDate && !value.endDate}
+          >
+            Clear dates
+          </Button>
+        </div>
+      </fieldset>
     </div>
   );
 }
