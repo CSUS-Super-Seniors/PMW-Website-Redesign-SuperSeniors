@@ -1,12 +1,17 @@
 import 'dotenv/config';
 import { loadConfig } from './config.js';
-import { createAuthBackend } from './supabase.js';
+import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 try {
   const config = loadConfig();
-  const server = createApp(config, createAuthBackend(config)).listen(config.port, '0.0.0.0', () => {
-    console.log(`API listening on port ${config.port}`);
-  });
+  const supabase = createSupabaseAdmin(config);
+  const server = createApp(config, createAuthBackend(config, supabase)).listen(
+    config.port,
+    '0.0.0.0',
+    () => {
+      console.log(`API listening on port ${config.port}`);
+    },
+  );
   server.on('error', () => {
     console.error('Unable to start API listener');
     process.exitCode = 1;

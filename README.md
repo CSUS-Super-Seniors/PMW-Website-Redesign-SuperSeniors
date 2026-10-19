@@ -20,6 +20,7 @@ git clone https://github.com/CSUS-Super-Seniors/PMW-Website-Redesign-SuperSenior
 cd PMW-Website-Redesign-SuperSeniors
 npm install
 cp server/.env.example server/.env
+cp client/.env.example client/.env
 ```
 
 Run each in its own terminal:
@@ -46,6 +47,7 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 | `npm run db:migration -- <name>` | Create a new empty migration file in `supabase/migrations` (does not apply it)                      |
 | `npm run db:migrate`             | Apply new migrations to the local database                                                          |
 | `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data |
+| `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase         |
 
 ## Environment variables
 
@@ -59,6 +61,15 @@ Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 | `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
 | `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
+
+### Client (`client/.env`)
+
+Copy `client/.env.example` to `client/.env`. Only variables that start with `VITE_` reach the browser, so never put the service role key here. Restart `npm run dev:client` after changing it.
+
+| Variable                        | Purpose                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`             | Supabase API URL. Locally, use the URL from `npx supabase status`         |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. Locally, use the one from `npx supabase status` |
 
 ## Database
 

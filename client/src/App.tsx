@@ -1,8 +1,11 @@
 import { Route, Routes } from 'react-router';
+import RequireAuth from './auth/RequireAuth';
+import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
+import { routes } from './config/site';
 import DesignTokensPage from './pages/DesignTokensPage';
 import PlaceholderPage from './pages/PlaceholderPage';
-import PortalLayout from './components/layout/PortalLayout';
+import StaffLoginRoute from './pages/StaffLoginRoute';
 
 function Home() {
   return (
@@ -18,8 +21,12 @@ function Home() {
 export default function App() {
   return (
     <Routes>
-      <Route path="/portal" element={<PortalLayout />}>
-        <Route path="*" element={<PlaceholderPage />} />
+      <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route element={<RequireAuth />}>
+        {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
+        <Route path="/portal" element={<PortalLayout />}>
+          <Route path="*" element={<PlaceholderPage />} />
+        </Route>
       </Route>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
