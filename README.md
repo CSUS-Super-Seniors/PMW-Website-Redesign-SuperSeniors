@@ -103,3 +103,53 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 2. Commit with the Jira key in the message, e.g. `SSPMW-123 add estimate form`.
 3. Push the branch and open a pull request into `main`. Fill in the PR template.
 4. CI must pass and one teammate must approve before merging. Direct pushes to `main` are blocked.
+
+## Deploying (DigitalOcean App Platform)
+
+The deployment configuration is defined in `.do/app.yaml`.
+
+The application has two components:
+
+- `api`: Express backend, listening on port 8080, serving `/api/*`.
+- `web`: React/Vite static site, serving `/` with `index.html` as the fallback for client-side routes.
+
+Both components deploy from the `main` branch after changes are merged.
+
+### Before deploying
+
+1. Confirm the DigitalOcean account has the required billing or promotional credits.
+2. Connect the `CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors` GitHub repository.
+3. In DigitalOcean App Platform, select **Create App** and load `.do/app.yaml`.
+4. On the create-app environment variables screen, enter the Supabase values **before starting the first deployment**:
+   - **API service (runtime):**
+     - `SUPABASE_URL`: Supabase project URL.
+     - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (secret).
+   - **Web static site (build time):**
+     - `VITE_SUPABASE_URL`: Supabase project URL.
+     - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
+5. Confirm the environment variables and estimated cost before creating the app.
+
+Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
+
+The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_URL}`. Never commit real secret keys.
+
+### After deploying
+
+1. Wait for both components to finish deploying.
+2. Visit `https://<app-domain>/api/health` and confirm it returns `{"status":"ok"}`.
+3. Open the website and verify that its pages load.
+4. Test authentication with the configured Supabase project.
+5. Check deployment logs if any checks fail.
+
+### Local verification
+
+From the repository root:
+
+```bash
+npm ci
+npm run build -w server
+npm run build -w client
+npm test
+```
+
+To verify the API locally, configure the required environment variables, start the backend with `PORT=8080`, and request `http://localhost:8080/api/health`.
