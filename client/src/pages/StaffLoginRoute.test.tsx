@@ -17,6 +17,7 @@ function renderLogin(auth: Partial<AuthContextValue>, entry: Entry = routes.staf
     session: null,
     loading: false,
     signIn: () => Promise.resolve('wrong-credentials'),
+    signOut: () => Promise.resolve(),
     ...auth,
   };
 
