@@ -1,6 +1,7 @@
 /**
  * Business details and site navigation in one place, so a client answer
- * (for example Q8, the final service names) only needs to change this file.
+ * (for example the phone number or a page name) only needs to change this file.
+ * Services page content (Q8, the final service names) lives in `services.ts`.
  */
 
 export const business = {
