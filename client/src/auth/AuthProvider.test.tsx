@@ -1,8 +1,8 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAuth } from './AuthContext';
+import { useAuth, type SignOutResult } from './AuthContext';
 import AuthProvider from './AuthProvider';
 import { AuthRetryableFetchError } from '@supabase/supabase-js';
 
@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('./supabaseClient', () => ({
@@ -18,7 +19,7 @@ vi.mock('./supabaseClient', () => ({
 }));
 
 function Probe() {
-  const { session, loading, signIn } = useAuth();
+  const { session, loading, signIn, signOut } = useAuth();
   const [result, setResult] = useState('');
 
   return (
@@ -27,6 +28,7 @@ function Probe() {
       <button onClick={async () => setResult(await signIn('todd@example.com', 'secret'))}>
         sign in
       </button>
+      <button onClick={async () => setResult(await signOut())}>sign out</button>
       <p>{result}</p>
     </div>
   );
@@ -48,6 +50,7 @@ describe('AuthProvider', () => {
         getSession: mocks.getSession,
         onAuthStateChange: mocks.onAuthStateChange,
         signInWithPassword: mocks.signInWithPassword,
+        signOut: mocks.signOut,
       },
     });
     mocks.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
@@ -176,5 +179,117 @@ describe('AuthProvider', () => {
     act(() => notify('SIGNED_OUT', null));
 
     expect(await screen.findByText('signed out')).toBeInTheDocument();
+  });
+
+  it('clears shared state after successful current-session logout even without an auth event', async () => {
+    const user = userEvent.setup();
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { email: 'todd@example.com' } } },
+    });
+    mocks.signOut.mockResolvedValue({ error: null });
+    renderProvider();
+    await screen.findByText('signed in as todd@example.com');
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }));
+
+    expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
+    expect(screen.getByText('success')).toBeInTheDocument();
+    expect(screen.getByText('signed out')).toBeInTheDocument();
+  });
+
+  it('reports failure when logout is unavailable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    mocks.getSupabase.mockImplementation(() => {
+      throw new Error('Missing VITE_SUPABASE_URL');
+    });
+    const user = userEvent.setup();
+    renderProvider();
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }));
+
+    expect(screen.getByText('failed')).toBeInTheDocument();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it.each(['success', 'returned error', 'rejected promise'])(
+    'coalesces concurrent logout callers and clears the operation after %s',
+    async (outcome) => {
+      const session = { user: { email: 'todd@example.com' } };
+      mocks.getSession.mockResolvedValue({ data: { session } });
+      let resolveLogout!: (response: { error: Error | null }) => void;
+      let rejectLogout!: (error: Error) => void;
+      mocks.signOut.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveLogout = resolve;
+            rejectLogout = reject;
+          }),
+      );
+      mocks.signOut.mockResolvedValue({ error: null });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let first!: Promise<SignOutResult>;
+      let second!: Promise<SignOutResult>;
+      act(() => {
+        first = result.current.signOut();
+        second = result.current.signOut();
+      });
+
+      expect(second).toBe(first);
+      expect(mocks.signOut).toHaveBeenCalledExactlyOnceWith({ scope: 'local' });
+      await act(async () => {
+        if (outcome === 'rejected promise') {
+          rejectLogout(new Error('Network unavailable'));
+        } else {
+          resolveLogout({ error: outcome === 'success' ? null : new Error('Server unavailable') });
+        }
+        const expected = outcome === 'success' ? 'success' : 'failed';
+        expect(await first).toBe(expected);
+        expect(await second).toBe(expected);
+      });
+      expect(result.current.session).toBe(outcome === 'success' ? null : session);
+      expect(result.current.signOutFailed).toBe(outcome !== 'success');
+
+      await act(async () => {
+        const next = result.current.signOut();
+        expect(next).not.toBe(first);
+        expect(await next).toBe('success');
+      });
+      expect(mocks.signOut).toHaveBeenCalledTimes(2);
+      expect(result.current.session).toBeNull();
+      expect(result.current.signOutFailed).toBe(false);
+    },
+  );
+
+  it('keeps the pending logout operation scoped to each provider instance', async () => {
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    let resolveLogout!: (response: { error: null }) => void;
+    mocks.signOut.mockReturnValue(
+      new Promise((resolve) => {
+        resolveLogout = resolve;
+      }),
+    );
+    const firstProvider = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    const secondProvider = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => {
+      expect(firstProvider.result.current.loading).toBe(false);
+      expect(secondProvider.result.current.loading).toBe(false);
+    });
+
+    let first!: Promise<SignOutResult>;
+    let second!: Promise<SignOutResult>;
+    act(() => {
+      first = firstProvider.result.current.signOut();
+      second = secondProvider.result.current.signOut();
+    });
+
+    expect(first).not.toBe(second);
+    expect(mocks.signOut).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      resolveLogout({ error: null });
+      expect(await first).toBe('success');
+      expect(await second).toBe('success');
+    });
   });
 });
