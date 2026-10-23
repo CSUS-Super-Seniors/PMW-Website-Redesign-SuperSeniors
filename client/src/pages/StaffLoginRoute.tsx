@@ -4,7 +4,7 @@ import { routes } from '../config/site';
 import StaffLoginPage from './StaffLoginPage';
 
 export default function StaffLoginRoute() {
-  const { session, loading, signIn } = useAuth();
+  const { session, loading, signIn, signOutFailed } = useAuth();
   const location = useLocation();
 
   const from = (location.state as { from?: string } | null)?.from;
@@ -14,5 +14,5 @@ export default function StaffLoginRoute() {
   if (loading) return null;
   if (session) return <Navigate to={destination} replace />;
 
-  return <StaffLoginPage onSignIn={signIn} />;
+  return <StaffLoginPage onSignIn={signIn} logoutFailed={signOutFailed} />;
 }

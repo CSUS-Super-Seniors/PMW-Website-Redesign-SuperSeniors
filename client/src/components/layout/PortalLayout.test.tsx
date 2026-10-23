@@ -1,18 +1,29 @@
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
 import { routes } from '../../config/site';
 import PortalLayout from './PortalLayout';
 
+const auth: AuthContextValue = {
+  session: null,
+  loading: false,
+  signOutFailed: false,
+  signIn: () => Promise.resolve('success'),
+  signOut: () => Promise.resolve('success'),
+};
+
 function renderAt(path: string) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/portal" element={<PortalLayout />}>
-          <Route path="*" element={<p>Page content</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider value={auth}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/portal" element={<PortalLayout />}>
+            <Route path="*" element={<p>Page content</p>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
