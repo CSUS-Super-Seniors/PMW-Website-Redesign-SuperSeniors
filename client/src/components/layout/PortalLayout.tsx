@@ -1,9 +1,27 @@
-import { Outlet } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
+import { useAuth } from '../../auth/AuthContext';
+import { useIdleTimeout } from '../../auth/useIdleTimeout';
+import { idleTimeout, routes } from '../../config/site';
+import { SessionTimeoutDialog } from './SessionTimeoutDialog';
 import PortalSidebar from './PortalSidebar';
 import PortalTopBar from './PortalTopBar';
 import PortalBottomNav from './PortalBottomNav';
 
 export default function PortalLayout() {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+
+  async function handleTimeout() {
+    navigate(routes.staffSessionExpired);
+    await signOut();
+  }
+
+  const { isIdle, stayLoggedIn } = useIdleTimeout(
+    handleTimeout,
+    idleTimeout.idleWarningMinutes,
+    idleTimeout.idleWarningDurationMinutes,
+  );
+
   return (
     <div className="flex min-h-dvh">
       <PortalSidebar />
@@ -16,6 +34,11 @@ export default function PortalLayout() {
       <div className="fixed inset-x-0 bottom-0 z-40 md:hidden">
         <PortalBottomNav />
       </div>
+      <SessionTimeoutDialog
+        isOpen={isIdle}
+        onStaySignedIn={stayLoggedIn}
+        warningMinutes={idleTimeout.idleWarningDurationMinutes}
+      />
     </div>
   );
 }
