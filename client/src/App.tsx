@@ -6,6 +6,7 @@ import { routes } from './config/site';
 import DesignTokensPage from './pages/DesignTokensPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
+import SessionExpiredPage from './components/layout/SessionExpiredPage';
 
 function Home() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route path={routes.staffSessionExpired} element={<SessionExpiredPage />} />
       <Route element={<RequireAuth />}>
         {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
         <Route path="/portal" element={<PortalLayout />}>
