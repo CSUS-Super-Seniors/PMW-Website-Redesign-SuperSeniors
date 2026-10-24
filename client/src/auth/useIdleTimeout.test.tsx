@@ -60,4 +60,29 @@ describe('useIdleTimeout', () => {
     });
     expect(signOut).not.toHaveBeenCalled();
   });
+
+  it('keeps the sign-out time when the signOut function is replaced', () => {
+    vi.useFakeTimers();
+    const signOut = vi.fn();
+
+    const { rerender } = renderHook(({ onTimeout }) => useIdleTimeout(onTimeout, 15, 2), {
+      initialProps: { onTimeout: () => signOut() },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(90 * 1000);
+    });
+
+    rerender({ onTimeout: () => signOut() });
+
+    act(() => {
+      vi.advanceTimersByTime(30 * 1000);
+    });
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
 });

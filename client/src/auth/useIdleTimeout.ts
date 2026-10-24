@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export function useIdleTimeout(
   signOut: () => Promise<void>,
@@ -6,6 +6,11 @@ export function useIdleTimeout(
   idleWarningDurationMinutes: number,
 ) {
   const [isIdle, setIsIdle] = useState<boolean>(false);
+  const signOutRef = useRef(signOut);
+
+  useEffect(() => {
+    signOutRef.current = signOut;
+  }, [signOut]);
 
   useEffect(() => {
     if (isIdle) return;
@@ -41,13 +46,13 @@ export function useIdleTimeout(
 
     const id = setTimeout(
       () => {
-        signOut();
+        signOutRef.current();
       },
       idleWarningDurationMinutes * 60 * 1000,
     );
 
     return () => clearTimeout(id);
-  }, [isIdle, idleWarningDurationMinutes, signOut]);
+  }, [isIdle, idleWarningDurationMinutes]);
 
   function stayLoggedIn() {
     setIsIdle(false);
