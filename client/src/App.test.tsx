@@ -12,6 +12,7 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
     session: null,
     loading: false,
     signIn: () => Promise.resolve('wrong-credentials'),
+    signOut: () => Promise.resolve(),
     ...auth,
   };
 

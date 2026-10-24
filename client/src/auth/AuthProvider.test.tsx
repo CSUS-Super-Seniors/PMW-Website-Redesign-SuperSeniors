@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
+  signOut: vi.fn(),
 }));
 
 vi.mock('./supabaseClient', () => ({
@@ -18,7 +19,7 @@ vi.mock('./supabaseClient', () => ({
 }));
 
 function Probe() {
-  const { session, loading, signIn } = useAuth();
+  const { session, loading, signIn, signOut } = useAuth();
   const [result, setResult] = useState('');
 
   return (
@@ -27,6 +28,7 @@ function Probe() {
       <button onClick={async () => setResult(await signIn('todd@example.com', 'secret'))}>
         sign in
       </button>
+      <button onClick={async () => await signOut()}>sign out</button>
       <p>{result}</p>
     </div>
   );
@@ -48,6 +50,7 @@ describe('AuthProvider', () => {
         getSession: mocks.getSession,
         onAuthStateChange: mocks.onAuthStateChange,
         signInWithPassword: mocks.signInWithPassword,
+        signOut: mocks.signOut,
       },
     });
     mocks.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
@@ -176,5 +179,19 @@ describe('AuthProvider', () => {
     act(() => notify('SIGNED_OUT', null));
 
     expect(await screen.findByText('signed out')).toBeInTheDocument();
+  });
+
+  it('when the sign out button is clicked it requests Supabase to end the session', async () => {
+    const user = userEvent.setup();
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { email: 'todd@example.com' } } },
+    });
+    mocks.signOut.mockResolvedValue({ error: null });
+    renderProvider();
+    expect(await screen.findByText('signed in as todd@example.com')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'sign out' }));
+
+    expect(mocks.signOut).toHaveBeenCalledTimes(1);
   });
 });

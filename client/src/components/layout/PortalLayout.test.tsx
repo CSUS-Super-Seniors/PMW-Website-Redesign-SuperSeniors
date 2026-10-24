@@ -1,22 +1,37 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '../../config/site';
+import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
 import PortalLayout from './PortalLayout';
 
-function renderAt(path: string) {
+const auth: AuthContextValue = {
+  session: null,
+  loading: false,
+  signIn: () => Promise.resolve('wrong-credentials'),
+  signOut: () => Promise.resolve(),
+};
+
+function renderAt(path: string, signOut = () => Promise.resolve()) {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/portal" element={<PortalLayout />}>
-          <Route path="*" element={<p>Page content</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+    <AuthContext.Provider value={{ ...auth, signOut }}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/portal" element={<PortalLayout />}>
+            <Route path="*" element={<p>Page content</p>} />
+          </Route>
+          <Route path={routes.staffSessionExpired} element={<p>Session expired page</p>} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
   );
 }
 
 describe('PortalLayout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows the nav links with their addresses', () => {
     renderAt('/portal/dashboard');
     const nav = screen.getByRole('navigation', { name: 'Portal' });
@@ -45,5 +60,37 @@ describe('PortalLayout', () => {
       'href',
       routes.home,
     );
+  });
+
+  it('shows the timeout warning after the idle time', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+  });
+
+  it('goes to the expired screen and signs out when the warning runs out', () => {
+    vi.useFakeTimers();
+    const signOut = vi.fn(() => Promise.resolve());
+    renderAt('/portal/dashboard', signOut);
+
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+    expect(signOut).toHaveBeenCalledTimes(1);
   });
 });

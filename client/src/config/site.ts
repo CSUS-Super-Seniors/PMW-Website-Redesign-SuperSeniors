@@ -26,6 +26,7 @@ export const routes = {
   terms: '/terms',
   staffLogin: '/staff/login',
   staffForgotPassword: '/staff/forgot-password',
+  staffSessionExpired: '/staff/session-expired',
   portalHome: '/portal/dashboard',
 } as const;
 
@@ -62,3 +63,10 @@ export const footerCompanyLinks: NavLinkItem[] = [
   { label: 'About', to: routes.about },
   { label: 'Contact', to: routes.contact },
 ];
+
+export const idleTimeout = {
+  /** Time user sits idle before it shows the warning in minutes */
+  idleWarningMinutes: 15,
+  /** Time the warning will stay up in minutes */
+  idleWarningDurationMinutes: 2,
+} as const;
