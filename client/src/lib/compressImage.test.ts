@@ -82,6 +82,7 @@ describe('compressImage', () => {
     expect(result.lastModified).toBe(input.lastModified);
     expect(imageCompression).toHaveBeenCalledTimes(1);
     expect(vi.mocked(imageCompression).mock.calls[0][0]).toBe(input);
+    expect(imageCompression).toHaveBeenCalledWith(input, expect.objectContaining({ maxSizeMB: 1 }));
     expect(heicTo).not.toHaveBeenCalled();
   });
 
