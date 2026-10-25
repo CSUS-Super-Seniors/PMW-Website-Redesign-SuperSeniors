@@ -7,6 +7,7 @@ import { routes } from '../config/site';
 
 type StaffLoginPageProps = {
   onSignIn?: (email: string, password: string) => Promise<SignInResult>;
+  logoutFailed?: boolean;
 };
 
 type FieldErrors = { email?: string; password?: string };
@@ -20,6 +21,7 @@ const problemMessages: Record<LoginProblem, string> = {
 
 export default function StaffLoginPage({
   onSignIn = () => Promise.resolve('wrong-credentials'),
+  logoutFailed = false,
 }: StaffLoginPageProps) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [loginProblem, setLoginProblem] = useState<LoginProblem | null>(null);
@@ -64,6 +66,8 @@ export default function StaffLoginPage({
             message={problemMessages[loginProblem]}
             onDismiss={() => setLoginProblem(null)}
           />
+        ) : logoutFailed ? (
+          <ErrorBanner message="Your local session has ended, but we could not confirm logout with the server. Sign in again to continue." />
         ) : (
           <p className="type-body text-neutral-600">For Peterson Mobile Woodworking staff only.</p>
         )}
