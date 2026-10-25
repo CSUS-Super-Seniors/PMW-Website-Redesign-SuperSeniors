@@ -97,6 +97,52 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 - Spacing: Tailwind's normal scale (4px steps) matches Figma, so `p-3` is 12px and `px-20` is 80px.
 - Never hard-code hex values or arbitrary colors like `bg-[#123456]`. A test fails the build if you do.
 
+## Contact page (SSPMW-257, SSPMW-261, SSPMW-265)
+
+The public `/contact` route uses the shared public layout, inputs, textarea,
+button, error banner, and Figma design tokens. It follows the Updated 10-3
+desktop and phone frames, with `Carmichael, CA` as the location required by Jira.
+Both the displayed number and the Tap to call button use `business.phoneHref`.
+
+Name, one valid US phone number or email address, and a message are required.
+Whitespace-only values are rejected and messages are limited to 500 characters.
+Invalid submissions show inline errors and focus the first invalid field without
+calling the submission adapter. The form disables its controls while sending,
+announces success, and retains entered values after failure so the visitor can
+retry. Successful submissions offer a fresh form through Send another message.
+
+### C5 integration still needs confirmation
+
+This main-branch snapshot has neither the C5 contact endpoint nor the
+`contact_messages` migration. `client/src/api/contact.ts` isolates a **provisional**
+contract: `POST /api/contact-messages` with JSON `{ name, phone, email, message }`.
+The combined contact field populates either `phone` or `email`; the unused value
+is `null`. Confirm the endpoint, column names, limits, and response contract with
+SSPMW-268 before integration. Change this adapter if C5 uses a different contract.
+A successful HTTP status shows the sent state; unsuccessful HTTP responses or
+connection errors show the failed state. No database or email logic is included.
+Until C5 exists, an actual submission to this server returns 404 and shows failure.
+
+### Preview the result states
+
+In `client/.env`, set `VITE_CONTACT_FORM_STUB=success` or
+`VITE_CONTACT_FORM_STUB=failure` and restart `npm run dev:client`. These explicit,
+development-only previews wait 600 ms to expose the sending state, then show
+the selected outcome without saving or emailing anything. Leave the value empty
+to use the API. Production builds always use the API, even if a stub is configured.
+
+Tests cover empty, whitespace, invalid, and over-limit submissions; email and
+phone payloads; sending and duplicate submission prevention; success; failure
+and retry; adapter HTTP/network errors; and production ignoring the stub.
+
+```bash
+npm test -w client -- src/pages/ContactPage.test.tsx src/api/contact.test.ts src/App.test.tsx
+```
+
+For PR screenshots, capture `/contact` at 1440px and 390px, plus inline field
+errors, sending, sent, and failed states. On a phone, check that the number and
+button both open the dialer. Confirm that no street address appears.
+
 ## Workflow
 
 1. Pull the latest `main`, then create a branch named after the Jira key: `SSPMW-123-short-description`.
