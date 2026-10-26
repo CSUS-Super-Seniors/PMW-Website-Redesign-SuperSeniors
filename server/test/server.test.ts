@@ -76,6 +76,40 @@ test('employee can reach schedule, job detail and photo upload', async () => {
     .set('Authorization', 'Bearer valid')
     .expect(501);
 });
+test('removed staff are refused on every route', async () => {
+  const app = createApp(config, backend('employee', 'inactive'));
+  for (const path of [
+    '/api/me',
+    '/api/schedule',
+    '/api/jobs/J-1001',
+    '/api/customers',
+    '/api/owner/check',
+  ]) {
+    await request(app).get(path).set('Authorization', 'Bearer valid').expect(403);
+  }
+  await request(app)
+    .post('/api/jobs/J-1001/media')
+    .set('Authorization', 'Bearer valid')
+    .expect(403);
+});
+test('owner can reach employee routes and owner-only areas', async () => {
+  const app = createApp(config, backend('owner'));
+  await request(app).get('/api/schedule').set('Authorization', 'Bearer valid').expect(501);
+  await request(app).get('/api/jobs/J-1001').set('Authorization', 'Bearer valid').expect(501);
+  await request(app)
+    .post('/api/jobs/J-1001/media')
+    .set('Authorization', 'Bearer valid')
+    .expect(501);
+  for (const path of [
+    '/api/customers',
+    '/api/reports',
+    '/api/staff',
+    '/api/inquiries',
+    '/api/testimonials',
+  ]) {
+    await request(app).get(path).set('Authorization', 'Bearer valid').expect(404);
+  }
+});
 test('owner can access owner route and staff context is attached', async () => {
   const app = createApp(config, backend('owner'));
   await request(app).get('/api/owner/check').set('Authorization', 'Bearer valid').expect(200);
