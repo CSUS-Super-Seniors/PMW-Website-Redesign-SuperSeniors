@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { estimateStep1Schema, mapEstimateStep1Errors } from '@pmw/validation';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
@@ -22,6 +23,20 @@ export function createApp(config: Config, backend: AuthBackend) {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
+  );
+  // Let the shared schema report valid JSON primitives as form-level errors.
+  // Other routes retain the existing strict JSON parser.
+  app.post(
+    '/api/estimates/validate-step-1',
+    express.json({ limit: '1mb', strict: false }),
+    (req, res) => {
+      const result = estimateStep1Schema.safeParse(req.body);
+      if (!result.success) {
+        res.status(400).json({ valid: false, ...mapEstimateStep1Errors(result.error) });
+        return;
+      }
+      res.json({ valid: true });
+    },
   );
   app.use(express.json({ limit: '1mb' }));
   const api = express.Router();
