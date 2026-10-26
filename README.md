@@ -72,16 +72,18 @@ Copy `client/.env.example` to `client/.env`. Only variables that start with `VIT
 | `VITE_SUPABASE_URL`             | Supabase API URL. Locally, use the URL from `npx supabase status`         |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. Locally, use the one from `npx supabase status` |
 
-## Estimate request Step 1
+## Estimate request Step 1 validation (SSPMW-297)
+
+`@pmw/validation` provides the shared Step 1 schema, issue options, TypeScript types, and error
+mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 
 - Public `POST /api/estimates/validate-step-1` accepts JSON without login and validates without
-  saving an inquiry.
+  saving an inquiry. Valid input returns HTTP 200 with `{ "valid": true }`; invalid schema input
+  returns HTTP 400 with `valid: false`, `fieldErrors`, and `formErrors`.
 - Client and server `dev`, `build`, `typecheck`, and `test` commands compile the shared package
   automatically.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
-
-Service-area checking and Step 2 are pending.
 
 ## Database
 
