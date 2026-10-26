@@ -74,73 +74,16 @@ Copy `client/.env.example` to `client/.env`. Only variables that start with `VIT
 
 ## Estimate request Step 1 validation (SSPMW-297)
 
-Both applications import `estimateStep1Schema`, `issueOptions`, `mapEstimateStep1Errors`, and
-the inferred `EstimateStep1Input` / `EstimateStep1Data` types from `@pmw/validation`.
-The implementation lives in `shared/src/estimateStep1.ts`; Zod is a direct production dependency
-of that workspace. It has no React, Express, environment, or database dependencies.
-Client and server `dev`, `build`, `typecheck`, and `test` commands first compile the shared
-workspace to JavaScript and declarations, so the existing deployment build commands still work.
-If shared code changes while a dev server is running, run `npm run build -w @pmw/validation`
-and restart that dev server.
+`@pmw/validation` provides the shared Step 1 schema, issue options, TypeScript types, and error
+mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 
-### Application decisions
-
-These defaults are implementation decisions for SSPMW-297, not requirements attributed to Jira
-or Figma. Maximum lengths apply to submitted strings, including surrounding whitespace.
-
-| Field         | Rule                                                                        |
-| ------------- | --------------------------------------------------------------------------- |
-| `first_name`  | Required text, maximum 100 characters; Unicode names are accepted           |
-| `last_name`   | Required text, maximum 100 characters; Unicode names are accepted           |
-| `email`       | Required email format, maximum 254 characters; plus-addressing is accepted  |
-| `phone`       | Required US phone format, maximum 32 characters                             |
-| `text_ok`     | Optional boolean, defaults to `false`; explicit `false` is valid            |
-| `address`     | Required free-text service address, maximum 300 characters                  |
-| `city`        | Optional text, maximum 100 characters; omission and empty strings are valid |
-| `item`        | Required free text, maximum 200 characters                                  |
-| `issue_type`  | Required exact value from `issueOptions`                                    |
-| `description` | Required free text, maximum 1,000 characters                                |
-
-Required strings cannot be empty or whitespace-only. Emptiness, email, and phone checks use
-trimmed copies; accepted strings retain their submitted whitespace, casing, and formatting.
-Phone validation accepts ten digits or eleven with leading country code `1`, with optional
-`+` before that country code, balanced area-code parentheses, and common spaces, hyphens, or
-periods. It performs no phone lookup, extension support, or email DNS checks.
-Incorrect JSON types and unknown fields are rejected without coercion.
-
-`issueOptions` is the single source of dropdown labels and schema values. Its nine approved
-provisional options remain pending Todd's Q9 response. SSPMW-296 should render these options
-with an empty-value "Select a problem" placeholder, which fails validation. The `other` option
-("Other / not sure") is valid and uses the existing description field.
-
-Description is included because the written story specifies it despite its absence in the
-mockups. City remains optional because the mockups provide no separate city control; it is
-never inferred from the address. `preferred_contact` is outside this contract and is not derived.
-No Social Security number field is included.
-
-### Public endpoint and client integration
-
-`POST /api/estimates/validate-step-1` accepts the Step 1 object as `application/json`, without
-login. It only validates and does not save or submit an estimate request.
-
-- Valid schema input: HTTP 200, `{ "valid": true }`.
-- Invalid schema input: HTTP 400,
-  `{ "valid": false, "fieldErrors": { "email": "Enter a valid email address." }, "formErrors": [] }`.
-- Invalid top-level JSON values and unknown fields appear in `formErrors`. Each `fieldErrors`
-  value is one customer-facing string, directly usable as a form component's `error` prop.
-- Malformed JSON retains HTTP 400, `{ "error": "Invalid JSON" }`; requests over the existing
-  1 MB limit retain HTTP 413, `{ "error": "Request too large" }`. These parser errors are
-  separate from the schema response (`EstimateStep1ValidationResponse`).
-
-For SSPMW-296, validate locally with `estimateStep1Schema.safeParse(input)` and pass failures to
-`mapEstimateStep1Errors(result.error)`. Render `formErrors` at form level. Submit the same input
-to the endpoint for server validation; HTTP 200 confirms validation only. The inferred input
-type permits omitted `text_ok`; the parsed data type includes its boolean default. Do not add
-`preferred_contact` or later wizard fields to this request.
-
-Tests live in `shared/test/estimateStep1.test.ts`, `server/test/estimateStep1.test.ts`, and
-`client/src/lib/estimateStep1.test.ts`. Run them individually with the corresponding workspace's
-`npm test` command, or all together with `npm test` from the root.
+- Public `POST /api/estimates/validate-step-1` accepts JSON without login and validates without
+  saving an inquiry. Valid input returns HTTP 200 with `{ "valid": true }`; invalid schema input
+  returns HTTP 400 with `valid: false`, `fieldErrors`, and `formErrors`.
+- Client and server `dev`, `build`, `typecheck`, and `test` commands compile the shared package
+  automatically.
+- After editing shared code while a dev server is running, run
+  `npm run build -w @pmw/validation` and restart that dev server.
 
 ## Database
 
