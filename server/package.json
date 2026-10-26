@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "verify:storage": "tsx scripts/verify-storage.ts"
+    "verify:storage": "tsx scripts/verify-storage.ts",
+    "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -22,7 +23,10 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^22.18.0",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^6.0.3",
+    "pg": "^8.23.1",
+    "pg-connection-string": "^2.14.1",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "vitest": "^5.0.4"
