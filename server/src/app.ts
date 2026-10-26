@@ -32,6 +32,15 @@ export function createApp(config: Config, backend: AuthBackend) {
   api.get('/me', (req, res) => {
     res.set('Cache-Control', 'no-store').json(req.staff);
   });
+  api.get('/schedule', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
+  api.get('/jobs/:jobId', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
+  api.post('/jobs/:jobId/media', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
   api.use(requireOwner);
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
