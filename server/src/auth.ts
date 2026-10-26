@@ -37,14 +37,19 @@ export function requireStaff(backend: AuthBackend): RequestHandler {
     }
   };
 }
-export const requireOwner: RequestHandler = (req, res, next) => {
-  if (!req.staff) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-  if (req.staff.role !== 'owner') {
-    res.status(403).json({ error: 'Owner access required' });
-    return;
-  }
-  next();
-};
+
+export function requireRole(...allowed: string[]): RequestHandler {
+  return (req, res, next) => {
+    if (!req.staff) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    if (!allowed.includes(req.staff.role)) {
+      res.status(403).json({ error: 'Insufficient permissions' });
+      return;
+    }
+    next();
+  };
+}
+
+export const requireOwner = requireRole('owner');
