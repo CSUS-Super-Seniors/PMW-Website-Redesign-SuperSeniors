@@ -55,6 +55,27 @@ test('employee cannot access owner route', async () => {
     .set('Authorization', 'Bearer valid')
     .expect(403);
 });
+test('employee is refused on every owner-only area', async () => {
+  const app = createApp(config, backend('employee'));
+  for (const path of [
+    '/api/customers',
+    '/api/reports',
+    '/api/staff',
+    '/api/inquiries',
+    '/api/testimonials',
+  ]) {
+    await request(app).get(path).set('Authorization', 'Bearer valid').expect(403);
+  }
+});
+test('employee can reach schedule, job detail and photo upload', async () => {
+  const app = createApp(config, backend('employee'));
+  await request(app).get('/api/schedule').set('Authorization', 'Bearer valid').expect(501);
+  await request(app).get('/api/jobs/J-1001').set('Authorization', 'Bearer valid').expect(501);
+  await request(app)
+    .post('/api/jobs/J-1001/media')
+    .set('Authorization', 'Bearer valid')
+    .expect(501);
+});
 test('owner can access owner route and staff context is attached', async () => {
   const app = createApp(config, backend('owner'));
   await request(app).get('/api/owner/check').set('Authorization', 'Bearer valid').expect(200);
