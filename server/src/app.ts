@@ -28,10 +28,12 @@ export function createApp(config: Config, backend: AuthBackend) {
   api.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
-  api.get('/me', requireStaff(backend), (req, res) => {
+  api.use(requireStaff(backend));
+  api.get('/me', (req, res) => {
     res.set('Cache-Control', 'no-store').json(req.staff);
   });
-  api.get('/owner/check', requireStaff(backend), requireOwner, (_req, res) => {
+  api.use(requireOwner);
+  api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
   });
   app.use('/api', api);
