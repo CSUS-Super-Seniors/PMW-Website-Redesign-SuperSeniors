@@ -93,17 +93,19 @@ with check (
   and not in_gallery
 );
 
--- Public site
-create policy "Anyone can read gallery media"
+-- Public site. Gallery media and testimonials are for anonymous visitors only.
+-- Signed-in users go through the staff policies above, so a login with no
+-- staff_profiles row sees nothing and employees cannot read reviewer emails.
+create policy "Anonymous visitors can read gallery media"
 on public.job_media
 for select
-to anon, authenticated
+to anon
 using (in_gallery);
 
-create policy "Anyone can read published testimonials"
+create policy "Anonymous visitors can read published testimonials"
 on public.testimonials
 for select
-to anon, authenticated
+to anon
 using (status = 'approved' and can_publish);
 
 create policy "Anyone can read active service cities"
