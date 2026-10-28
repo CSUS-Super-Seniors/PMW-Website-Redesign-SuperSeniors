@@ -8,6 +8,7 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 
 - `client/`: React + Vite + TypeScript + React Router + Tailwind CSS
 - `server/`: Node.js + Express + TypeScript (all routes under `/api`)
+- `shared/`: browser-compatible `@pmw/validation` workspace (Zod schemas and form configuration)
 - Tests: Vitest (unit). Playwright is added later (SSPMW-232).
 - CI: GitHub Actions runs lint, format check, type check, and tests on every PR to `main`.
 
@@ -70,6 +71,19 @@ Copy `client/.env.example` to `client/.env`. Only variables that start with `VIT
 | ------------------------------- | ------------------------------------------------------------------------- |
 | `VITE_SUPABASE_URL`             | Supabase API URL. Locally, use the URL from `npx supabase status`         |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. Locally, use the one from `npx supabase status` |
+
+## Estimate request Step 1 validation (SSPMW-297)
+
+`@pmw/validation` provides the shared Step 1 schema, issue options, TypeScript types, and error
+mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
+
+- Public `POST /api/estimates/validate-step-1` accepts JSON without login and validates without
+  saving an inquiry. Valid input returns HTTP 200 with `{ "valid": true }`; invalid schema input
+  returns HTTP 400 with `valid: false`, `fieldErrors`, and `formErrors`.
+- Client and server `dev`, `build`, `typecheck`, and `test` commands compile the shared package
+  automatically.
+- After editing shared code while a dev server is running, run
+  `npm run build -w @pmw/validation` and restart that dev server.
 
 ## Database
 
