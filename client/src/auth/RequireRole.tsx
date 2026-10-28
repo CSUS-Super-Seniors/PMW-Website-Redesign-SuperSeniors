@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router';
 import { useStaffRole } from './useStaffRole';
 import type { StaffRole } from './fetchStaffProfile';
+import NoPermissionPage from '../pages/NoPermissionPage';
 
 type RequireRoleProps = { allowed: StaffRole[] };
 
@@ -21,5 +22,5 @@ export default function RequireRole({ allowed }: RequireRoleProps) {
     return <Outlet />;
   }
 
-  return <p>No permission</p>;
+  return <NoPermissionPage />;
 }

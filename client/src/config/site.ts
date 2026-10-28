@@ -27,6 +27,7 @@ export const routes = {
   staffLogin: '/staff/login',
   staffForgotPassword: '/staff/forgot-password',
   portalHome: '/portal/dashboard',
+  portalSchedule: '/portal/schedule',
 } as const;
 
 export type NavLinkItem = { label: string; to: string };
