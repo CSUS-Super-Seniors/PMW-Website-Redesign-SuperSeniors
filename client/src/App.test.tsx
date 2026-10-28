@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +52,23 @@ describe('App', () => {
     renderApp('/staff/login');
 
     expect(screen.getByRole('heading', { name: 'Staff login' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('opens the forgot password page from staff login, without the public header', async () => {
+    const user = userEvent.setup();
+    renderApp('/staff/login');
+
+    await user.click(screen.getByRole('link', { name: 'Forgot your password?' }));
+
+    expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('shows the reset password page without the public header', () => {
+    renderApp('/staff/reset-password');
+
+    expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument();
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
   });
 

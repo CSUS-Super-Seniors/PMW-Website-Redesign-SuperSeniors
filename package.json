@@ -23,7 +23,8 @@
     "db:migration": "supabase migration new",
     "db:migrate": "supabase migration up --local",
     "db:reset": "supabase db reset --local",
-    "verify:storage": "npm run verify:storage -w server"
+    "verify:storage": "npm run verify:storage -w server",
+    "verify:password-reset": "npm run verify:password-reset -w server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

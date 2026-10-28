@@ -4,7 +4,9 @@ import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
 import DesignTokensPage from './pages/DesignTokensPage';
+import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import PlaceholderPage from './pages/PlaceholderPage';
+import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 
 function Home() {
@@ -22,6 +24,8 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route path={routes.staffForgotPassword} element={<ForgotPasswordRoute />} />
+      <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
       <Route element={<RequireAuth />}>
         {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
         <Route path="/portal" element={<PortalLayout />}>

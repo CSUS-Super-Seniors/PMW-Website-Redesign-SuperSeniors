@@ -10,6 +10,13 @@ describe('ErrorBanner', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Unable to load the page.');
   });
 
+  it('renders an optional title above the message', () => {
+    render(<ErrorBanner title="This reset link has expired" message="Send a new one." />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('This reset link has expired');
+    expect(screen.getByText('This reset link has expired')).toHaveClass('type-label');
+  });
+
   it('renders without a dismiss button when onDismiss is omitted', () => {
     render(<ErrorBanner message="Something went wrong." />);
 
