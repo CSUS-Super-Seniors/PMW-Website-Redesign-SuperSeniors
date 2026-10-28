@@ -2,12 +2,14 @@ import { createContext, useContext } from 'react';
 import type { Session } from '@supabase/supabase-js';
 
 export type SignInResult = 'success' | 'wrong-credentials' | 'unreachable';
+export type SignOutResult = 'success' | 'failed';
 
 export type AuthContextValue = {
   session: Session | null;
   loading: boolean;
+  signOutFailed: boolean;
   signIn: (email: string, password: string) => Promise<SignInResult>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<SignOutResult>;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

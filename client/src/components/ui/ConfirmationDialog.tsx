@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Button } from './Button';
 import { Modal } from './Modal';
+import { ErrorBanner } from './ErrorBanner';
 
 export interface ConfirmationDialogProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ export interface ConfirmationDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  error?: string;
+  confirmingLabel?: string;
 }
 
 export function ConfirmationDialog({
@@ -22,6 +25,8 @@ export function ConfirmationDialog({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   destructive = false,
+  error,
+  confirmingLabel = confirmLabel,
 }: ConfirmationDialogProps) {
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmationInProgress = useRef(false);
@@ -44,8 +49,12 @@ export function ConfirmationDialog({
     <Modal isOpen={isOpen} onClose={onCancel} title={title}>
       <div className="flex flex-col gap-6">
         <p className="type-body text-dark-brown">{message}</p>
+        {error && <ErrorBanner message={error} />}
 
-        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <div
+          aria-busy={isConfirming}
+          className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"
+        >
           <Button type="button" variant="outline" onClick={onCancel} disabled={isConfirming}>
             {cancelLabel}
           </Button>
@@ -56,7 +65,7 @@ export function ConfirmationDialog({
             onClick={handleConfirm}
             disabled={isConfirming}
           >
-            {confirmLabel}
+            {isConfirming ? confirmingLabel : confirmLabel}
           </Button>
         </div>
       </div>

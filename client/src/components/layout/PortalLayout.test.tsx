@@ -8,11 +8,15 @@ import PortalLayout from './PortalLayout';
 const auth: AuthContextValue = {
   session: null,
   loading: false,
-  signIn: () => Promise.resolve('wrong-credentials'),
-  signOut: () => Promise.resolve(),
+  signOutFailed: false,
+  signIn: () => Promise.resolve('success'),
+  signOut: () => Promise.resolve('success'),
 };
 
-function renderAt(path: string, signOut = () => Promise.resolve()) {
+function renderAt(
+  path: string,
+  signOut: AuthContextValue['signOut'] = () => Promise.resolve('success'),
+) {
   return render(
     <AuthContext.Provider value={{ ...auth, signOut }}>
       <MemoryRouter initialEntries={[path]}>
@@ -79,7 +83,7 @@ describe('PortalLayout', () => {
 
   it('goes to the expired screen and signs out when the warning runs out', () => {
     vi.useFakeTimers();
-    const signOut = vi.fn(() => Promise.resolve());
+    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('success'));
     renderAt('/portal/dashboard', signOut);
 
     act(() => {
