@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { estimateStep1Schema, mapEstimateStep1Errors } from '@pmw/validation';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
@@ -23,15 +24,40 @@ export function createApp(config: Config, backend: AuthBackend) {
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
   );
+  // Let the shared schema report valid JSON primitives as form-level errors.
+  // Other routes retain the existing strict JSON parser.
+  app.post(
+    '/api/estimates/validate-step-1',
+    express.json({ limit: '1mb', strict: false }),
+    (req, res) => {
+      const result = estimateStep1Schema.safeParse(req.body);
+      if (!result.success) {
+        res.status(400).json({ valid: false, ...mapEstimateStep1Errors(result.error) });
+        return;
+      }
+      res.json({ valid: true });
+    },
+  );
   app.use(express.json({ limit: '1mb' }));
   const api = express.Router();
   api.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
   });
-  api.get('/me', requireStaff(backend), (req, res) => {
+  api.use(requireStaff(backend));
+  api.get('/me', (req, res) => {
     res.set('Cache-Control', 'no-store').json(req.staff);
   });
-  api.get('/owner/check', requireStaff(backend), requireOwner, (_req, res) => {
+  api.get('/schedule', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
+  api.get('/jobs/:jobId', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
+  api.post('/jobs/:jobId/media', (_req, res) => {
+    res.status(501).json({ error: 'Not implemented' });
+  });
+  api.use(requireOwner);
+  api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
   });
   app.use('/api', api);
