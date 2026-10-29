@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { routes } from '../../config/site';
@@ -116,5 +116,19 @@ describe('PortalLayout', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Session expired page')).not.toBeInTheDocument();
     expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('closing the warning keeps the user signed in', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+
+    expect(
+      screen.queryByRole('dialog', { name: "You're about to be signed out" }),
+    ).not.toBeInTheDocument();
   });
 });

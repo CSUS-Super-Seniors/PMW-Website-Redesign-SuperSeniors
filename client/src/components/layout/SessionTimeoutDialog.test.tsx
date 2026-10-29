@@ -23,7 +23,7 @@ describe('SessionTimeoutDialog', () => {
     expect(onStaySignedIn).toHaveBeenCalledTimes(1);
   });
 
-  it('does not dismiss on Escape', async () => {
+  it('treats Escape as Stay signed in', async () => {
     const user = userEvent.setup();
     const onStaySignedIn = vi.fn();
 
@@ -31,7 +31,6 @@ describe('SessionTimeoutDialog', () => {
 
     await user.keyboard('{Escape}');
 
-    expect(onStaySignedIn).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onStaySignedIn).toHaveBeenCalledTimes(1);
   });
 });
