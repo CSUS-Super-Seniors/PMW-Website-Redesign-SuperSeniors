@@ -1,12 +1,15 @@
 /**
  * Business details and site navigation in one place, so a client answer
- * (for example Q8, the final service names) only needs to change this file.
+ * (for example the phone number or a page name) only needs to change this file.
+ * Services page content (Q8, the final service names) lives in `services.ts`.
  */
 
 export const business = {
   name: 'Peterson Mobile Woodworking',
   phoneDisplay: '(916) 643-5686',
   phoneHref: 'tel:+19166435686',
+  /** Hours from SSPMW-257/261 and the Updated 10-3 Contact frame. */
+  hours: 'Monday to Saturday, 8 am to 5 pm',
   /** Only the city is ever shown. Never add a street address to the site. */
   location: 'Carmichael, CA',
   tagline: 'Family-run furniture repair and restoration in Carmichael, CA since 2011.',
