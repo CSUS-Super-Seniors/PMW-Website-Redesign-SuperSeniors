@@ -11,7 +11,9 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
   const value: AuthContextValue = {
     session: null,
     loading: false,
+    signOutFailed: false,
     signIn: () => Promise.resolve('wrong-credentials'),
+    signOut: () => Promise.resolve('success'),
     ...auth,
   };
 
@@ -53,6 +55,19 @@ describe('App', () => {
     renderApp('/portal/dashboard');
 
     expect(screen.getByRole('heading', { name: 'Staff login' })).toBeInTheDocument();
+  });
+
+  it('renders the contact page inside the public layout without signing in', () => {
+    renderApp('/contact');
+
+    expect(screen.getByRole('heading', { name: 'Get in touch' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tap to call' })).toHaveAttribute(
+      'href',
+      'tel:+19166435686',
+    );
+    expect(screen.queryByText('This page is not built yet')).not.toBeInTheDocument();
   });
 
   it('lets a signed-in user open a portal URL', () => {
