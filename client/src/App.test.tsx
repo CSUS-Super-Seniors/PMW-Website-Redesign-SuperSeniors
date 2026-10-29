@@ -41,6 +41,19 @@ describe('App', () => {
     expect(screen.getByRole('heading', { name: 'Staff login' })).toBeInTheDocument();
   });
 
+  it('renders the contact page inside the public layout without signing in', () => {
+    renderApp('/contact');
+
+    expect(screen.getByRole('heading', { name: 'Get in touch' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Tap to call' })).toHaveAttribute(
+      'href',
+      'tel:+19166435686',
+    );
+    expect(screen.queryByText('This page is not built yet')).not.toBeInTheDocument();
+  });
+
   it('lets a signed-in user open a portal URL', () => {
     renderApp('/portal/dashboard', { session });
 
