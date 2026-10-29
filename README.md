@@ -85,6 +85,81 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
+## Contact messages (SSPMW-268 / SSPMW-278 / SSPMW-280)
+
+Public `POST /api/contact-messsages` accepts JSON with `name`, `message`, and at least one
+of `phone` or `email`. Both contact methods may be supplied; every supplied
+nonblank method must be valid. Unknown fields are refused. Text is trimmed;
+empty, missing, or null optional contact fields are stored as SQL `null`.
+Limits are 100 characters for name, 32 for phone, 254 for email, and 5000 for
+message. Phone accepts the same US formats as the Step 1 form. The shared
+schema and error mapper are exported from `@pmw/validation`.
+
+The server saves to `contact_messages`, letting the database assign `id` and
+`created_at`, then sends the plain-text **New contact message** notification
+(N6) through Resend to the configured owners. It uses the verified sender
+address, with the visitor's email as Reply-To when provided. No visitor email
+is used as From, and no message text is interpreted as HTML.
+
+| Response                                             | Meaning                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| `201`, `{ "success": true }`                         | Saved and accepted by Resend for sending                          |
+| `400`, `success: false`, `fieldErrors`, `formErrors` | Validation failed; nothing saved or emailed                       |
+| `503`, `success: false`                              | Email is not configured or saving failed; no email attempted      |
+| `502`, `success: false`                              | Saved, but the email send failed or timed out; keep the saved row |
+| `400` / `413`, `error`                               | Malformed JSON / request larger than 32 KiB                       |
+
+The Contact page should use the success state only on HTTP 201 and show its
+Send failed state on a non-2xx response or network failure. This snapshot of
+`main` does not yet include the C4 Contact page, so its end-to-end check must
+be done when that page is available. A new POST creates a new row; client
+retries are not deduplicated. Resend receives an idempotency key per saved
+message, so retrying a notification for that same row does not duplicate
+emails within Resend's retention window. An accepted send is not a delivery
+receipt; verify the test message reaches both owners' inboxes.
+
+Set these **server-only** values in `server/.env` (and in the deployed API's
+runtime environment), then restart the server:
+
+| Variable               | Value                                               |
+| ---------------------- | --------------------------------------------------- |
+| `RESEND_API_KEY`       | Resend key with permission to send email            |
+| `RESEND_FROM_EMAIL`    | Bare sender email on a domain verified in Resend    |
+| `CONTACT_OWNER_EMAILS` | Comma-separated email addresses for Todd and Girlie |
+
+Set all three together. If all are blank, the contact route returns 503
+without saving and the rest of the API remains available. Partial or invalid
+configuration fails startup with an environment-variable error. Owner
+addresses and keys are never returned to visitors or committed to source.
+The implementation uses Node's built-in fetch against Resend's REST API;
+no new npm dependencies are required.
+
+Apply the new migration locally with `npm run db:migrate`. It permits direct
+SELECT only for active owners; anonymous visitors cannot read the table, and
+employees, inactive owners, and visitors without staff profiles see no rows.
+Browser inserts are denied: public submissions go through the Express route
+and its server-only service-role client. This feature does not add an owner
+inbox API or screen.
+
+Run `npm test` for the shared-schema, route, adapter, and existing tests. With
+Docker Desktop and local Supabase running, also run
+`npx supabase test db` for the database permission tests in
+`supabase/tests/contact_messages.test.sql`. Those tests use temporary fixture
+users and roll back their data. The current CI workflow runs the mocked
+route/email tests; the database permission test is a separate local check.
+
+For a real email check, start the configured API and submit a test message:
+
+```bash
+curl -i http://localhost:3001/api/contact-messages \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Contact API test","email":"your-test-address@example.com","message":"Please confirm both owners received this test message."}'
+```
+
+Use a test email address you control. Confirm HTTP 201, the saved row's
+timestamp, and receipt by both owners. Resend's test sender may restrict
+recipients; use the team's verified domain for the owner-inbox check.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
