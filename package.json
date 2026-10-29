@@ -6,6 +6,7 @@
     "node": "22.x"
   },
   "workspaces": [
+    "shared",
     "client",
     "server"
   ],

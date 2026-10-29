@@ -1,0 +1,17 @@
+{
+  "name": "review-council",
+  "description": "Six-specialist code review orchestrator (correctness, security, policy/trust-boundary, test-evidence, architecture, interface) for a working tree or pull request diff",
+  "version": "0.2.4",
+  "author": {
+    "name": "Vandal337",
+    "url": "https://github.com/Vandal337"
+  },
+  "homepage": "https://github.com/Vandal337/claude-code-review-council",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "security-review",
+    "multi-agent",
+    "pull-request"
+  ]
+}

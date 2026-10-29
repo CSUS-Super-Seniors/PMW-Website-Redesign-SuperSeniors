@@ -8,6 +8,7 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 
 - `client/`: React + Vite + TypeScript + React Router + Tailwind CSS
 - `server/`: Node.js + Express + TypeScript (all routes under `/api`)
+- `shared/`: browser-compatible `@pmw/validation` workspace (Zod schemas and form configuration)
 - Tests: Vitest (unit). Playwright is added later (SSPMW-232).
 - CI: GitHub Actions runs lint, format check, type check, and tests on every PR to `main`.
 
@@ -71,6 +72,19 @@ Copy `client/.env.example` to `client/.env`. Only variables that start with `VIT
 | `VITE_SUPABASE_URL`             | Supabase API URL. Locally, use the URL from `npx supabase status`         |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. Locally, use the one from `npx supabase status` |
 
+## Estimate request Step 1 validation (SSPMW-297)
+
+`@pmw/validation` provides the shared Step 1 schema, issue options, TypeScript types, and error
+mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
+
+- Public `POST /api/estimates/validate-step-1` accepts JSON without login and validates without
+  saving an inquiry. Valid input returns HTTP 200 with `{ "valid": true }`; invalid schema input
+  returns HTTP 400 with `valid: false`, `fieldErrors`, and `formErrors`.
+- Client and server `dev`, `build`, `typecheck`, and `test` commands compile the shared package
+  automatically.
+- After editing shared code while a dev server is running, run
+  `npm run build -w @pmw/validation` and restart that dev server.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
@@ -107,6 +121,14 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 - Text styles: one class per Figma text style, for example `type-h1`, `type-body-lg`, `type-button`, `type-overline`. Use `type-body-lg` for paragraphs on public pages.
 - Spacing: Tailwind's normal scale (4px steps) matches Figma, so `p-3` is 12px and `px-20` is 80px.
 - Never hard-code hex values or arbitrary colors like `bg-[#123456]`. A test fails the build if you do.
+
+## Contact form preview
+
+In `client/.env`, set `VITE_CONTACT_FORM_STUB=success` or
+`VITE_CONTACT_FORM_STUB=failure` and restart `npm run dev:client`.
+These development-only previews simulate the sending and result states without
+saving or emailing messages. Leave the value empty to use the API.
+Production builds always use the API, even if a stub is configured.
 
 ## Workflow
 
