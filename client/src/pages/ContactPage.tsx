@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { sendContactMessage, type ContactMessage } from '../api/contact';
 import { Button, ErrorBanner, Input, Textarea } from '../components/ui';
 import { business } from '../config/site';
@@ -31,7 +31,18 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
   const [state, setState] = useState<SendState>('idle');
   const pending = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusNameAfterReset = useRef(false);
   const sending = state === 'sending';
+
+  useEffect(() => {
+    if (state === 'sent') {
+      successHeadingRef.current?.focus();
+    } else if (state === 'idle' && focusNameAfterReset.current) {
+      focusNameAfterReset.current = false;
+      formRef.current?.querySelector<HTMLInputElement>('[name="name"]')?.focus();
+    }
+  }, [state]);
 
   function updateField(field: keyof Fields, value: string) {
     setFields((previous) => ({ ...previous, [field]: value }));
@@ -123,7 +134,7 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
           </div>
           <div className="rounded-xl bg-white p-7">
             <h2 className="type-body font-semibold text-walnut">Hours</h2>
-            <p className="type-body-lg mt-2">Monday to Saturday, 8 am to 5 pm</p>
+            <p className="type-body-lg mt-2">{business.hours}</p>
           </div>
         </section>
 
@@ -137,7 +148,13 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
           <div role="status" aria-live="polite" aria-atomic="true">
             {state === 'sent' && (
               <div className="type-body mt-6 rounded-lg border border-success bg-success-light p-4">
-                <p className="font-semibold">Message sent.</p>
+                <h3
+                  ref={successHeadingRef}
+                  tabIndex={-1}
+                  className="font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-success"
+                >
+                  Message sent.
+                </h3>
                 <p className="mt-2">
                   Thank you for getting in touch. We will reply using the contact details you
                   provided.
@@ -149,6 +166,7 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
             <Button
               className="mt-6 w-full md:w-fit"
               onClick={() => {
+                focusNameAfterReset.current = true;
                 setFields(emptyFields);
                 setErrors({});
                 setState('idle');

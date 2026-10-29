@@ -34,7 +34,7 @@ describe('ContactPage', () => {
       business.phoneHref,
     );
     expect(screen.getByText('Carmichael, CA')).toBeInTheDocument();
-    expect(screen.getByText('Monday to Saturday, 8 am to 5 pm')).toBeInTheDocument();
+    expect(screen.getByText(business.hours)).toBeInTheDocument();
     expect(screen.queryByText(/nearby cities/i)).not.toBeInTheDocument();
   });
 
@@ -189,5 +189,40 @@ describe('ContactPage', () => {
     expect(screen.getByText('Keep your message to 500 characters or fewer.')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText('Your message')).toHaveFocus());
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('does not move focus to the name field on the initial page load', () => {
+    renderPage();
+
+    expect(document.body).toHaveFocus();
+  });
+
+  it('keeps keyboard focus through sending, success, and starting another message', async () => {
+    renderPage();
+    const user = await fillForm();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    const successHeading = await screen.findByRole('heading', { name: 'Message sent.' });
+    await waitFor(() => expect(successHeading).toHaveFocus());
+    expect(successHeading).toHaveAttribute('tabindex', '-1');
+
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Send another message' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(screen.getByLabelText('Your name')).toHaveFocus());
+    for (const label of ['Your name', 'Phone number or email', 'Your message']) {
+      expect(screen.getByLabelText(label)).toHaveValue('');
+    }
+    expect(screen.queryByRole('heading', { name: 'Message sent.' })).not.toBeInTheDocument();
+
+    await user.tab();
+    expect(screen.getByLabelText('Phone number or email')).toHaveFocus();
+    await user.tab();
+    expect(screen.getByLabelText('Your message')).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Send message' })).toHaveFocus();
   });
 });
