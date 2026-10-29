@@ -1,0 +1,14 @@
+{
+  "name": "pmw-review-plugins",
+  "owner": { "name": "Super Seniors" },
+  "metadata": {
+    "description": "Pinned copies of the five review plugins used by the AI Code Review workflow. Each keeps its original LICENSE."
+  },
+  "plugins": [
+    { "name": "code-review", "source": "./code-review", "description": "Anthropic code-review plugin v1.0.1" },
+    { "name": "code-review-harness", "source": "./code-review-harness", "description": "naokami3/ai_dotfiles code-review-harness v1.0.0" },
+    { "name": "review-council", "source": "./review-council", "description": "Vandal337 review-council v0.2.4" },
+    { "name": "finecomb", "source": "./finecomb", "description": "lian-yue/finecomb v0.1.4" },
+    { "name": "pr-story-aligner", "source": "./pr-story-aligner", "description": "petrovicistefan pr-story-aligner v1.3.2" }
+  ]
+}
