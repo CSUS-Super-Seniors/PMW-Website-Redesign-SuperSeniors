@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -33,6 +33,22 @@ describe('App', () => {
     expect(
       screen.getByRole('heading', { name: 'Peterson Mobile Woodworking' }),
     ).toBeInTheDocument();
+  });
+
+  it('shows the Services page inside the public layout', () => {
+    renderApp('/services');
+
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Furniture repair, refinishing, and restoration',
+      }),
+    ).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    expect(within(nav).getByRole('link', { name: 'Services' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
   });
 
   it('sends a signed-out visitor from a portal URL to staff login', () => {

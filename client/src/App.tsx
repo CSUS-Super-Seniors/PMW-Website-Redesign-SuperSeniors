@@ -6,6 +6,7 @@ import { routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 
 function Home() {
@@ -31,6 +32,7 @@ export default function App() {
       </Route>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
+        <Route path={routes.services} element={<ServicesPage />} />
         <Route path={routes.contact} element={<ContactPage />} />
         {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
         <Route path="*" element={<PlaceholderPage />} />
