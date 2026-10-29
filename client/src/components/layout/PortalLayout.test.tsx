@@ -81,7 +81,7 @@ describe('PortalLayout', () => {
     ).toBeInTheDocument();
   });
 
-  it('goes to the expired screen and signs out when the warning runs out', () => {
+  it('goes to the expired screen and signs out when the warning runs out', async () => {
     vi.useFakeTimers();
     const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('success'));
     renderAt('/portal/dashboard', signOut);
@@ -90,11 +90,31 @@ describe('PortalLayout', () => {
       vi.advanceTimersByTime(15 * 60 * 1000);
     });
 
-    act(() => {
+    await act(async () => {
       vi.advanceTimersByTime(2 * 60 * 1000);
     });
 
     expect(screen.getByText('Session expired page')).toBeInTheDocument();
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows an error and stays on the page when sign-out fails', async () => {
+    vi.useFakeTimers();
+    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('failed'));
+    renderAt('/portal/dashboard', signOut);
+
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+
+    expect(
+      screen.getByText('We could not sign you out. Check your connection and try again.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Session expired page')).not.toBeInTheDocument();
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 });

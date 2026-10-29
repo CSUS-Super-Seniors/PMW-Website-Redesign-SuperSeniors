@@ -12,10 +12,16 @@ import PortalBottomNav from './PortalBottomNav';
 export default function PortalLayout() {
   const { session, signOut } = useAuth();
   const navigate = useNavigate();
+  const [timeoutSignOutFailed, setTimeoutSignOutFailed] = useState(false);
 
   async function handleTimeout() {
-    navigate(routes.staffSessionExpired);
-    await signOut();
+    setTimeoutSignOutFailed(false);
+    const result = await signOut();
+    if (result === 'success') {
+      navigate(routes.staffSessionExpired, { replace: true });
+    } else {
+      setTimeoutSignOutFailed(true);
+    }
   }
 
   const { isIdle, stayLoggedIn } = useIdleTimeout(
@@ -62,6 +68,11 @@ export default function PortalLayout() {
         isOpen={isIdle}
         onStaySignedIn={stayLoggedIn}
         warningMinutes={idleTimeout.idleWarningDurationMinutes}
+        error={
+          timeoutSignOutFailed
+            ? 'We could not sign you out. Check your connection and try again.'
+            : undefined
+        }
       />
       <ConfirmationDialog
         isOpen={confirmLogout}
