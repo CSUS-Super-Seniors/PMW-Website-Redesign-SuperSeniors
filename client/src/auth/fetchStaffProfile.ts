@@ -5,7 +5,7 @@ export type StaffProfileResult =
 
 export async function fetchStaffProfile(accessToken: string): Promise<StaffProfileResult> {
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/me`, {
+    const response = await fetch('/api/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (response.status === 401 || response.status === 403) return { status: 'no-access' };

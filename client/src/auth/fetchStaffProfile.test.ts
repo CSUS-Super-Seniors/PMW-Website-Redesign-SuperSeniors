@@ -3,12 +3,10 @@ import { fetchStaffProfile } from './fetchStaffProfile';
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
 });
 
 describe('fetchStaffProfile', () => {
   it('returns the role when the server answers ok', async () => {
-    vi.stubEnv('VITE_API_URL', 'http://api.test');
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -19,7 +17,7 @@ describe('fetchStaffProfile', () => {
     const result = await fetchStaffProfile('token-123');
 
     expect(result).toEqual({ status: 'ok', role: 'owner' });
-    expect(fakeFetch).toHaveBeenCalledWith('http://api.test/api/me', {
+    expect(fakeFetch).toHaveBeenCalledWith('/api/me', {
       headers: { Authorization: 'Bearer token-123' },
     });
   });

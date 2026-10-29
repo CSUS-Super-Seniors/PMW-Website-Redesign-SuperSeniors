@@ -12,11 +12,9 @@ const session = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
 });
 
 function fakeServerRole(role: string) {
-  vi.stubEnv('VITE_API_URL', 'http://api.test');
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
