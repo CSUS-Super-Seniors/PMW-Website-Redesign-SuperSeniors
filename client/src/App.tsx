@@ -6,6 +6,7 @@ import { routes } from './config/site';
 import DesignTokensPage from './pages/DesignTokensPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
+import NotFoundPage from './pages/NotFoundPage';
 
 function Home() {
   return (
@@ -30,8 +31,25 @@ export default function App() {
       </Route>
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
-        {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
-        <Route path="*" element={<PlaceholderPage />} />
+
+        {/* Planned public pages that are not implemented yet. */}
+        {[
+          routes.services,
+          routes.gallery,
+          routes.serviceArea,
+          routes.testimonials,
+          routes.about,
+          routes.contact,
+          routes.requestEstimate,
+          routes.privacy,
+          routes.terms,
+          routes.staffForgotPassword,
+        ].map((path) => (
+          <Route key={path} path={path} element={<PlaceholderPage />} />
+        ))}
+
+        {/* Unknown URLs display the helpful 404 page. */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
       {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
     </Routes>
