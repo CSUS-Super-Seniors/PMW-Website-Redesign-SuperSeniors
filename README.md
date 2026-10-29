@@ -118,52 +118,105 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 3. Push the branch and open a pull request into `main`. Fill in the PR template.
 4. CI must pass and one teammate must approve before merging. Direct pushes to `main` are blocked.
 
-## Deploying (DigitalOcean App Platform)
+## Deploying (Vercel)
 
-The deployment configuration is defined in `.do/app.yaml`.
+The application is hosted on Vercel using one project:
 
-The application has two components:
+- `client/`: React and Vite frontend, built into `client/dist`.
+- `api/index.ts`: Vercel serverless entry point for Express.
+- `server/`: Existing Express application and API routes.
+- `shared/`: Shared validation package.
+- `vercel.json`: Build configuration, API rewrites, and SPA routing.
 
-- `api`: Express backend, listening on port 8080, serving `/api/*`.
-- `web`: React/Vite static site, serving `/` with `index.html` as the fallback for client-side routes.
+### Requirements
 
-Both components deploy from the `main` branch after changes are merged.
+- Node.js 22.x
+- Vercel account and CLI
+- Hosted Supabase project with authorized credentials
 
-### Before deploying
+### Environment variables
 
-1. Confirm the DigitalOcean account has the required billing or promotional credits.
-2. Connect the `CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors` GitHub repository.
-3. In DigitalOcean App Platform, select **Create App** and load `.do/app.yaml`.
-4. On the create-app environment variables screen, enter the Supabase values **before starting the first deployment**:
-   - **API service (runtime):**
-     - `SUPABASE_URL`: Supabase project URL.
-     - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (secret).
-   - **Web static site (build time):**
-     - `VITE_SUPABASE_URL`: Supabase project URL.
-     - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
-5. Confirm the environment variables and estimated cost before creating the app.
+Configure the following in the Vercel project settings:
 
-Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
+| Variable                        | Purpose                         |
+| ------------------------------- | ------------------------------- |
+| `SUPABASE_URL`                  | Hosted Supabase project URL     |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server-only secret for Supabase |
+| `CLIENT_ORIGINS`                | Allowed frontend origins        |
+| `VITE_SUPABASE_URL`             | Public Supabase URL for React   |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public Supabase publishable key |
 
-The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_URL}`. Never commit real secret keys.
+Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `VITE_` variable or commit it to Git.
 
-### After deploying
+The serverless API automatically adds the current deployment's `VERCEL_URL` to its allowed origins. Enable Vercel system environment variables for this behavior.
 
-1. Wait for both components to finish deploying.
-2. Visit `https://<app-domain>/api/health` and confirm it returns `{"status":"ok"}`.
-3. Open the website and verify that its pages load.
-4. Test authentication with the configured Supabase project.
-5. Check deployment logs if any checks fail.
+For additional custom domains, configure their exact origins in `CLIENT_ORIGINS`.
 
-### Local verification
+Preview and Production environment variables must be configured separately.
+
+### Initial setup
 
 From the repository root:
 
 ```bash
+npx vercel login
+npx vercel link
+```
+
+Select the repository root (`./`) as the code directory.
+
+Git integration may require approval from the GitHub organization administrator.
+
+### Local verification
+
+```bash
 npm ci
-npm run build -w server
 npm run build -w client
+npm run build -w server
+npm run lint
+npm run typecheck
 npm test
 ```
 
-To verify the API locally, configure the required environment variables, start the backend with `PORT=8080`, and request `http://localhost:8080/api/health`.
+### Preview deployment
+
+Run:
+
+```bash
+npx vercel deploy
+```
+
+Note: Vercel may assign a new project's first deployment to Production. Later deployments without `--prod` use Preview.
+
+After deployment, verify these URLs using the generated Preview deployment address:
+
+- `/` — React homepage
+- `/staff/login` — React Router fallback
+- `/api/health` — Express health endpoint
+
+For deployments protected by Vercel Authentication:
+
+```bash
+npx vercel curl /api/health --deployment <deployment-url> -i
+npx vercel curl /staff/login --deployment <deployment-url> -i
+```
+
+Expected API health response:
+
+```json
+{ "status": "ok" }
+```
+
+Confirm the website's JavaScript and CSS assets load successfully.
+
+### Production deployment
+
+Production deployment requires the correct Production environment variables, authorized deployment access, and successful testing.
+
+When approved:
+
+```bash
+npx vercel deploy --prod
+```
+
+Do not remove or shut down the existing DigitalOcean application until the team approves the migration and verifies the replacement deployment.
