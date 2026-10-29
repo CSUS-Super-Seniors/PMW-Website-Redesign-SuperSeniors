@@ -1,0 +1,174 @@
+name: AI Code Review
+
+# Runs a first-pass review on every pull request using the same five review
+# skills Dimitry uses locally. Comments are posted by claude[bot], not a person.
+# The assigned teammate is still the real reviewer and the one who approves.
+#
+# Runs when a PR is opened, reopened, or marked ready for review.
+# To re-run after pushing fixes, add the "ai-review" label to the PR
+# (the label is removed automatically when the review finishes).
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled]
+
+jobs:
+  review:
+    # Skip drafts, PRs from forks (they can't use secrets), and label events
+    # for any label other than "ai-review".
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'labeled' || github.event.label.name == 'ai-review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Job-level so an unrelated label event (skipped job) can't cancel a review
+    # that is already running.
+    concurrency:
+      group: ai-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Gives the harness review a real local database so it can run the app.
+      # Local throwaway keys only. No hosted Supabase project is touched.
+      - name: Start local Supabase and write .env files
+        continue-on-error: true
+        run: |
+          npm run db:start
+          eval "$(npx supabase status -o env)"
+          PUB_KEY="${PUBLISHABLE_KEY:-$ANON_KEY}"
+          SVC_KEY="${SERVICE_ROLE_KEY:-$SECRET_KEY}"
+          cat > server/.env <<EOF
+          PORT=3001
+          NODE_ENV=development
+          CLIENT_ORIGINS=http://localhost:5173
+          SUPABASE_URL=$API_URL
+          SUPABASE_PUBLISHABLE_KEY=$PUB_KEY
+          SUPABASE_SERVICE_ROLE_KEY=$SVC_KEY
+          EOF
+          cat > client/.env <<EOF
+          VITE_SUPABASE_URL=$API_URL
+          VITE_SUPABASE_PUBLISHABLE_KEY=$PUB_KEY
+          EOF
+
+      # pr-story-aligner needs the Jira ticket. The key (SSPMW-123) is taken from
+      # the branch name, PR title, or the Jira section of the PR description.
+      - name: Fetch Jira ticket
+        continue-on-error: true
+        env:
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          BRANCH: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          mkdir -p .ai-review/jira
+          KEY=$(printf '%s\n%s\n%s\n' "$BRANCH" "$PR_TITLE" "$PR_BODY" | grep -oE 'SSPMW-[0-9]+' | head -n 1 || true)
+          if [ -z "$KEY" ]; then
+            echo "No SSPMW key found in branch, title, or description." > .ai-review/jira/none.txt
+            exit 0
+          fi
+          JIRA="https://csus-super-seniors.atlassian.net/rest/api/3/issue"
+          FIELDS="fields=summary,description,status,issuetype,parent,subtasks"
+          if ! curl -sSf -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA/$KEY?$FIELDS" -o .ai-review/jira/ticket.json; then
+            echo "Could not fetch $KEY from Jira (check the JIRA_EMAIL and JIRA_API_TOKEN secrets)." > .ai-review/jira/error.txt
+            exit 0
+          fi
+          PARENT=$(jq -r '.fields.parent.key // empty' .ai-review/jira/ticket.json)
+          if [ -n "$PARENT" ]; then
+            curl -sSf -u "$JIRA_EMAIL:$JIRA_API_TOKEN" "$JIRA/$PARENT?$FIELDS" -o .ai-review/jira/parent.json
+          fi
+
+      - name: Run the five review skills
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Pinned copies of the five plugins live in .claude/review-plugins.
+          # The action restores .claude/ from main on every run, so a PR can't
+          # change the reviewers. Update them by PR to main.
+          plugin_marketplaces: ./.claude/review-plugins
+          plugins: |
+            code-review@pmw-review-plugins
+            code-review-harness@pmw-review-plugins
+            review-council@pmw-review-plugins
+            finecomb@pmw-review-plugins
+            pr-story-aligner@pmw-review-plugins
+          claude_args: |
+            --model claude-sonnet-5-5
+            --max-turns 200
+            --allowedTools "Skill,Agent,Task,Read,Glob,Grep,Bash,mcp__github_inline_comment__create_inline_comment"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            You are the team's automated first-pass code reviewer for this pull request.
+            A teammate is still the assigned human reviewer. Your job is to catch real
+            problems before they review it. Do not post anything to GitHub until step 7.
+
+            1. Harness review FIRST, before you read the diff or anything else: use the
+               Skill tool to run code-review-harness:harness-review. Dependencies are
+               installed. A local Supabase stack may be running (check `npx supabase status`);
+               when it is, server/.env and client/.env already point at it. Focus on the
+               behavior this PR changes. Only use the local stack, never a hosted service.
+            2. Run code-review:code-review for this PR WITHOUT --comment. Ignore its
+               "Claude has already commented" skip check; a re-review was requested on purpose.
+            3. Run review-council:review-council with the arguments: pr <PR NUMBER>
+               (do not use --post-comment). If it refuses because the PR changes
+               CLAUDE.md or workflow files, note that in the summary and continue.
+            4. Run finecomb:finecomb on the files this PR changes
+               (`gh pr diff <PR NUMBER> --name-only`).
+            5. Run pr-story-aligner:pr-story-aligner for this PR. The Jira ticket is saved
+               in .ai-review/jira/ (ticket.json, plus parent.json when the ticket is a
+               subtask). Use those files as the ticket text instead of a Jira connector.
+               If .ai-review/jira/none.txt exists, report that no SSPMW key was found and
+               the PR should name it in the branch or the Jira section of the description.
+               If .ai-review/jira/error.txt exists, report its message instead.
+            6. Combine the results. Merge duplicates. Drop anything you cannot point to in
+               the changed code, and drop style nitpicks that lint and Prettier already
+               enforce. Keep real problems: bugs, security issues, acceptance criteria that
+               are partial or missing, missing tests for changed behavior, and unchecked
+               items from the PR template.
+            7. Post the review:
+               - One inline comment per confirmed issue using
+                 mcp__github_inline_comment__create_inline_comment with confirmed: true,
+                 on the exact line, saying what is wrong and how to fix it.
+               - One summary comment using `gh pr comment <PR NUMBER> --body-file <file>`:
+
+                 ## Automated review
+                 **Verdict:** Ready for human review | Needs changes before human review
+                 ### Acceptance criteria (SSPMW-xxx)
+                 Table: criterion | done / partial / missing
+                 ### Issues found
+                 Numbered list: severity, file:line, one sentence each
+                 ### What was run
+                 Table: lint, format check, typecheck, tests, build, app start, and each
+                 behavior the harness tested, with pass / fail
+
+               Write in plain, direct language. Do not approve or request changes;
+               the human reviewer makes that call.
+
+      - name: Remove ai-review label
+        if: always() && contains(github.event.pull_request.labels.*.name, 'ai-review')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label ai-review
