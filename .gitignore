@@ -28,3 +28,6 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+
+# AI review bot scratch files (Jira ticket cache)
+.ai-review/

@@ -1,0 +1,17 @@
+{
+  "description": "Blocks Review Council specialist dispatch when governance files (CLAUDE.md, AGENTS.md, etc.) in the current checkout differ from the repository's trusted default branch — independent, deterministic backstop for the behavioral check in SKILL.md step 2. See skills/review-council/TRUST_MODEL.md.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/checkout-guard.js"]
+          }
+        ]
+      }
+    ]
+  }
+}
