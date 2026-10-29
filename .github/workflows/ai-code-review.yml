@@ -4,13 +4,13 @@ name: AI Code Review
 # skills Dimitry uses locally. Comments are posted by claude[bot], not a person.
 # The assigned teammate is still the real reviewer and the one who approves.
 #
-# Runs when a PR is opened, reopened, or marked ready for review.
+# Runs when a PR is opened or marked ready for review.
 # To re-run after pushing fixes, add the "ai-review" label to the PR
 # (the label is removed automatically when the review finishes).
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, labeled]
+    types: [opened, ready_for_review, labeled]
 
 jobs:
   review:
