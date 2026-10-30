@@ -85,6 +85,26 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
+## Contact messages (SSPMW-268 / SSPMW-364)
+
+Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),
+and at least one of `phone` or `email`. The Contact page and API share the email,
+phone, and message-length rules. Valid US phones are stored as `+1` followed by
+10 digits; empty optional contact fields become SQL `null`.
+
+Set `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (a verified bare sender address), and
+`CONTACT_OWNER_EMAILS` (comma-separated owner addresses) in `server/.env` and the
+deployed API environment. Set all three together and restart the API. Empty
+recipient entries are ignored; at least one valid address is required. If all
+three settings are blank, the contact route is unavailable and other routes run.
+
+HTTP 201 means the message was saved with its creation time. The server then
+attempts the plain-text N6 owner notification; failed notifications are logged
+with the saved message ID and still return 201, so the page shows receipt instead
+of prompting duplicate submissions. Validation failures return 400 with inline
+field errors; configuration or save failures return 503. Notification acceptance
+does not prove inbox delivery. N9 branding will be adopted when available.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
@@ -110,6 +130,14 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 - Text styles: one class per Figma text style, for example `type-h1`, `type-body-lg`, `type-button`, `type-overline`. Use `type-body-lg` for paragraphs on public pages.
 - Spacing: Tailwind's normal scale (4px steps) matches Figma, so `p-3` is 12px and `px-20` is 80px.
 - Never hard-code hex values or arbitrary colors like `bg-[#123456]`. A test fails the build if you do.
+
+## Contact form preview
+
+In `client/.env`, set `VITE_CONTACT_FORM_STUB=success` or
+`VITE_CONTACT_FORM_STUB=failure` and restart `npm run dev:client`.
+These development-only previews simulate the sending and result states without
+saving or emailing messages. Leave the value empty to use the API.
+Production builds always use the API, even if a stub is configured.
 
 ## Workflow
 
