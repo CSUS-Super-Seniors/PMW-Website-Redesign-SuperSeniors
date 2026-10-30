@@ -26,7 +26,8 @@
     "db:reset": "supabase db reset --local",
     "test:e2e": "playwright test",
     "db:test": "supabase test db",
-    "verify:storage": "npm run verify:storage -w server"
+    "verify:storage": "npm run verify:storage -w server",
+    "verify:password-reset": "npm run verify:password-reset -w server"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -3,11 +3,14 @@ import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: ReactNode;
   error?: string;
+  /** Help text under the field. The error takes its place while there is one. */
+  hint?: string;
 }
 
 export function Input({
   label,
   error,
+  hint,
   id,
   className = '',
   disabled = false,
@@ -18,8 +21,12 @@ export function Input({
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const errorId = `${inputId}-error`;
+  const hintId = `${inputId}-hint`;
+  const showHint = Boolean(hint) && !error;
 
-  const describedBy = [ariaDescribedBy, error ? errorId : undefined].filter(Boolean).join(' ');
+  const describedBy = [ariaDescribedBy, error ? errorId : undefined, showHint ? hintId : undefined]
+    .filter(Boolean)
+    .join(' ');
 
   const inputClasses = [
     'type-body-lg min-h-12 w-full rounded-sm border bg-white px-4 py-3',
@@ -48,6 +55,12 @@ export function Input({
         aria-invalid={error ? true : ariaInvalid}
         aria-describedby={describedBy || undefined}
       />
+
+      {showHint && (
+        <p id={hintId} className="type-body-sm text-neutral-600">
+          {hint}
+        </p>
+      )}
 
       {error && (
         <p id={errorId} className="type-body-sm text-error" role="alert">

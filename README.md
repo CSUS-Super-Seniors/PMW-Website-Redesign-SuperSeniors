@@ -111,7 +111,18 @@ The schema lives in `supabase/migrations` and is only changed through migration 
 
 ### Local Supabase values for `server/.env`
 
-After `npm run db:start`, run `npx supabase status`. It prints the local API URL (`http://127.0.0.1:54321`) and both keys. Copy them into `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. Local Auth redirects go to `http://localhost:5173`, the client dev server.
+After `npm run db:start`, run `npx supabase status`. It prints the local API URL (`http://127.0.0.1:54321`) and both keys. Copy them into `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. Local Auth redirects go to `http://localhost:5173`, the client dev server, and password reset links open `/staff/reset-password`.
+
+### Supabase Auth settings
+
+Local Auth settings come from `supabase/config.toml`. After changing that file, run `npm run db:stop` and `npm run db:start` so local Supabase picks it up. Set the same values in each hosted Supabase project (dev, staging, production) under **Authentication** in the dashboard:
+
+- **URL Configuration:** the Site URL is that environment's website address, and **Redirect URLs** includes `<site address>/staff/reset-password`, so the password reset email opens the Reset password page.
+- **Sign In / Providers > Email:** minimum password length of 8, to match the Reset password page, and email OTP expiration of 3600 seconds, because the pages say reset links work for 1 hour.
+- **Emails > SMTP Settings:** send through Resend (SSPMW-354). The built-in sender only allows 2 emails per hour. When the hourly email limit is used up, Forgot password still shows "Check your email" (so it never reveals who has an account), but no email goes out.
+- **Emails > Templates > Reset Password:** keep the link as `{{ .ConfirmationURL }}`. The Reset password page reads the sign-in from that link.
+
+Locally, Auth emails such as password resets never leave your computer. Open http://127.0.0.1:54324 to read them. `npm run verify:password-reset` checks the whole reset flow against local Supabase: the email arrives, its link opens `/staff/reset-password`, the new password signs in, the old one stops working, and a used link shows as expired. It uses the `server/.env` values.
 
 ### Making schema changes
 
@@ -170,6 +181,7 @@ Both components deploy from the `main` branch after changes are merged.
      - `VITE_SUPABASE_URL`: Supabase project URL.
      - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
 5. Confirm the environment variables and estimated cost before creating the app.
+6. Set the hosted Supabase project's Auth settings listed in [Supabase Auth settings](#supabase-auth-settings).
 
 Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
 
@@ -180,7 +192,7 @@ The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_
 1. Wait for both components to finish deploying.
 2. Visit `https://<app-domain>/api/health` and confirm it returns `{"status":"ok"}`.
 3. Open the website and verify that its pages load.
-4. Test authentication with the configured Supabase project.
+4. Test authentication with the configured Supabase project, including a password reset: the email should open `/staff/reset-password`.
 5. Check deployment logs if any checks fail.
 
 ### Local verification

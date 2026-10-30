@@ -13,7 +13,8 @@
     "start": "node dist/index.js",
     "pretest": "npm run build -w @pmw/validation",
     "test": "vitest run",
-    "verify:storage": "tsx scripts/verify-storage.ts"
+    "verify:storage": "tsx scripts/verify-storage.ts",
+    "verify:password-reset": "tsx scripts/verify-password-reset.ts"
   },
   "dependencies": {
     "@pmw/validation": "0.1.0",

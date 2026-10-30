@@ -5,8 +5,10 @@ import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
+import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 
@@ -25,6 +27,8 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route path={routes.staffForgotPassword} element={<ForgotPasswordRoute />} />
+      <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route path="*" element={<PlaceholderPage />} />
@@ -47,7 +51,6 @@ export default function App() {
           routes.requestEstimate,
           routes.privacy,
           routes.terms,
-          routes.staffForgotPassword,
         ].map((path) => (
           <Route key={path} path={path} element={<PlaceholderPage />} />
         ))}
