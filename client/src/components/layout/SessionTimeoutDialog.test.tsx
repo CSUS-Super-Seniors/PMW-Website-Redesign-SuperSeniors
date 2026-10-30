@@ -8,7 +8,7 @@ describe('SessionTimeoutDialog', () => {
     render(<SessionTimeoutDialog isOpen onStaySignedIn={vi.fn()} warningMinutes={2} />);
 
     expect(
-      screen.getByText('You will be signed out in 2 minutes due to inactivity.'),
+      screen.getByText('You will be signed out within 2 minutes due to inactivity.'),
     ).toBeInTheDocument();
   });
 

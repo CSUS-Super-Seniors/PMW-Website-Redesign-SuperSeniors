@@ -4,7 +4,6 @@ interface SessionTimeoutDialogProps {
   isOpen: boolean;
   onStaySignedIn: () => void;
   warningMinutes: number;
-  error?: string;
 }
 
 export function SessionTimeoutDialog({
@@ -16,7 +15,8 @@ export function SessionTimeoutDialog({
     <Modal isOpen={isOpen} onClose={onStaySignedIn} title="You're about to be signed out">
       <div className="flex flex-col gap-6">
         <p className="type-body text-dark-brown">
-          You will be signed out in {warningMinutes} minutes due to inactivity.
+          You will be signed out within {warningMinutes}{' '}
+          {warningMinutes === 1 ? 'minute' : 'minutes'} due to inactivity.
         </p>
         <Button onClick={onStaySignedIn}>Stay signed in</Button>
       </div>

@@ -73,7 +73,7 @@ describe('PortalLayout', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(15 * 60 * 1000);
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
     });
 
     expect(
@@ -99,7 +99,7 @@ describe('PortalLayout', () => {
     vi.useFakeTimers();
     renderAt('/portal/dashboard');
     act(() => {
-      vi.advanceTimersByTime(15 * 60 * 1000);
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));

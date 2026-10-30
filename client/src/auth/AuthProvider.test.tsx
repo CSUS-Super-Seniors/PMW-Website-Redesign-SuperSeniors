@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuth, type SignOutResult } from './AuthContext';
 import AuthProvider from './AuthProvider';
 import { AuthRetryableFetchError } from '@supabase/supabase-js';
+import { lastActivityKey } from './lastActivity';
 
 const mocks = vi.hoisted(() => ({
   getSupabase: vi.fn(),
@@ -291,5 +292,37 @@ describe('AuthProvider', () => {
       expect(await first).toBe('success');
       expect(await second).toBe('success');
     });
+  });
+
+  it('saves a fresh activity time when sign-in succeeds', async () => {
+    const user = userEvent.setup();
+    const old = String(Date.now() - 3 * 60 * 60 * 1000);
+    localStorage.setItem(lastActivityKey, old);
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.signInWithPassword.mockResolvedValue({ error: null });
+    renderProvider();
+    await screen.findByText('signed out');
+
+    await user.click(screen.getByRole('button', { name: 'sign in' }));
+    await screen.findByText('success');
+
+    const saved = Number(localStorage.getItem(lastActivityKey));
+    expect(saved).toBeGreaterThan(Number(old));
+    expect(Date.now() - saved).toBeLessThan(5000);
+  });
+
+  it('leaves the saved activity time alone when sign-in fails', async () => {
+    const user = userEvent.setup();
+    const old = String(Date.now() - 3 * 60 * 60 * 1000);
+    localStorage.setItem(lastActivityKey, old);
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.signInWithPassword.mockResolvedValue({ error: new Error('Invalid login credentials') });
+    renderProvider();
+    await screen.findByText('signed out');
+
+    await user.click(screen.getByRole('button', { name: 'sign in' }));
+    await screen.findByText('wrong-credentials');
+
+    expect(localStorage.getItem(lastActivityKey)).toBe(old);
   });
 });
