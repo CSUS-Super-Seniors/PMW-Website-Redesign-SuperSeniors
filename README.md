@@ -89,6 +89,26 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
+## Contact messages (SSPMW-268 / SSPMW-364)
+
+Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),
+and at least one of `phone` or `email`. The Contact page and API share the email,
+phone, and message-length rules. Valid US phones are stored as `+1` followed by
+10 digits; empty optional contact fields become SQL `null`.
+
+Set `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (a verified bare sender address), and
+`CONTACT_OWNER_EMAILS` (comma-separated owner addresses) in `server/.env` and the
+deployed API environment. Set all three together and restart the API. Empty
+recipient entries are ignored; at least one valid address is required. If all
+three settings are blank, the contact route is unavailable and other routes run.
+
+HTTP 201 means the message was saved with its creation time. The server then
+attempts the plain-text N6 owner notification; failed notifications are logged
+with the saved message ID and still return 201, so the page shows receipt instead
+of prompting duplicate submissions. Validation failures return 400 with inline
+field errors; configuration or save failures return 503. Notification acceptance
+does not prove inbox delivery. N9 branding will be adopted when available.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
@@ -217,3 +237,27 @@ npm test
 ```
 
 To verify the API locally, configure the required environment variables, start the backend with `PORT=8080`, and request `http://localhost:8080/api/health`.
+
+## Testing and CI (SSPMW-232)
+
+The client uses Vitest with jsdom and React Testing Library. The server uses Vitest
+with Supertest. Playwright runs a real Chromium browser against the local Vite
+web server, which Playwright starts automatically. The public homepage smoke test
+does not require a running Supabase database or Express API.
+
+From the repository root:
+
+```bash
+npm ci
+npm test                    # Both workspaces' Vitest suites
+npx playwright install chromium
+npm run test:e2e           # Playwright starts and stops Vite automatically
+```
+
+For debugging locally, run `npm run test:e2e -- --headed`.
+GitHub Actions runs the existing **Lint, format, and test** check and the new
+**Playwright smoke test** check on each PR to `main`.
+
+A repository admin must mark both job checks as required under the `main`
+branch protection rule (or repository ruleset) before a failing test can
+prevent merging. Use the exact check names above after an initial PR run.
