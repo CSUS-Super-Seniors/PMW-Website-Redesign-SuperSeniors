@@ -13,7 +13,7 @@ export default function RequireRole({ allowed }: RequireRoleProps) {
 
   if (state.status === 'loading') {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-neutral-50">
+      <div className="flex min-h-96 items-center justify-center bg-neutral-50">
         <p role="status" className="type-body text-neutral-600">
           Loading...
         </p>
