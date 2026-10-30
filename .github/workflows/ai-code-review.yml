@@ -4,13 +4,14 @@ name: AI Code Review
 # skills Dimitry uses locally. Comments are posted by claude[bot], not a person.
 # The assigned teammate is still the real reviewer and the one who approves.
 #
-# Runs when a PR is opened, reopened, or marked ready for review.
+# Runs when a PR is opened or marked ready for review.
 # To re-run after pushing fixes, add the "ai-review" label to the PR
 # (the label is removed automatically when the review finishes).
+# Every PR the bot reviews gets the "Reviewed-by-AI" label.
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, labeled]
+    types: [opened, ready_for_review, labeled]
 
 jobs:
   review:
@@ -100,6 +101,7 @@ jobs:
           fi
 
       - name: Run the five review skills
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -166,6 +168,17 @@ jobs:
 
                Write in plain, direct language. Do not approve or request changes;
                the human reviewer makes that call.
+
+      # Only when the review actually ran. The action reports no conclusion when
+      # it skips itself (for example, on a PR that changes this workflow file).
+      - name: Add Reviewed-by-AI label
+        if: steps.claude.outputs.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create "Reviewed-by-AI" --color 5319E7 --description "Automated first-pass review was posted" --force
+          gh pr edit "$PR_NUMBER" --add-label "Reviewed-by-AI"
 
       - name: Remove ai-review label
         if: always() && contains(github.event.pull_request.labels.*.name, 'ai-review')
