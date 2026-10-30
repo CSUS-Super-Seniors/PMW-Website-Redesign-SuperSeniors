@@ -49,6 +49,7 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 | `npm run db:migrate`             | Apply new migrations to the local database                                                          |
 | `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data |
 | `npm run db:seed`                | Load the Figma sample data into `SEED_DATABASE_URL` (local, dev or staging). Refuses production     |
+| `npm run test:seed`              | Rerun `supabase/seed.sql` against `SEED_TEST_DATABASE_URL` and check the result (CI runs it)        |
 | `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase         |
 
 ## Environment variables
@@ -66,6 +67,7 @@ Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 | `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
 | `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
 | `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
+| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
 
 ### Client (`client/.env`)
 
@@ -161,6 +163,8 @@ Every environment sets the same variables with its own values:
 - **Production:** never seeded. `npm run db:seed` refuses any Supabase project that is not in `SEED_ALLOWED_PROJECT_REFS`, refuses anything in `SEED_BLOCKED_PROJECT_REFS`, and refuses to run when `NODE_ENV` is `production`. The connection string may only add `?sslmode=`, so it can't point the seed somewhere other than what was checked. Don't run `seed.sql` by hand there, and don't use `supabase db push --include-seed`, `supabase db reset --linked` or `supabase db reset --db-url`, which also run it. Leave `PGOPTIONS` unset; the seed refuses to run with it.
 
 Seed a new dev or staging database before creating jobs or inquiries in the app, so J-1001 to J-1005 and INQ-1044 to INQ-1048 are still free. If they are taken, the seed stops without changing anything and says so. After seeding, new jobs and inquiries continue from the next number (J-1006, INQ-1049).
+
+`npm run test:seed` checks the rerun behavior above automatically. It runs the seed twice against `SEED_TEST_DATABASE_URL` (for local Supabase, `postgresql://postgres:postgres@127.0.0.1:54322/postgres`) and confirms there are no copies, edited sample rows go back to their sample values, rows made in the app are left alone, and new numbers start after the samples. It only runs against local Supabase (the same check as `npm run db:seed`), and everything it does (including restarting the number sequences) happens in one transaction that is rolled back, so the database is left as it was. CI runs it in the RLS job. If a migration changes a seeded table, update `seed.sql` and run this test.
 
 ## Design tokens
 
