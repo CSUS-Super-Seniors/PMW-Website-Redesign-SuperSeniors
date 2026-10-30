@@ -1,107 +1,104 @@
-import { useState, useEffect, useRef } from 'react';
-
-const lastActivityKey = 'pmw:lastActivity';
-
-function saveLastActivity() {
-  try {
-    localStorage.setItem(lastActivityKey, String(Date.now()));
-  } catch {
-    // Storage can be blocked (private mode); the timer still works without it
-  }
-}
-
-function readLastActivity(): number | null {
-  try {
-    const saved = localStorage.getItem(lastActivityKey);
-    return saved === null ? null : Number(saved);
-  } catch {
-    return null; // storage blocked: behave as if nothing was saved
-  }
-}
+import { useEffect, useRef, useState } from 'react';
+import {
+  ensureLastActivity,
+  lastActivityKey,
+  msSinceLastActivity,
+  saveLastActivity,
+} from './lastActivity';
 
 export function useIdleTimeout(
-  signOut: () => void,
+  onTimeout: () => void,
   idleWarningMinutes: number,
   idleWarningDurationMinutes: number,
 ) {
-  const [isIdle, setIsIdle] = useState<boolean>(false);
-  const signOutRef = useRef(signOut);
+  const [isIdle, setIsIdle] = useState(false);
+  const onTimeoutRef = useRef(onTimeout);
+  const idleLimit = idleWarningMinutes * 60 * 1000;
+  const totalLimit = idleLimit + idleWarningDurationMinutes * 60 * 1000;
 
   useEffect(() => {
-    signOutRef.current = signOut;
-  }, [signOut]);
+    onTimeoutRef.current = onTimeout;
+  }, [onTimeout]);
 
+  // Phase 1: waiting for the person to go idle. Every wake-up re-reads the saved time.
   useEffect(() => {
     if (isIdle) return;
-
-    saveLastActivity();
-
-    const idleLimit = idleWarningMinutes * 60 * 1000;
     let id: ReturnType<typeof setTimeout>;
 
-    function handleTimerFired() {
-      const last = readLastActivity();
-      const elapsed = last === null ? idleLimit : Date.now() - last;
-
-      if (elapsed >= idleLimit) {
-        setIsIdle(true);
-      } else {
-        id = setTimeout(handleTimerFired, idleLimit - elapsed);
-      }
-    }
-
-    id = setTimeout(handleTimerFired, idleLimit);
-
-    function restartTimer() {
+    function check() {
       clearTimeout(id);
-      id = setTimeout(handleTimerFired, idleLimit);
+      const idleFor = msSinceLastActivity();
+      if (idleFor >= totalLimit) onTimeoutRef.current();
+      else if (idleFor >= idleLimit) setIsIdle(true);
+      else id = setTimeout(check, idleLimit - idleFor);
     }
-
     function handleActivity() {
       saveLastActivity();
-      restartTimer();
+      check();
     }
-
     function handleStorage(event: StorageEvent) {
-      if (event.key === lastActivityKey) {
-        restartTimer();
-      }
+      if (event.key === lastActivityKey) check();
+    }
+    function handleVisible() {
+      if (document.visibilityState === 'visible') check();
     }
 
-    const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    events.forEach((name) => window.addEventListener(name, handleActivity));
+    const events = ['mousedown', 'keydown', 'touchstart', 'wheel'];
+    events.forEach((name) => window.addEventListener(name, handleActivity, { passive: true }));
+    window.addEventListener('scroll', handleActivity, { capture: true, passive: true });
     window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', handleVisible);
+
+    ensureLastActivity();
+    check();
 
     return () => {
       clearTimeout(id);
       events.forEach((name) => window.removeEventListener(name, handleActivity));
+      window.removeEventListener('scroll', handleActivity, { capture: true });
       window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', handleVisible);
     };
-  }, [isIdle, idleWarningMinutes]);
+  }, [isIdle, idleLimit, totalLimit]);
 
+  // Phase 2: the warning is open. Leave when the time is up, or close it if another tab is active.
   useEffect(() => {
     if (!isIdle) return;
+    let id: ReturnType<typeof setTimeout>;
 
-    const id = setTimeout(
-      () => {
-        const last = readLastActivity();
-        const idleLimit = idleWarningMinutes * 60 * 1000;
-        const wasActiveRecently = last !== null && Date.now() - last < idleLimit;
+    function finish() {
+      clearTimeout(id);
+      const idleFor = msSinceLastActivity();
+      if (idleFor < idleLimit) setIsIdle(false);
+      else if (idleFor >= totalLimit) onTimeoutRef.current();
+      else id = setTimeout(finish, totalLimit - idleFor);
+    }
+    function handleStorage(event: StorageEvent) {
+      if (event.key === lastActivityKey) finish();
+    }
+    function handleVisible() {
+      if (document.visibilityState === 'visible') finish();
+    }
 
-        if (wasActiveRecently) {
-          setIsIdle(false);
-        } else {
-          signOutRef.current();
-        }
-      },
-      idleWarningDurationMinutes * 60 * 1000,
-    );
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', finish);
+    document.addEventListener('visibilitychange', handleVisible);
+    finish();
 
-    return () => clearTimeout(id);
-  }, [isIdle, idleWarningDurationMinutes, idleWarningMinutes]);
+    return () => {
+      clearTimeout(id);
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', finish);
+      document.removeEventListener('visibilitychange', handleVisible);
+    };
+  }, [isIdle, idleLimit, totalLimit]);
 
   function stayLoggedIn() {
+    saveLastActivity();
     setIsIdle(false);
   }
+
   return { isIdle, stayLoggedIn };
 }

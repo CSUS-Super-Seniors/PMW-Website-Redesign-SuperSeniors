@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useIdleTimeout } from './useIdleTimeout';
+import { lastActivityKey } from './lastActivity';
 
 describe('useIdleTimeout', () => {
   afterEach(() => {
@@ -181,7 +182,8 @@ describe('useIdleTimeout', () => {
 
   it('shows the warning again after another idle period', () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useIdleTimeout(vi.fn(), 15, 2));
+    const onTimeout = vi.fn();
+    const { result } = renderHook(() => useIdleTimeout(onTimeout, 15, 2));
 
     act(() => {
       vi.advanceTimersByTime(15 * 60 * 1000);
@@ -202,5 +204,87 @@ describe('useIdleTimeout', () => {
       vi.advanceTimersByTime(1 * 60 * 1000);
     });
     expect(result.current.isIdle).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('signs out right away on load when the saved activity is older than idle plus warning', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(lastActivityKey, String(Date.now() - 3 * 60 * 60 * 1000));
+    const onTimeout = vi.fn();
+
+    renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the warning on load with the time that is left', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(lastActivityKey, String(Date.now() - 16 * 60 * 1000));
+    const onTimeout = vi.fn();
+
+    const { result } = renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+    expect(result.current.isIdle).toBe(true);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(60 * 1000);
+    });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overwrite an old saved time when the page loads', () => {
+    vi.useFakeTimers();
+    const old = String(Date.now() - 16 * 60 * 1000);
+    localStorage.setItem(lastActivityKey, old);
+
+    renderHook(() => useIdleTimeout(vi.fn(), 15, 2));
+
+    expect(localStorage.getItem(lastActivityKey)).toBe(old);
+  });
+
+  it('treats a saved value that is not a number as expired', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(lastActivityKey, 'not-a-number');
+    const onTimeout = vi.fn();
+
+    renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks the saved time when the tab becomes visible after sleep', () => {
+    vi.useFakeTimers();
+    const onTimeout = vi.fn();
+    renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000); // the laptop slept; no timers ran
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the warning as soon as another tab is active', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useIdleTimeout(vi.fn(), 15, 2));
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+    expect(result.current.isIdle).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(60 * 1000); // t = 16 min, before the warning ends
+    });
+    act(() => {
+      localStorage.setItem(lastActivityKey, String(Date.now()));
+      window.dispatchEvent(new StorageEvent('storage', { key: lastActivityKey }));
+    });
+
+    expect(result.current.isIdle).toBe(false);
   });
 });
