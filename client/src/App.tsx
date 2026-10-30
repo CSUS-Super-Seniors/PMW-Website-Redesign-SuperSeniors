@@ -1,4 +1,3 @@
-
 import { Route, Routes } from 'react-router';
 import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './components/layout/PortalLayout';
@@ -57,9 +56,7 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
 
-      {import.meta.env.DEV && (
-        <Route path="/design-tokens" element={<DesignTokensPage />} />
-      )}
+      {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
     </Routes>
   );
 }
