@@ -7,6 +7,13 @@ create extension if not exists pgtap with schema extensions;
 
 select plan(48);
 
+-- Start from empty tables so the counts below only see this file's rows. Local
+-- Supabase has the sample rows from seed.sql (db start and db reset load it).
+-- Rolled back at the end like everything else. Add any table this file counts here.
+truncate public.customers, public.customer_notes, public.inquiries, public.inquiry_photos,
+  public.contact_messages, public.jobs, public.job_steps, public.job_media,
+  public.job_history, public.payments, public.testimonials cascade;
+
 -- Test data, inserted as postgres so RLS does not apply.
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'owner@test.local'),
