@@ -85,8 +85,7 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
-### Step 1 handoff (SSPMW-296)
-### Concerning SSPMW-24 and SSPMW-31
+### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
 
 Step 1 validation and the responsive layout are implemented. Valid input
 currently shows an unavailable notice instead of advancing to Step 2.

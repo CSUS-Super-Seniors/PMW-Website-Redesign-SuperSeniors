@@ -78,7 +78,7 @@ describe('App', () => {
 
     await user.type(screen.getByLabelText('Item'), ' repair');
     expect(screen.queryByText(/continuing to photos is not available yet/)).not.toBeInTheDocument();
-   });
+  });
   it('shows the Services page inside the public layout', () => {
     renderApp('/services');
 
