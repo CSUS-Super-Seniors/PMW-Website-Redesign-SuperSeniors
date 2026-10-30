@@ -29,11 +29,11 @@ export default function App() {
         {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>
-            <Route path="inquiries" element={<PlaceholderPage />} />
-            <Route path="customers" element={<PlaceholderPage />} />
-            <Route path="reports" element={<PlaceholderPage />} />
-            <Route path="staff-accounts" element={<PlaceholderPage />} />
-            <Route path="testimonials" element={<PlaceholderPage />} />
+            <Route path="inquiries/*" element={<PlaceholderPage />} />
+            <Route path="customers/*" element={<PlaceholderPage />} />
+            <Route path="reports/*" element={<PlaceholderPage />} />
+            <Route path="staff-accounts/*" element={<PlaceholderPage />} />
+            <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
