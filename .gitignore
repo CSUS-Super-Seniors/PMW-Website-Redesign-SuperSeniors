@@ -30,3 +30,6 @@ Thumbs.db
 *.tsbuildinfo
 # Vercel local configuration
 .vercel/
+
+# AI review bot scratch files (Jira ticket cache)
+.ai-review/
