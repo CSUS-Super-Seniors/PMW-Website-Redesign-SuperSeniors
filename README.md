@@ -85,6 +85,17 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
+### Step 1 handoff (SSPMW-296)
+
+Step 1 validation and the responsive layout are implemented. Valid input currently shows an
+unavailable notice. Service-area checking and Step 2 advancement will be integrated through
+SSPMW-24 and the Step 2 photo story.
+
+In `client/src/pages/EstimateRequestPage.tsx`, replace `onContinue={setValidatedDetails}` with the
+service-area check (SSPMW-24) and Step 2 transition. Preserve values when returning to Step 1, allow
+Step 2 to continue with zero photos, and update `client/src/App.test.tsx` to cover advancement,
+service-area outcomes, retries, and Back navigation. Reuse Step 1's mobile layout under SSPMW-108.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
