@@ -58,4 +58,18 @@ describe('Input', () => {
 
     expect(screen.getByLabelText('Email address')).toHaveAttribute('id', 'contact-email');
   });
+
+  it('shows a hint connected to the input', () => {
+    render(<Input label="New password" hint="Use at least 8 characters." />);
+
+    const hint = screen.getByText('Use at least 8 characters.');
+    expect(screen.getByLabelText('New password')).toHaveAttribute('aria-describedby', hint.id);
+  });
+
+  it('replaces the hint with the error while there is one', () => {
+    render(<Input label="New password" hint="Use at least 8 characters." error="Too short." />);
+
+    expect(screen.queryByText('Use at least 8 characters.')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Too short.');
+  });
 });

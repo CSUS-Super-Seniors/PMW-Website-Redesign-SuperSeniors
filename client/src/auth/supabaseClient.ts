@@ -18,6 +18,8 @@ export function getSupabase(): SupabaseClient {
     );
   }
 
-  client = createClient(url, key);
+  // The Reset password page reads the implicit-flow tokens from the link
+  // (readResetLink in passwordReset.ts), so keep this flow if you change options.
+  client = createClient(url, key, { auth: { flowType: 'implicit' } });
   return client;
 }

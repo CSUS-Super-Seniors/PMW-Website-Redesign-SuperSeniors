@@ -7,8 +7,10 @@ import App from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
 
 const session = { user: { email: 'todd@example.com' } } as unknown as Session;
-
-afterEach(() => vi.unstubAllGlobals());
+const staffSession = {
+  access_token: 'token-123',
+  user: { id: 'user-1', email: 'sam@example.com' },
+} as unknown as Session;
 
 function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
   const value: AuthContextValue = {
@@ -28,6 +30,17 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
     </AuthContext.Provider>,
   );
 }
+
+function fakeServerRole(role: string) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ role }) }),
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('App', () => {
   it('renders the home page heading', () => {
@@ -127,9 +140,70 @@ describe('App', () => {
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
   });
 
+  it('opens the forgot password page from staff login, without the public header', async () => {
+    const user = userEvent.setup();
+    renderApp('/staff/login');
+
+    await user.click(screen.getByRole('link', { name: 'Forgot your password?' }));
+
+    expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('shows the reset password page without the public header', () => {
+    renderApp('/staff/reset-password');
+
+    expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
   it('shows the portal navigation to a signed-in user', () => {
     renderApp('/portal/dashboard', { session });
 
     expect(screen.getByRole('navigation', { name: 'Portal' })).toBeInTheDocument();
+  });
+
+  it.each([
+    '/portal/inquiries',
+    '/portal/customers',
+    '/portal/reports',
+    '/portal/staff-accounts',
+    '/portal/testimonials',
+    '/portal/customers/123',
+  ])('shows the no-permission screen to an employee on %s', async (path) => {
+    fakeServerRole('employee');
+    renderApp(path, { session: staffSession });
+
+    expect(
+      await screen.findByRole('heading', { name: 'You do not have access to this page' }),
+    ).toBeInTheDocument();
+  });
+
+  it('lets an owner open an owner-only URL', async () => {
+    fakeServerRole('owner');
+    renderApp('/portal/customers', { session: staffSession });
+
+    expect(
+      await screen.findByRole('heading', { name: 'This page is not built yet' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'You do not have access to this page' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows a helpful 404 page for an unknown URL', () => {
+    renderApp('/this-page-does-not-exist');
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Back to homepage' })).toHaveAttribute('href', '/');
+  });
+
+  it('keeps the placeholder for planned public pages', () => {
+    renderApp('/gallery');
+
+    expect(screen.getByRole('heading', { name: 'This page is not built yet' })).toBeInTheDocument();
+
+    expect(screen.queryByRole('heading', { name: 'Page not found' })).not.toBeInTheDocument();
   });
 });

@@ -16,6 +16,9 @@ export type { ToastProps } from './Toast';
 export { ErrorBanner } from './ErrorBanner';
 export type { ErrorBannerProps } from './ErrorBanner';
 
+export { SuccessBanner } from './SuccessBanner';
+export type { SuccessBannerProps } from './SuccessBanner';
+
 export { InlineFieldError } from './InlineFieldError';
 export type { InlineFieldErrorProps } from './InlineFieldError';
 
