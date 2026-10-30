@@ -125,6 +125,21 @@ The Vercel staging application has been deployed and its homepage, static assets
 
 Automatic GitHub deployments are pending repository integration access.
 
+#### Git branches and deployment targets
+
+| Source                             | Environment          | Deployment                                                    |
+| ---------------------------------- | -------------------- | ------------------------------------------------------------- |
+| Local development                  | Development          | React, Express, and local Supabase through Docker             |
+| Feature branches and pull requests | Staging              | Vercel Preview using the hosted staging Supabase project      |
+| `main`                             | Production (planned) | Vercel Production with a separate production Supabase project |
+
+The staging preview has been deployed manually and tested.
+Automatic GitHub-triggered deployments are not yet enabled because
+the Vercel GitHub App requires organization owner approval.
+
+Production deployment and its separate Supabase credentials
+must be configured before launch.
+
 #### Database migrations
 
 Only apply migrations to hosted staging after their pull request has been approved and merged into `main`.
@@ -170,42 +185,56 @@ Production builds always use the API, even if a stub is configured.
 3. Push the branch and open a pull request into `main`. Fill in the PR template.
 4. CI must pass and one teammate must approve before merging. Direct pushes to `main` are blocked.
 
-## Deploying (DigitalOcean App Platform)
+## Deployment (Vercel)
 
-The deployment configuration is defined in `.do/app.yaml`.
+Vercel is the intended hosting platform for the PMW website.
+The staging application is currently deployed manually to
+Vercel Preview and connects to the hosted staging Supabase project.
 
-The application has two components:
+### Vercel environment variables
 
-- `api`: Express backend, listening on port 8080, serving `/api/*`.
-- `web`: React/Vite static site, serving `/` with `index.html` as the fallback for client-side routes.
+Configure these variables in Vercel's Preview environment:
 
-Both components deploy from the `main` branch after changes are merged.
+- `SUPABASE_URL` — hosted staging Supabase URL (server)
+- `SUPABASE_SERVICE_ROLE_KEY` — secret server-side key
+- `CLIENT_ORIGINS` — allowed client origins
+- `VITE_SUPABASE_URL` — hosted staging Supabase URL (client)
+- `VITE_SUPABASE_PUBLISHABLE_KEY` — public client key
 
-### Before deploying
+The backend requires `SUPABASE_URL`,
+`SUPABASE_SERVICE_ROLE_KEY`, and `CLIENT_ORIGINS`.
+The frontend requires both `VITE_` Supabase variables.
 
-1. Confirm the DigitalOcean account has the required billing or promotional credits.
-2. Connect the `CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors` GitHub repository.
-3. In DigitalOcean App Platform, select **Create App** and load `.do/app.yaml`.
-4. On the create-app environment variables screen, enter the Supabase values **before starting the first deployment**:
-   - **API service (runtime):**
-     - `SUPABASE_URL`: Supabase project URL.
-     - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (secret).
-   - **Web static site (build time):**
-     - `VITE_SUPABASE_URL`: Supabase project URL.
-     - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
-5. Confirm the environment variables and estimated cost before creating the app.
+Never expose `SUPABASE_SERVICE_ROLE_KEY` in a `VITE_` variable.
 
-Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
+### Staging deployment verification
 
-The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_URL}`. Never commit real secret keys.
+The manually deployed staging preview has been verified for:
 
-### After deploying
+- Homepage and static assets
+- `/api/health` endpoint
+- Supabase authentication
+- Successful staff login and logout
+- Staging database migrations
 
-1. Wait for both components to finish deploying.
-2. Visit `https://<app-domain>/api/health` and confirm it returns `{"status":"ok"}`.
-3. Open the website and verify that its pages load.
-4. Test authentication with the configured Supabase project.
-5. Check deployment logs if any checks fail.
+Automatic GitHub deployments are pending organization-owner
+approval of the Vercel GitHub integration.
+
+### DigitalOcean retirement
+
+DigitalOcean is the previous deployment platform and is no
+longer the intended hosting target. The legacy `.do/app.yaml`
+configuration should not be used for new deployments.
+
+DigitalOcean resource shutdown must be verified separately.
+Do not consider the hosting migration fully complete until
+those resources are confirmed inactive.
+
+### Production deployment
+
+Production will use a separate Supabase project and production
+environment variables. Do not reuse staging secrets or
+staging customer data in production.
 
 ### Local verification
 
