@@ -30,6 +30,7 @@ export const routes = {
   staffLogin: '/staff/login',
   staffForgotPassword: '/staff/forgot-password',
   staffSessionExpired: '/staff/session-expired',
+  staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
 } as const;
 

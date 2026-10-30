@@ -13,11 +13,14 @@ const mocks = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
+  handleRecoveryEvent: vi.fn(),
 }));
 
 vi.mock('./supabaseClient', () => ({
   getSupabase: mocks.getSupabase,
 }));
+
+vi.mock('./passwordReset', () => ({ handleRecoveryEvent: mocks.handleRecoveryEvent }));
 
 function Probe() {
   const { session, loading, signIn, signOut } = useAuth();
@@ -163,6 +166,23 @@ describe('AuthProvider', () => {
     act(() => notify('SIGNED_IN', { user: { email: 'todd@example.com' } }));
 
     expect(await screen.findByText('signed in as todd@example.com')).toBeInTheDocument();
+  });
+
+  it('passes every auth event to the password reset handler', async () => {
+    let notify: (event: string, session: unknown) => void = () => {};
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.onAuthStateChange.mockImplementation((callback) => {
+      notify = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    renderProvider();
+    await screen.findByText('signed out');
+
+    const recoverySession = { user: { id: 'girlie', email: 'girlie@example.com' } };
+    act(() => notify('PASSWORD_RECOVERY', recoverySession));
+
+    expect(mocks.handleRecoveryEvent).toHaveBeenCalledWith('PASSWORD_RECOVERY', recoverySession);
+    expect(await screen.findByText('signed in as girlie@example.com')).toBeInTheDocument();
   });
 
   it('signs the user out when Supabase reports the session ended', async () => {

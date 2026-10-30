@@ -3,6 +3,7 @@ import { getSupabase } from './supabaseClient';
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
 import { AuthContext, type SignInResult, type SignOutResult } from './AuthContext';
 import { saveLastActivity } from './lastActivity';
+import { handleRecoveryEvent } from './passwordReset';
 
 /** Returns null (and logs why) instead of crashing when the env variables are missing. */
 function tryGetSupabase() {
@@ -29,8 +30,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       .then(({ data }) => setSession(data.session))
       .finally(() => setLoading(false));
 
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
+      handleRecoveryEvent(event, nextSession);
     });
 
     return () => data.subscription.unsubscribe();
