@@ -59,3 +59,7 @@ jobs:
       # Starts only Postgres and applies every migration.
       - run: npx supabase db start
       - run: npm run db:test
+      # Runs seed.sql twice against the same database (changes are rolled back).
+      - run: npm run test:seed
+        env:
+          SEED_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres

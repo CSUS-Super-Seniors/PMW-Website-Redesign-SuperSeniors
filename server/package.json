@@ -9,12 +9,14 @@
     "prebuild": "npm run build -w @pmw/validation",
     "build": "tsc",
     "pretypecheck": "npm run build -w @pmw/validation",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "start": "node dist/index.js",
     "pretest": "npm run build -w @pmw/validation",
     "test": "vitest run",
     "verify:storage": "tsx scripts/verify-storage.ts",
-    "verify:password-reset": "tsx scripts/verify-password-reset.ts"
+    "verify:password-reset": "tsx scripts/verify-password-reset.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "test:seed": "vitest run test/seed.db.test.ts"
   },
   "dependencies": {
     "@pmw/validation": "0.1.0",
@@ -28,7 +30,10 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^22.18.0",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^6.0.3",
+    "pg": "^8.23.1",
+    "pg-connection-string": "^2.14.1",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "vitest": "^5.0.4"
