@@ -20,7 +20,7 @@ function readLastActivity(): number | null {
 }
 
 export function useIdleTimeout(
-  signOut: () => Promise<void>,
+  signOut: () => void,
   idleWarningMinutes: number,
   idleWarningDurationMinutes: number,
 ) {

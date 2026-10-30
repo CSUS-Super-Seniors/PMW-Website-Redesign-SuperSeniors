@@ -1,9 +1,9 @@
+import { useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { useIdleTimeout } from '../../auth/useIdleTimeout';
 import { idleTimeout, routes } from '../../config/site';
 import { SessionTimeoutDialog } from './SessionTimeoutDialog';
-import { useRef, useState } from 'react';
 import { ConfirmationDialog } from '../ui';
 import PortalSidebar from './PortalSidebar';
 import PortalTopBar from './PortalTopBar';
@@ -12,16 +12,9 @@ import PortalBottomNav from './PortalBottomNav';
 export default function PortalLayout() {
   const { session, signOut } = useAuth();
   const navigate = useNavigate();
-  const [timeoutSignOutFailed, setTimeoutSignOutFailed] = useState(false);
 
-  async function handleTimeout() {
-    setTimeoutSignOutFailed(false);
-    const result = await signOut();
-    if (result === 'success') {
-      navigate(routes.staffSessionExpired, { replace: true });
-    } else {
-      setTimeoutSignOutFailed(true);
-    }
+  function handleTimeout() {
+    navigate(routes.staffSessionExpired, { replace: true });
   }
 
   const { isIdle, stayLoggedIn } = useIdleTimeout(
@@ -68,11 +61,6 @@ export default function PortalLayout() {
         isOpen={isIdle}
         onStaySignedIn={stayLoggedIn}
         warningMinutes={idleTimeout.idleWarningDurationMinutes}
-        error={
-          timeoutSignOutFailed
-            ? 'We could not sign you out. Check your connection and try again.'
-            : undefined
-        }
       />
       <ConfirmationDialog
         isOpen={confirmLogout}

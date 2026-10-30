@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { routes } from '../../config/site';
+import { idleTimeout, routes } from '../../config/site';
 import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
 import PortalLayout from './PortalLayout';
 
@@ -81,41 +81,18 @@ describe('PortalLayout', () => {
     ).toBeInTheDocument();
   });
 
-  it('goes to the expired screen and signs out when the warning runs out', async () => {
+  it('goes to the expired screen when the warning runs out', async () => {
     vi.useFakeTimers();
-    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('success'));
-    renderAt('/portal/dashboard', signOut);
+    renderAt('/portal/dashboard');
 
     act(() => {
-      vi.advanceTimersByTime(15 * 60 * 1000);
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
     });
-
     await act(async () => {
-      vi.advanceTimersByTime(2 * 60 * 1000);
+      vi.advanceTimersByTime(idleTimeout.idleWarningDurationMinutes * 60 * 1000);
     });
 
     expect(screen.getByText('Session expired page')).toBeInTheDocument();
-    expect(signOut).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows an error and stays on the page when sign-out fails', async () => {
-    vi.useFakeTimers();
-    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('failed'));
-    renderAt('/portal/dashboard', signOut);
-
-    act(() => {
-      vi.advanceTimersByTime(15 * 60 * 1000);
-    });
-
-    await act(async () => {
-      vi.advanceTimersByTime(2 * 60 * 1000);
-    });
-
-    expect(
-      screen.getByText('We could not sign you out. Check your connection and try again.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Session expired page')).not.toBeInTheDocument();
-    expect(signOut).toHaveBeenCalledTimes(1);
   });
 
   it('closing the warning keeps the user signed in', () => {
