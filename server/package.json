@@ -14,6 +14,7 @@
     "pretest": "npm run build -w @pmw/validation",
     "test": "vitest run",
     "verify:storage": "tsx scripts/verify-storage.ts",
+    "verify:password-reset": "tsx scripts/verify-password-reset.ts",
     "db:seed": "tsx scripts/seed.ts",
     "test:seed": "vitest run test/seed.db.test.ts"
   },

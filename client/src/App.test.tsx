@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
@@ -83,9 +84,42 @@ describe('App', () => {
     expect(screen.queryByRole('banner')).not.toBeInTheDocument();
   });
 
+  it('opens the forgot password page from staff login, without the public header', async () => {
+    const user = userEvent.setup();
+    renderApp('/staff/login');
+
+    await user.click(screen.getByRole('link', { name: 'Forgot your password?' }));
+
+    expect(screen.getByRole('heading', { name: 'Reset your password' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
+  it('shows the reset password page without the public header', () => {
+    renderApp('/staff/reset-password');
+
+    expect(screen.getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument();
+    expect(screen.queryByRole('banner')).not.toBeInTheDocument();
+  });
+
   it('shows the portal navigation to a signed-in user', () => {
     renderApp('/portal/dashboard', { session });
 
     expect(screen.getByRole('navigation', { name: 'Portal' })).toBeInTheDocument();
+  });
+
+  it('shows a helpful 404 page for an unknown URL', () => {
+    renderApp('/this-page-does-not-exist');
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Back to homepage' })).toHaveAttribute('href', '/');
+  });
+
+  it('keeps the placeholder for planned public pages', () => {
+    renderApp('/gallery');
+
+    expect(screen.getByRole('heading', { name: 'This page is not built yet' })).toBeInTheDocument();
+
+    expect(screen.queryByRole('heading', { name: 'Page not found' })).not.toBeInTheDocument();
   });
 });
