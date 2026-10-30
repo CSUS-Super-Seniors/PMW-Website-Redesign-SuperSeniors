@@ -125,6 +125,14 @@ Colors, fonts, text styles, spacing, radius and shadows come from the Figma desi
 - Spacing: Tailwind's normal scale (4px steps) matches Figma, so `p-3` is 12px and `px-20` is 80px.
 - Never hard-code hex values or arbitrary colors like `bg-[#123456]`. A test fails the build if you do.
 
+## Contact form preview
+
+In `client/.env`, set `VITE_CONTACT_FORM_STUB=success` or
+`VITE_CONTACT_FORM_STUB=failure` and restart `npm run dev:client`.
+These development-only previews simulate the sending and result states without
+saving or emailing messages. Leave the value empty to use the API.
+Production builds always use the API, even if a stub is configured.
+
 ## Workflow
 
 1. Pull the latest `main`, then create a branch named after the Jira key: `SSPMW-123-short-description`.

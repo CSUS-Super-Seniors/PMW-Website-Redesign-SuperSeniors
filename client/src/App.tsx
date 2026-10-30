@@ -3,9 +3,11 @@ import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
+import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
 import PlaceholderPage from './pages/PlaceholderPage';
+import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 
 function Home() {
@@ -32,6 +34,8 @@ export default function App() {
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
         <Route path={routes.requestEstimate} element={<EstimateRequestPage />} />
+        <Route path={routes.services} element={<ServicesPage />} />
+        <Route path={routes.contact} element={<ContactPage />} />
         {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
