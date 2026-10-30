@@ -53,7 +53,7 @@ export const navItems: NavItem[] = [
     label: 'Testimonials',
     path: '/portal/testimonials',
     icon: StarIcon,
-    roles: ['owner', 'employee'],
+    roles: ['owner'],
   },
   { label: 'Reports', path: '/portal/reports', icon: ChartIcon, roles: ['owner'] },
   {

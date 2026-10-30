@@ -32,6 +32,7 @@ export const routes = {
   staffSessionExpired: '/staff/session-expired',
   staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
+  portalSchedule: '/portal/schedule',
 } as const;
 
 export type NavLinkItem = { label: string; to: string };

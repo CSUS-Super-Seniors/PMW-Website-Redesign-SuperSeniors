@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router';
 import RequireAuth from './auth/RequireAuth';
+import RequireRole from './auth/RequireRole';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
@@ -33,6 +34,13 @@ export default function App() {
       <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
+          <Route element={<RequireRole allowed={['owner']} />}>
+            <Route path="inquiries/*" element={<PlaceholderPage />} />
+            <Route path="customers/*" element={<PlaceholderPage />} />
+            <Route path="reports/*" element={<PlaceholderPage />} />
+            <Route path="staff-accounts/*" element={<PlaceholderPage />} />
+            <Route path="testimonials/*" element={<PlaceholderPage />} />
+          </Route>
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>

@@ -2,11 +2,15 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
 
 const session = { user: { email: 'todd@example.com' } } as unknown as Session;
+const staffSession = {
+  access_token: 'token-123',
+  user: { id: 'user-1', email: 'sam@example.com' },
+} as unknown as Session;
 
 function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
   const value: AuthContextValue = {
@@ -26,6 +30,17 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
     </AuthContext.Provider>,
   );
 }
+
+function fakeServerRole(role: string) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ role }) }),
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('App', () => {
   it('renders the home page heading', () => {
@@ -105,6 +120,34 @@ describe('App', () => {
     renderApp('/portal/dashboard', { session });
 
     expect(screen.getByRole('navigation', { name: 'Portal' })).toBeInTheDocument();
+  });
+
+  it.each([
+    '/portal/inquiries',
+    '/portal/customers',
+    '/portal/reports',
+    '/portal/staff-accounts',
+    '/portal/testimonials',
+    '/portal/customers/123',
+  ])('shows the no-permission screen to an employee on %s', async (path) => {
+    fakeServerRole('employee');
+    renderApp(path, { session: staffSession });
+
+    expect(
+      await screen.findByRole('heading', { name: 'You do not have access to this page' }),
+    ).toBeInTheDocument();
+  });
+
+  it('lets an owner open an owner-only URL', async () => {
+    fakeServerRole('owner');
+    renderApp('/portal/customers', { session: staffSession });
+
+    expect(
+      await screen.findByRole('heading', { name: 'This page is not built yet' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'You do not have access to this page' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows a helpful 404 page for an unknown URL', () => {
