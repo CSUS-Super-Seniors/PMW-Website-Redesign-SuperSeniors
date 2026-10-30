@@ -2,10 +2,19 @@ import 'dotenv/config';
 import { loadConfig } from './config.js';
 import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
+import { createContactBackend } from './contact.js';
 try {
   const config = loadConfig();
   const supabase = createSupabaseAdmin(config);
-  const server = createApp(config, createAuthBackend(config, supabase)).listen(
+  const contact = config.contactEmail
+    ? createContactBackend(supabase, config.contactEmail)
+    : undefined;
+  if (!contact) {
+    console.warn(
+      'Contact messaging is unavailable: configure the contact email environment variables.',
+    );
+  }
+  const server = createApp(config, createAuthBackend(config, supabase), contact).listen(
     config.port,
     '0.0.0.0',
     () => {
