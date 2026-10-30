@@ -6,6 +6,7 @@ import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
+import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
@@ -26,7 +27,6 @@ export default function App() {
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
       <Route element={<RequireAuth />}>
-        {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>
             <Route path="inquiries/*" element={<PlaceholderPage />} />
@@ -38,13 +38,32 @@ export default function App() {
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>
+
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
+
+        {/* Implemented public pages */}
         <Route path={routes.services} element={<ServicesPage />} />
         <Route path={routes.contact} element={<ContactPage />} />
-        {/* Public pages are built in epic C. Until then every other path shows a placeholder. */}
-        <Route path="*" element={<PlaceholderPage />} />
+
+        {/* Planned pages that are not implemented yet */}
+        {[
+          routes.gallery,
+          routes.serviceArea,
+          routes.testimonials,
+          routes.about,
+          routes.requestEstimate,
+          routes.privacy,
+          routes.terms,
+          routes.staffForgotPassword,
+        ].map((path) => (
+          <Route key={path} path={path} element={<PlaceholderPage />} />
+        ))}
+
+        {/* Unknown URLs display the helpful 404 page */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
+
       {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
     </Routes>
   );

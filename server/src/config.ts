@@ -1,8 +1,15 @@
+export interface ContactEmailConfig {
+  apiKey: string;
+  from: string;
+  to: string[];
+}
+
 export interface Config {
   port: number;
   clientOrigins: string[];
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
+  contactEmail?: ContactEmailConfig;
 }
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const required = ['CLIENT_ORIGINS', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
@@ -31,10 +38,35 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   } catch {
     throw new Error('SUPABASE_URL must be an HTTP(S) URL');
   }
+  const emailKeys = ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'CONTACT_OWNER_EMAILS'] as const;
+  let contactEmail: ContactEmailConfig | undefined;
+  if (emailKeys.some((key) => env[key]?.trim())) {
+    const missingEmail = emailKeys.filter((key) => !env[key]?.trim());
+    if (missingEmail.length) {
+      throw new Error(`Missing contact email environment variables: ${missingEmail.join(', ')}`);
+    }
+    const from = env.RESEND_FROM_EMAIL!.trim();
+    const to = env
+      .CONTACT_OWNER_EMAILS!.split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const mailbox = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+    if (
+      to.length === 0 ||
+      to.length > 50 ||
+      ![from, ...to].every((value) => value.length <= 254 && mailbox.test(value))
+    ) {
+      throw new Error(
+        'RESEND_FROM_EMAIL and CONTACT_OWNER_EMAILS must contain bare email addresses',
+      );
+    }
+    contactEmail = { apiKey: env.RESEND_API_KEY!.trim(), from, to: [...new Set(to)] };
+  }
   return {
     port,
     clientOrigins,
     supabaseUrl,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
+    contactEmail,
   };
 }
