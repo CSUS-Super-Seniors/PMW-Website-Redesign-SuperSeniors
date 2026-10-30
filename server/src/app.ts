@@ -1,11 +1,17 @@
 import express, { type ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { estimateStep1Schema, mapEstimateStep1Errors } from '@pmw/validation';
+import {
+  contactMessageSchema,
+  mapContactMessageErrors,
+  estimateStep1Schema,
+  mapEstimateStep1Errors,
+} from '@pmw/validation';
+import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-export function createApp(config: Config, backend: AuthBackend) {
+export function createApp(config: Config, backend: AuthBackend, contact?: ContactBackend) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -36,6 +42,47 @@ export function createApp(config: Config, backend: AuthBackend) {
         return;
       }
       res.json({ valid: true });
+    },
+  );
+  app.post(
+    '/api/contact-messages',
+    express.json({ limit: '32kb', strict: false }),
+    async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const result = contactMessageSchema.safeParse(req.body);
+      if (!result.success) {
+        res.status(400).json({
+          success: false,
+          error: 'Please check the contact form.',
+          ...mapContactMessageErrors(result.error),
+        });
+        return;
+      }
+      if (!contact) {
+        res
+          .status(503)
+          .json({ success: false, error: 'Contact messaging is temporarily unavailable.' });
+        return;
+      }
+      let saved: SavedContactMessage;
+      try {
+        saved = await contact.saveMessage(result.data);
+      } catch {
+        res.status(503).json({
+          success: false,
+          error: 'Your message could not be saved. Please try again.',
+        });
+        return;
+      }
+      try {
+        await contact.sendNotification(saved);
+      } catch {
+        // The message was received. Asking the visitor to retry would save it
+        // again. Keep notification failures in server logs, without logging
+        // visitor content, credentials, or raw provider errors.
+        console.error('Contact notification failed', { contactMessageId: saved.id });
+      }
+      res.status(201).json({ success: true });
     },
   );
   app.use(express.json({ limit: '1mb' }));

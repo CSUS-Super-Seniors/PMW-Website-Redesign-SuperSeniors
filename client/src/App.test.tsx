@@ -88,4 +88,20 @@ describe('App', () => {
 
     expect(screen.getByRole('navigation', { name: 'Portal' })).toBeInTheDocument();
   });
+
+  it('shows a helpful 404 page for an unknown URL', () => {
+    renderApp('/this-page-does-not-exist');
+
+    expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'Back to homepage' })).toHaveAttribute('href', '/');
+  });
+
+  it('keeps the placeholder for planned public pages', () => {
+    renderApp('/gallery');
+
+    expect(screen.getByRole('heading', { name: 'This page is not built yet' })).toBeInTheDocument();
+
+    expect(screen.queryByRole('heading', { name: 'Page not found' })).not.toBeInTheDocument();
+  });
 });

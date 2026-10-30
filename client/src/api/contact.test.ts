@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { sendContactMessage, type ContactMessage } from './contact';
+import { ContactValidationError, sendContactMessage, type ContactMessage } from './contact';
 
 const message: ContactMessage = {
   name: 'Alex',
@@ -27,6 +27,46 @@ describe('sendContactMessage', () => {
       body: JSON.stringify(message),
     });
   });
+
+  it('accepts receipt after the server logs a notification failure', async () => {
+    vi.stubEnv('DEV', false);
+    const fetch = vi.fn().mockResolvedValue(Response.json({ success: true }, { status: 201 }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(sendContactMessage(message)).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves recognized validation fields for the form and ignores unknown ones', async () => {
+    vi.stubEnv('DEV', false);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            fieldErrors: {
+              email: 'Enter a valid email address.',
+              message: 'Too long.',
+              extra: 'Ignore',
+            },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    await expect(sendContactMessage(message)).rejects.toMatchObject({
+      name: 'ContactValidationError',
+      fieldErrors: { email: 'Enter a valid email address.', message: 'Too long.' },
+    });
+  });
+
+  it.each([null, { fieldErrors: null }, { fieldErrors: { email: ['Wrong type'] } }])(
+    'uses a general error when validation details are missing or malformed: %j',
+    async (body) => {
+      vi.stubEnv('DEV', false);
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(body, { status: 400 })));
+      await expect(sendContactMessage(message)).rejects.not.toBeInstanceOf(ContactValidationError);
+    },
+  );
 
   it.each([400, 404, 429, 500])('rejects HTTP %s without reporting success', async (status) => {
     vi.stubEnv('DEV', false);

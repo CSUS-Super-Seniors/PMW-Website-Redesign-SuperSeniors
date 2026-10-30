@@ -31,5 +31,8 @@ Thumbs.db
 # Vercel local configuration
 .vercel/
 
+# Playwright test results
+playwright-report/
+test-results/
 # AI review bot scratch files (Jira ticket cache)
 .ai-review/
