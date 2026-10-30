@@ -33,6 +33,17 @@ describe('fetchStaffProfile', () => {
     expect(result).toEqual({ status: 'no-access' });
   });
 
+  it('returns unauthenticated when the server says 401', async () => {
+    const fakeFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fakeFetch);
+    const result = await fetchStaffProfile('token-123');
+    expect(result).toEqual({ status: 'unauthenticated' });
+  });
+
   it('returns unreachable when the server fails', async () => {
     const fakeFetch = vi.fn().mockResolvedValue({
       ok: false,

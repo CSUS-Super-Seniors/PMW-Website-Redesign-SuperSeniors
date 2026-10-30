@@ -7,7 +7,7 @@ import RequireRole from './RequireRole';
 
 const session = {
   access_token: 'token-123',
-  user: { email: 'sam@example.com' },
+  user: { id: 'user-1', email: 'sam@example.com' },
 } as unknown as Session;
 
 afterEach(() => {
