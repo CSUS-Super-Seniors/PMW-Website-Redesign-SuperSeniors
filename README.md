@@ -195,3 +195,27 @@ npm test
 ```
 
 To verify the API locally, configure the required environment variables, start the backend with `PORT=8080`, and request `http://localhost:8080/api/health`.
+
+## Testing and CI (SSPMW-232)
+
+The client uses Vitest with jsdom and React Testing Library. The server uses Vitest
+with Supertest. Playwright runs a real Chromium browser against the local Vite
+web server, which Playwright starts automatically. The public homepage smoke test
+does not require a running Supabase database or Express API.
+
+From the repository root:
+
+```bash
+npm ci
+npm test                    # Both workspaces' Vitest suites
+npx playwright install chromium
+npm run test:e2e           # Playwright starts and stops Vite automatically
+```
+
+For debugging locally, run `npm run test:e2e -- --headed`.
+GitHub Actions runs the existing **Lint, format, and test** check and the new
+**Playwright smoke test** check on each PR to `main`.
+
+A repository admin must mark both job checks as required under the `main`
+branch protection rule (or repository ruleset) before a failing test can
+prevent merging. Use the exact check names above after an initial PR run.
