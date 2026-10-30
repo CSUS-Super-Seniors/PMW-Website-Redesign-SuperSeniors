@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { idleTimeout, routes } from '../../config/site';
 import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
+import { lastActivityKey } from '../../auth/lastActivity';
 import PortalLayout from './PortalLayout';
 
 const auth: AuthContextValue = {
@@ -125,5 +126,13 @@ describe('PortalLayout', () => {
     expect(
       screen.queryByRole('dialog', { name: "You're about to be signed out" }),
     ).not.toBeInTheDocument();
+  });
+
+  it('does not render the page when the saved time has already run out', () => {
+    localStorage.setItem(lastActivityKey, String(Date.now() - 3 * 60 * 60 * 1000));
+    renderAt('/portal/dashboard');
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+    expect(screen.queryByText('Page content')).not.toBeInTheDocument();
   });
 });

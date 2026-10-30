@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router';
+import { Navigate, Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { useIdleTimeout } from '../../auth/useIdleTimeout';
 import { idleTimeout, routes } from '../../config/site';
 import { SessionTimeoutDialog } from './SessionTimeoutDialog';
 import { ConfirmationDialog } from '../ui';
+import { msSinceLastActivity } from '../../auth/lastActivity';
 import PortalSidebar from './PortalSidebar';
 import PortalTopBar from './PortalTopBar';
 import PortalBottomNav from './PortalBottomNav';
@@ -45,6 +46,13 @@ export default function PortalLayout() {
     }
   }
 
+  const expiredAfterMs =
+    (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
+
+  if (msSinceLastActivity() >= expiredAfterMs) {
+    return <Navigate to={routes.staffSessionExpired} replace />;
+  }
+
   return (
     <div className="flex min-h-dvh">
       <PortalSidebar displayName={displayName} onLogout={() => setConfirmLogout(true)} />
@@ -59,11 +67,14 @@ export default function PortalLayout() {
       </div>
       <SessionTimeoutDialog
         isOpen={isIdle}
-        onStaySignedIn={stayLoggedIn}
+        onStaySignedIn={() => {
+          setConfirmLogout(false);
+          stayLoggedIn();
+        }}
         warningMinutes={idleTimeout.idleWarningDurationMinutes}
       />
       <ConfirmationDialog
-        isOpen={confirmLogout}
+        isOpen={confirmLogout && !isIdle}
         onCancel={() => {
           if (logoutPending.current) return;
           setConfirmLogout(false);
