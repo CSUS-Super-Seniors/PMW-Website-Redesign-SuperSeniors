@@ -1,10 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from './AuthContext';
 import RequireRole from './RequireRole';
-import { routes } from '../config/site';
 
 const session = {
   access_token: 'token-123',
@@ -37,20 +36,25 @@ function fakeServerStatus(status: number) {
   );
 }
 
-function GuardTree({ currentSession }: { currentSession: Session }) {
+function GuardTree({
+  currentSession,
+  signOut = () => Promise.resolve('success'),
+}: {
+  currentSession: Session;
+  signOut?: AuthContextValue['signOut'];
+}) {
   const value: AuthContextValue = {
     session: currentSession,
     loading: false,
     signOutFailed: false,
     signIn: () => Promise.resolve('wrong-credentials'),
-    signOut: () => Promise.resolve('success'),
+    signOut,
   };
   return (
     <AuthContext.Provider value={value}>
       <MemoryRouter initialEntries={['/portal/customers']}>
         <Routes>
           <Route path="/portal/schedule" element={<p>Schedule page</p>} />
-          <Route path={routes.staffLogin} element={<p>Staff login page</p>} />
           <Route element={<RequireRole allowed={['owner']} />}>
             <Route path="/portal/customers" element={<p>Customers page</p>} />
           </Route>
@@ -118,12 +122,24 @@ describe('RequireRole', () => {
     expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
   });
 
-  it('sends the user to staff login when the server says 401', async () => {
+  it('clears the login and keeps showing Loading when the server says 401', async () => {
     fakeServerStatus(401);
-    renderGuard();
+    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('success'));
+    render(<GuardTree currentSession={session} signOut={signOut} />);
 
-    expect(await screen.findByText('Staff login page')).toBeInTheDocument();
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('status')).toHaveTextContent('Loading');
     expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
+  });
+
+  it('shows the could-not-check screen when clearing a rejected login fails', async () => {
+    fakeServerStatus(401);
+    const signOut = vi.fn<AuthContextValue['signOut']>(() => Promise.resolve('failed'));
+    render(<GuardTree currentSession={session} signOut={signOut} />);
+
+    expect(
+      await screen.findByRole('heading', { name: "We couldn't check your access" }),
+    ).toBeInTheDocument();
   });
 
   it('shows the could-not-check screen when the server fails', async () => {
