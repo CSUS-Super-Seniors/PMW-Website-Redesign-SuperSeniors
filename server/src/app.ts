@@ -77,12 +77,10 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
       try {
         await contact.sendNotification(saved);
       } catch {
-        res.status(502).json({
-          success: false,
-          error:
-            'Your message was saved, but the email notification failed. Please call us if your request is urgent.',
-        });
-        return;
+        // The message was received. Asking the visitor to retry would save it
+        // again. Keep notification failures in server logs, without logging
+        // visitor content, credentials, or raw provider errors.
+        console.error('Contact notification failed', { contactMessageId: saved.id });
       }
       res.status(201).json({ success: true });
     },

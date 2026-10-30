@@ -46,9 +46,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       throw new Error(`Missing contact email environment variables: ${missingEmail.join(', ')}`);
     }
     const from = env.RESEND_FROM_EMAIL!.trim();
-    const to = env.CONTACT_OWNER_EMAILS!.split(',').map((value) => value.trim());
+    const to = env
+      .CONTACT_OWNER_EMAILS!.split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
     const mailbox = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
     if (
+      to.length === 0 ||
       to.length > 50 ||
       ![from, ...to].every((value) => value.length <= 254 && mailbox.test(value))
     ) {

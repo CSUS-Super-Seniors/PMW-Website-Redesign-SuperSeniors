@@ -18,10 +18,44 @@ describe('shared contact message contract', () => {
       contactMessageSchema.safeParse({
         name: 'n'.repeat(100),
         phone: '9165550123',
-        message: 'm'.repeat(5000),
+        message: 'm'.repeat(500),
       }).success,
     ).toBe(true);
   });
+
+  it.each([501, 5000])('rejects a %i-character message', (length) => {
+    const result = contactMessageSchema.safeParse({
+      name: 'Todd',
+      phone: '9165550123',
+      message: 'm'.repeat(length),
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(mapContactMessageErrors(result.error).fieldErrors.message).toBe(
+        'Message must be 500 characters or fewer.',
+      );
+    }
+  });
+
+  it.each(['9166435686', '(916) 643-5686', '+1 916-643-5686', '1.916.643.5686'])(
+    'normalizes %s to the same US international number',
+    (phone) => {
+      expect(
+        contactMessageSchema.parse({ name: 'Todd', phone, message: 'Please call me.' }).phone,
+      ).toBe('+19166435686');
+    },
+  );
+
+  it.each(['a@b.c', 'not-an-email', 'person@example'])('rejects invalid email %s', (email) => {
+    expect(contactMessageSchema.shape.email.safeParse(email).success).toBe(false);
+  });
+
+  it.each(['12345', '0166435686', '9161435686', '+44 20 7946 0958'])(
+    'rejects invalid US phone %s',
+    (phone) => {
+      expect(contactMessageSchema.shape.phone.safeParse(phone).success).toBe(false);
+    },
+  );
 
   it('maps the missing contact method to a field error', () => {
     const result = contactMessageSchema.safeParse({

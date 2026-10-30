@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-const usPhone = /^(?:\+?1[ .-]?)?(?:\([0-9]{3}\)|[0-9]{3})[ .-]?[0-9]{3}[ .-]?[0-9]{4}$/;
+export const CONTACT_MESSAGE_LIMIT = 500;
+
+function isUSPhone(value: string) {
+  return (
+    /^\+?[\d\s().-]+$/.test(value) && /^(?:1)?[2-9]\d{2}[2-9]\d{6}$/.test(value.replace(/\D/g, ''))
+  );
+}
 
 export const contactMessageSchema = z
   .strictObject(
@@ -14,9 +20,13 @@ export const contactMessageSchema = z
         .string()
         .trim()
         .max(32, 'Phone number must be 32 characters or fewer.')
-        .refine((value) => !value || usPhone.test(value), 'Enter a valid US phone number.')
+        .refine((value) => !value || isUSPhone(value), 'Enter a valid US phone number.')
         .nullish()
-        .transform((value) => value || null),
+        .transform((value) => {
+          if (!value) return null;
+          const digits = value.replace(/\D/g, '');
+          return digits.length === 10 ? `+1${digits}` : `+${digits}`;
+        }),
       email: z
         .string()
         .trim()
@@ -31,7 +41,7 @@ export const contactMessageSchema = z
         .string({ error: 'Message is required and must be text.' })
         .trim()
         .min(1, 'Message is required.')
-        .max(5000, 'Message must be 5000 characters or fewer.'),
+        .max(CONTACT_MESSAGE_LIMIT, 'Message must be 500 characters or fewer.'),
     },
     {
       error: (issue) =>

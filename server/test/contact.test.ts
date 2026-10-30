@@ -66,6 +66,20 @@ describe('POST /api/contact-messages', () => {
     const { app, contact } = setup();
     await request(app).post(path).send(body).expect(201);
     expect(contact.saveMessage).toHaveBeenCalledTimes(1);
+    expect(contact.saveMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: '+19165550123' }),
+    );
+  });
+
+  it('accepts exactly 500 message characters and stores a normalized phone', async () => {
+    const { app, contact } = setup();
+    const body = { name: 'Todd', phone: '(916) 643-5686', message: 'm'.repeat(500) };
+    await request(app).post(path).send(body).expect(201);
+    expect(contact.saveMessage).toHaveBeenCalledExactlyOnceWith({
+      ...body,
+      phone: '+19166435686',
+      email: null,
+    });
   });
 
   it.each([
@@ -78,11 +92,13 @@ describe('POST /api/contact-messages', () => {
     { ...input, message: '' },
     { ...input, message: '  ' },
     { ...input, message: false },
-    { ...input, message: 'a'.repeat(5001) },
+    { ...input, message: 'a'.repeat(501) },
+    { ...input, message: 'a'.repeat(5000) },
     { ...input, email: undefined },
     { ...input, email: '', phone: '  ' },
     { ...input, email: null, phone: null },
     { ...input, email: 'invalid' },
+    { ...input, email: 'a@b.c' },
     { ...input, email: 'a'.repeat(250) + '@example.com' },
     { ...input, email: ['christine@example.com'] },
     { ...input, phone: 'not-a-phone' },
@@ -147,15 +163,23 @@ describe('POST /api/contact-messages', () => {
     expect(contact.sendNotification).not.toHaveBeenCalled();
   });
 
-  it('reports email failure while preserving the saved message', async () => {
+  it('logs notification failure and acknowledges the saved message', async () => {
     const { app, contact, rows } = setup();
-    contact.sendNotification.mockRejectedValueOnce(new Error('private Resend API key'));
-    const response = await request(app).post(path).send(input).expect(502);
-    expect(response.body.success).toBe(false);
-    expect(response.body.error).toContain('saved');
-    expect(response.text).not.toMatch(/private|API key/);
-    expect(rows).toHaveLength(1);
-    expect(contact.saveMessage).toHaveBeenCalledTimes(1);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      contact.sendNotification.mockRejectedValueOnce(new Error('private Resend API key'));
+      const response = await request(app).post(path).send(input).expect(201);
+      expect(response.body).toEqual({ success: true });
+      expect(response.text).not.toMatch(/private|API key|message-1/);
+      expect(rows).toHaveLength(1);
+      expect(contact.saveMessage).toHaveBeenCalledTimes(1);
+      expect(contact.sendNotification).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledExactlyOnceWith('Contact notification failed', {
+        contactMessageId: 'message-1',
+      });
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('does not expose a public message listing or detail route', async () => {

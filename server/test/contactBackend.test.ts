@@ -157,7 +157,7 @@ describe('contact email configuration', () => {
     expect(() => loadConfig({ ...env, RESEND_API_KEY: 'test-key' })).toThrow(
       'Missing contact email',
     );
-    for (const bad of ['not-email', 'a@example.com,', 'a@example.com\r\nBcc: x@example.com']) {
+    for (const bad of ['not-email', ', ,', 'a@example.com\r\nBcc: x@example.com']) {
       expect(() => loadConfig({ ...env, ...emailEnv, CONTACT_OWNER_EMAILS: bad })).toThrow(
         'bare email addresses',
       );
@@ -165,6 +165,16 @@ describe('contact email configuration', () => {
     expect(() => loadConfig({ ...env, ...emailEnv, RESEND_FROM_EMAIL: 'bad' })).toThrow(
       'bare email addresses',
     );
+  });
+
+  it('ignores empty entries and trailing commas in the owner list', () => {
+    expect(
+      loadConfig({
+        ...env,
+        ...emailEnv,
+        CONTACT_OWNER_EMAILS: ' todd@example.com, ,girlie@example.com, ',
+      }).contactEmail?.to,
+    ).toEqual(['todd@example.com', 'girlie@example.com']);
   });
 
   it('trims settings and sends only once per configured owner address', () => {
