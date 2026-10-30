@@ -132,6 +132,11 @@ describe('Idle timeout with the real AuthProvider', () => {
       expect(screen.getByRole('link', { name: 'Go to staff login' })).toBeInTheDocument();
 
       await act(async () => {
+        notifyAuthChange('SIGNED_OUT', null); // a real sign-out is what forgets the old time
+      });
+      expect(localStorage.getItem(lastActivityKey)).toBeNull();
+
+      await act(async () => {
         notifyAuthChange('SIGNED_IN', staffSession); // supabase-js broadcasts this first
       });
       if (writesTime) localStorage.setItem(lastActivityKey, String(Date.now()));
@@ -143,4 +148,25 @@ describe('Idle timeout with the real AuthProvider', () => {
       expect(router.state.location.pathname).toBe(routes.portalHome);
     },
   );
+
+  it('keeps the old time when a reload had no session because of a network error', async () => {
+    localStorage.setItem(lastActivityKey, String(Date.now() - expiredMs));
+    mocks.getSession.mockResolvedValue({ data: { session: null }, error: new Error('offline') });
+    const router = renderApp([routes.staffSessionExpired]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(localStorage.getItem(lastActivityKey)).not.toBeNull();
+
+    await act(async () => {
+      notifyAuthChange('TOKEN_REFRESHED', staffSession); // Wi-Fi is back, the stored session returns
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.signOut).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe(routes.staffSessionExpired);
+  });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
-import { clearLastActivity, msSinceLastActivity } from '../../auth/lastActivity';
+import { msSinceLastActivity } from '../../auth/lastActivity';
 import Logo from '../brand/Logo';
 import { Button, ErrorBanner } from '../ui';
 import { idleTimeout, routes } from '../../config/site';
@@ -32,11 +32,6 @@ export default function SessionExpiredPage() {
       cancelled = true;
     };
   }, [isExpired]);
-
-  useEffect(() => {
-    if (loading || hasSession) return;
-    clearLastActivity();
-  }, [loading, hasSession]);
 
   function retry() {
     setFailed(false);
