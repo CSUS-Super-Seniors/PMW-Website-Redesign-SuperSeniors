@@ -9,7 +9,10 @@ export function useStaffRole(): { state: StaffRoleState; retry: () => void } {
   const accessToken = session?.access_token;
   const userId = session?.user.id;
   const tokenRef = useRef(accessToken);
-  const [state, setState] = useState<StaffRoleState>({ status: 'loading' });
+  const [result, setResult] = useState<{ userId: string; value: StaffProfileResult } | null>(null);
+  // An answer only counts for the user it was fetched for.
+  const state: StaffRoleState =
+    result !== null && result.userId === userId ? result.value : { status: 'loading' };
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -20,8 +23,8 @@ export function useStaffRole(): { state: StaffRoleState; retry: () => void } {
     const token = tokenRef.current;
     if (!userId || !token) return;
     let cancelled = false;
-    fetchStaffProfile(token).then((result) => {
-      if (!cancelled) setState(result);
+    fetchStaffProfile(token).then((value) => {
+      if (!cancelled) setResult({ userId, value });
     });
     return () => {
       cancelled = true;
@@ -29,7 +32,7 @@ export function useStaffRole(): { state: StaffRoleState; retry: () => void } {
   }, [userId, attempt]);
 
   function retry() {
-    setState({ status: 'loading' });
+    setResult(null);
     setAttempt((n) => n + 1);
   }
 

@@ -183,4 +183,20 @@ describe('RequireRole', () => {
     expect(screen.getByText('Customers page')).toBeInTheDocument();
     expect(failingFetch).not.toHaveBeenCalled();
   });
+
+  it('shows Loading, not the old result, when the signed-in user changes', async () => {
+    fakeServerRole('owner');
+    const { rerender } = render(<GuardTree currentSession={session} />);
+    expect(await screen.findByText('Customers page')).toBeInTheDocument();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {})),
+    );
+    const other = { ...session, user: { ...session.user, id: 'user-2' } } as Session;
+    rerender(<GuardTree currentSession={other} />);
+
+    expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Loading');
+  });
 });
