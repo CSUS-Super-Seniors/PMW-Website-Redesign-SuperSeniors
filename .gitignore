@@ -28,6 +28,8 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+# Vercel local configuration
+.vercel/
 
 # Playwright test results
 playwright-report/
