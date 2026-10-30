@@ -93,6 +93,50 @@ The schema lives in `supabase/migrations` and is only changed through migration 
 
 After `npm run db:start`, run `npx supabase status`. It prints the local API URL (`http://127.0.0.1:54321`) and both keys. Copy them into `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. Local Auth redirects go to `http://localhost:5173`, the client dev server.
 
+### Development, staging, and production environments (SSPMW-227)
+
+The PMW project uses separate environments to protect hosted data and keep development testing isolated.
+
+| Environment | Database                                              | Application                     |
+| ----------- | ----------------------------------------------------- | ------------------------------- |
+| Development | Local Supabase through Docker                         | Local React and Express servers |
+| Staging     | Existing hosted PMW Website Redesign Supabase project | Vercel Preview deployments      |
+| Production  | Separate Supabase project when the website launches   | Future production deployment    |
+
+#### Local development
+
+Team members should run Supabase locally through Docker using `npm run db:start`.
+
+Run `npx supabase status` to obtain the local API URL and keys. Configure `server/.env` and `client/.env` using those local values rather than the hosted staging credentials.
+
+#### Staging
+
+The existing hosted Supabase project is designated for staging. Vercel Preview connects to it using environment variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side secret only)
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `CLIENT_ORIGINS`
+
+Never expose the service role key through a `VITE_` variable.
+
+The Vercel staging application has been deployed and its homepage, static assets, and `/api/health` endpoint have been verified.
+
+Automatic GitHub deployments are pending repository integration access.
+
+#### Database migrations
+
+Only apply migrations to hosted staging after their pull request has been approved and merged into `main`.
+
+Test migrations against a fresh local Supabase database before applying them to staging.
+
+Do not run unmerged seed scripts or destructive database operations against the hosted staging database.
+
+#### Production
+
+Production will use a separate Supabase project under the client's account when the website launches. Do not use staging data or staging service credentials for production.
+
 ### Making schema changes
 
 1. `npm run db:start` to start the local database (Docker Desktop must be running).
