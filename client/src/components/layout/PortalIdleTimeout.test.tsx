@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../../App';
 import AuthProvider from '../../auth/AuthProvider';
 import { idleTimeout, routes } from '../../config/site';
+import { lastActivityKey } from '../../auth/lastActivity';
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -24,15 +25,22 @@ const staffSession = {
 let savedSession: Session | null;
 let notifyAuthChange: (event: AuthChangeEvent, session: Session | null) => void;
 
-async function idleUntilTimeout() {
+function renderApp(initialEntries: string[], initialIndex?: number) {
   const router = createMemoryRouter([{ path: '*', element: <App /> }], {
-    initialEntries: ['/portal/dashboard'],
+    initialEntries,
+    initialIndex,
   });
   render(
     <AuthProvider>
       <RouterProvider router={router} />
     </AuthProvider>,
   );
+  return router;
+}
+
+async function idleUntilTimeout() {
+  const router = renderApp(['/portal/dashboard']);
+
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
@@ -84,5 +92,43 @@ describe('Idle timeout with the real AuthProvider', () => {
     expect(router.state.location.pathname).toBe(routes.staffSessionExpired);
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go to staff login' })).not.toBeInTheDocument();
+  });
+
+  it('does not sign out a new session when Back returns to the expired page', async () => {
+    localStorage.setItem(lastActivityKey, String(Date.now())); // they just signed in
+    const router = renderApp([routes.staffSessionExpired, routes.portalHome], 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await act(async () => {
+      await router.navigate(-1);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe(routes.portalHome);
+  });
+
+  it('does not sign out a session that appears while the expired page is open', async () => {
+    savedSession = null;
+    const router = renderApp([routes.staffSessionExpired]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByRole('link', { name: 'Go to staff login' })).toBeInTheDocument();
+
+    localStorage.setItem(lastActivityKey, String(Date.now())); // signed in from the other tab
+    await act(async () => {
+      notifyAuthChange('SIGNED_IN', staffSession);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mocks.signOut).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe(routes.portalHome);
   });
 });

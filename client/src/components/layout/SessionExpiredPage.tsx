@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
+import { msSinceLastActivity } from '../../auth/lastActivity';
 import Logo from '../brand/Logo';
 import { Button, ErrorBanner } from '../ui';
-import { routes } from '../../config/site';
+import { idleTimeout, routes } from '../../config/site';
+
+const expiredAfterMs =
+  (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
 
 export default function SessionExpiredPage() {
   const { session, loading, signOut } = useAuth();
   const [failed, setFailed] = useState(false);
   const signOutRef = useRef(signOut);
   const hasSession = session !== null;
+  // Only the session that went idle is signed out here. A newer one (signed in with the
+  // Back button, or in another tab) has fresh activity and goes to the portal instead.
+  const isExpired = hasSession && msSinceLastActivity() >= expiredAfterMs;
 
   useEffect(() => {
     signOutRef.current = signOut;
   }, [signOut]);
 
   useEffect(() => {
-    if (!hasSession) return;
+    if (!isExpired) return;
     let cancelled = false;
     signOutRef.current().then((result) => {
       if (!cancelled && result === 'failed') setFailed(true);
@@ -24,13 +31,17 @@ export default function SessionExpiredPage() {
     return () => {
       cancelled = true;
     };
-  }, [hasSession]);
+  }, [isExpired]);
 
   function retry() {
     setFailed(false);
     signOutRef.current().then((result) => {
       if (result === 'failed') setFailed(true);
     });
+  }
+
+  if (hasSession && !isExpired) {
+    return <Navigate to={routes.portalHome} replace />;
   }
 
   let action;
@@ -49,7 +60,7 @@ export default function SessionExpiredPage() {
     );
   } else {
     action = (
-      <Link to={routes.staffLogin} className="type-label text-walnut underline">
+      <Link to={routes.staffLogin} replace className="type-label text-walnut underline">
         Go to staff login
       </Link>
     );
