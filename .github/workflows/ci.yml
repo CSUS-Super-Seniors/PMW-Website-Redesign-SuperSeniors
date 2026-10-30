@@ -1,8 +1,8 @@
 name: CI
 
 on:
+  # Every PR, including stacked PRs that target another feature branch.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -20,3 +20,16 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm test
+
+  rls:
+    name: RLS tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      # Starts only Postgres and applies every migration.
+      - run: npx supabase db start
+      - run: npm run db:test
