@@ -156,11 +156,25 @@ Configure the following in the Vercel project settings:
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `VITE_` variable or commit it to Git.
 
-The serverless API automatically adds the current deployment's `VERCEL_URL` to its allowed origins. Enable Vercel system environment variables for this behavior.
+The serverless API automatically adds exact HTTPS origins for `VERCEL_URL` (unique deployment), `VERCEL_BRANCH_URL` (stable branch alias), and `VERCEL_PROJECT_PRODUCTION_URL` (production address) when set. These system variables contain hostnames without a scheme. Enable Vercel system environment variables for this behavior. Other origins remain blocked.
 
 For additional custom domains, configure their exact origins in `CLIENT_ORIGINS`.
 
 Preview and Production environment variables must be configured separately.
+
+### Branches and environments
+
+After connecting Git integration, set the Vercel Production Branch to `main`:
+
+- Merges to `main` deploy to **Production** using Production environment variables.
+- Non-production branches and pull requests deploy to **Preview** using Preview environment variables. This includes `SSPMW-387-vercel-deployment` and `SSPMW-227-staging-setup` while they remain active.
+- Use a selected branch's stable Preview URL for staging verification, with Preview variables pointing to staging Supabase. This does not create a separate custom Staging environment. Configure Production credentials independently before cutover.
+
+Verify the Git integration and Production Branch setting in Vercel; repository configuration alone does not establish them. See [Vercel environments](https://vercel.com/docs/deployments/environments).
+
+### Hosting plan before launch
+
+[Vercel Hobby](https://vercel.com/docs/plans/hobby) is limited to personal, non-commercial use. Before launching the client's business website, discuss this restriction with the professor and client and agree on a suitable commercial hosting plan. Do not assume the class project makes a commercial launch eligible for Hobby.
 
 ### Initial setup
 
@@ -185,6 +199,8 @@ npm run lint
 npm run typecheck
 npm test
 ```
+
+The root `npm run typecheck` command checks both server source and `api/index.ts` through `server/tsconfig.typecheck.json`. The server build still uses its original configuration and emits `server/dist/index.js` for local startup.
 
 ### Preview deployment
 
