@@ -8,7 +8,7 @@ export default function NoPermissionPage() {
 
   return (
     <main className="flex justify-center px-4 py-10">
-      <div className="flex w-full max-w-[480px] flex-col items-center gap-4 rounded-md border border-neutral-200 bg-white p-8 text-center">
+      <div className="flex w-full max-w-120 flex-col items-center gap-4 rounded-md border border-neutral-300 bg-white p-8 text-center">
         <div className="flex size-14 items-center justify-center rounded-full bg-neutral-100">
           <LockIcon className="size-6" />
         </div>
@@ -16,7 +16,10 @@ export default function NoPermissionPage() {
         <p className="type-body text-neutral-600">
           This page is for owners only. Head to the schedule to see your jobs.
         </p>
-        <Button variant="outline" onClick={() => navigate(routes.portalSchedule)}>
+        <Button
+          variant="outline"
+          onClick={() => navigate(routes.portalSchedule, { replace: true })}
+        >
           Go to schedule
         </Button>
       </div>
