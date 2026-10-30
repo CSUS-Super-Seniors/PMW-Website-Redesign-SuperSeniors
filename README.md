@@ -86,15 +86,18 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
   `npm run build -w @pmw/validation` and restart that dev server.
 
 ### Step 1 handoff (SSPMW-296)
+### Concerning SSPMW-24 and SSPMW-31
 
-Step 1 validation and the responsive layout are implemented. Valid input currently shows an
-unavailable notice. Service-area checking and Step 2 advancement will be integrated through
-SSPMW-24 and the Step 2 photo story.
+Step 1 validation and the responsive layout are implemented. Valid input
+currently shows an unavailable notice instead of advancing to Step 2.
 
-In `client/src/pages/EstimateRequestPage.tsx`, replace `onContinue={setValidatedDetails}` with the
-service-area check (SSPMW-24) and Step 2 transition. Preserve values when returning to Step 1, allow
-Step 2 to continue with zero photos, and update `client/src/App.test.tsx` to cover advancement,
-service-area outcomes, retries, and Back navigation. Reuse Step 1's mobile layout under SSPMW-108.
+Remaining integration: connect successful validation to the service-area
+check (SSPMW-24), then the photo screen (SSPMW-31). Preserve values when
+returning to Step 1 and allow continuation with zero photos.
+
+The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
+Update `client/src/App.test.tsx` to cover advancement, service-area
+outcomes, retries, and Back navigation.
 
 ## Database
 
