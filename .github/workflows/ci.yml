@@ -59,3 +59,4 @@ jobs:
       # Starts only Postgres and applies every migration.
       - run: npx supabase db start
       - run: npm run db:test
+      
