@@ -158,6 +158,55 @@ Every environment sets the same variables with its own values:
 - `NODE_ENV` is `development` in dev and `production` in staging and production builds.
 - The `SEED_*` variables only go in a developer's `server/.env`. Never add them to Vercel.
 
+### Staging setup and verification (SSPMW-227)
+
+The existing hosted PMW Website Redesign Supabase project is used for
+staging. Developers use local Supabase through Docker. Production will
+use a separate Supabase project under the client's account.
+
+#### Git branches and deployment environments
+
+| Git source                         | Deployment target                                 |
+| ---------------------------------- | ------------------------------------------------- |
+| Local development                  | Local React, Express, and Supabase through Docker |
+| Feature branches and pull requests | Vercel Preview with staging Supabase              |
+| `main`                             | Vercel Production once production is configured   |
+
+Vercel Preview requires these environment variables:
+
+- `SUPABASE_URL` (server)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side secret)
+- `CLIENT_ORIGINS` (allowed website origins)
+- `VITE_SUPABASE_URL` (client)
+- `VITE_SUPABASE_PUBLISHABLE_KEY` (client)
+
+Never expose the service role key through a `VITE_` variable.
+Configure Preview and Production environment variables separately.
+
+#### Staging verification
+
+The initial staging deployment was verified for:
+
+- Homepage and static assets
+- `/api/health` endpoint
+- Supabase authentication
+- Staff login and logout
+- All 10 approved database migrations, confirmed with
+  `supabase migration list`
+
+Only apply database migrations to staging after their pull requests
+have been approved and merged into `main`. Do not apply unmerged
+database changes or destructive operations to staging.
+
+Protected staff API authorization requires separate verification
+after the staff profile permission fix is merged.
+
+#### DigitalOcean retirement
+
+DigitalOcean is the legacy hosting platform. Its resources must be
+confirmed shut down before the hosting migration is marked complete.
+The Vercel migration is tracked separately under SSPMW-387.
+
 ### Sample data
 
 `supabase/seed.sql` holds the sample data shown in the Figma mockups: customers such as Margaret Lewis, inquiries such as INQ-1048, and jobs J-1001 to J-1005. Running it again puts those rows back to their sample values instead of adding copies. Rows created in the app, such as extra jobs, notes or steps, are left alone.
