@@ -4,12 +4,13 @@ import { fetchStaffProfile, type StaffProfileResult } from './fetchStaffProfile'
 
 export type StaffRoleState = { status: 'loading' } | StaffProfileResult;
 
-export function useStaffRole(): StaffRoleState {
+export function useStaffRole(): { state: StaffRoleState; retry: () => void } {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const userId = session?.user.id;
   const tokenRef = useRef(accessToken);
   const [state, setState] = useState<StaffRoleState>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     tokenRef.current = accessToken;
@@ -25,7 +26,12 @@ export function useStaffRole(): StaffRoleState {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, attempt]);
 
-  return state;
+  function retry() {
+    setState({ status: 'loading' });
+    setAttempt((n) => n + 1);
+  }
+
+  return { state, retry };
 }

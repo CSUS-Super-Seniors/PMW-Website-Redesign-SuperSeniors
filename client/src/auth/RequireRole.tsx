@@ -3,11 +3,12 @@ import { routes } from '../config/site';
 import { useStaffRole } from './useStaffRole';
 import type { StaffRole } from './fetchStaffProfile';
 import NoPermissionPage from '../pages/NoPermissionPage';
+import AccessCheckFailedPage from '../pages/AccessCheckFailedPage';
 
 type RequireRoleProps = { allowed: StaffRole[] };
 
 export default function RequireRole({ allowed }: RequireRoleProps) {
-  const state = useStaffRole();
+  const { state, retry } = useStaffRole();
   const location = useLocation();
 
   if (state.status === 'loading') {
@@ -28,6 +29,10 @@ export default function RequireRole({ allowed }: RequireRoleProps) {
         state={{ from: location.pathname + location.search }}
       />
     );
+  }
+
+  if (state.status === 'unreachable') {
+    return <AccessCheckFailedPage onRetry={retry} />;
   }
 
   if (state.status === 'ok' && allowed.includes(state.role)) {

@@ -121,4 +121,31 @@ describe('RequireRole', () => {
     expect(await screen.findByText('Staff login page')).toBeInTheDocument();
     expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
   });
+
+  it('shows the could-not-check screen when the server fails', async () => {
+    fakeServerStatus(503);
+    renderGuard();
+
+    expect(
+      await screen.findByRole('heading', { name: "We couldn't check your access" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'You do not have access to this page' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('lets an owner in after Retry when the server comes back', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ role: 'owner' }) }),
+    );
+    renderGuard();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByText('Customers page')).toBeInTheDocument();
+  });
 });
