@@ -345,4 +345,22 @@ describe('AuthProvider', () => {
 
     expect(localStorage.getItem(lastActivityKey)).toBe(old);
   });
+
+  it('forgets the saved activity time when the session ends', async () => {
+    let notify: (event: string, session: unknown) => void = () => {};
+    mocks.onAuthStateChange.mockImplementation((callback) => {
+      notify = callback;
+      return { data: { subscription: { unsubscribe: vi.fn() } } };
+    });
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    localStorage.setItem(lastActivityKey, String(Date.now() - 3 * 60 * 60 * 1000));
+    renderProvider();
+    await screen.findByText('signed out');
+
+    act(() => {
+      notify('SIGNED_OUT', null);
+    });
+
+    expect(localStorage.getItem(lastActivityKey)).toBeNull();
+  });
 });

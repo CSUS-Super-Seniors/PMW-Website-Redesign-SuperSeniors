@@ -74,4 +74,18 @@ describe('SessionExpiredPage', () => {
     expect(screen.getByText('Portal home')).toBeInTheDocument();
     expect(signOut).not.toHaveBeenCalled();
   });
+
+  it('forgets an old saved time when nobody is signed in', () => {
+    seedActivity(expiredMs);
+    renderPage();
+
+    expect(localStorage.getItem(lastActivityKey)).toBeNull();
+  });
+
+  it('does not claim the person was signed out while the session still exists', () => {
+    seedActivity(expiredMs);
+    renderPage({ session, signOut: () => new Promise(() => {}) });
+
+    expect(screen.queryByText(/Signed out for inactivity/)).not.toBeInTheDocument();
+  });
 });

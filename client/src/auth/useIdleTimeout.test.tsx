@@ -341,4 +341,16 @@ describe('useIdleTimeout', () => {
       60 * 60 * 1000,
     ); // the old time was not overwritten
   });
+
+  it('restarts the idle time from now when the saved time is in the future', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(lastActivityKey, String(Date.now() + 24 * 60 * 60 * 1000));
+    const { result } = renderHook(() => useIdleTimeout(vi.fn(), 15, 2));
+
+    expect(Number(localStorage.getItem(lastActivityKey))).toBeLessThanOrEqual(Date.now());
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+    expect(result.current.isIdle).toBe(true);
+  });
 });

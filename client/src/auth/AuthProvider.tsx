@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getSupabase } from './supabaseClient';
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js';
 import { AuthContext, type SignInResult, type SignOutResult } from './AuthContext';
-import { saveLastActivity } from './lastActivity';
+import { clearLastActivity, saveLastActivity } from './lastActivity';
 import { handleRecoveryEvent } from './passwordReset';
 
 /** Returns null (and logs why) instead of crashing when the env variables are missing. */
@@ -31,6 +31,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
 
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // No session, no activity to remember. A missing time counts as "just now", so a new
+      // session (this tab or another) is never treated as already expired.
+      if (event === 'SIGNED_OUT') clearLastActivity();
       setSession(nextSession);
       handleRecoveryEvent(event, nextSession);
     });

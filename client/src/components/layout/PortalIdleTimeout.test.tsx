@@ -83,6 +83,7 @@ describe('Idle timeout with the real AuthProvider', () => {
     expect(router.state.location.pathname).toBe(routes.staffSessionExpired);
     expect(mocks.signOut).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('link', { name: 'Go to staff login' })).toBeInTheDocument();
+    expect(localStorage.getItem(lastActivityKey)).toBeNull();
   });
 
   it('stays on the expired page with a Retry when sign-out fails', async () => {
@@ -92,6 +93,7 @@ describe('Idle timeout with the real AuthProvider', () => {
     expect(router.state.location.pathname).toBe(routes.staffSessionExpired);
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go to staff login' })).not.toBeInTheDocument();
+    expect(localStorage.getItem(lastActivityKey)).not.toBeNull();
   });
 
   it('does not sign out a new session when Back returns to the expired page', async () => {
@@ -112,23 +114,33 @@ describe('Idle timeout with the real AuthProvider', () => {
     expect(router.state.location.pathname).toBe(routes.portalHome);
   });
 
-  it('does not sign out a session that appears while the expired page is open', async () => {
-    savedSession = null;
-    const router = renderApp([routes.staffSessionExpired]);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(screen.getByRole('link', { name: 'Go to staff login' })).toBeInTheDocument();
+  const expiredMs =
+    (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000 + 1000;
 
-    localStorage.setItem(lastActivityKey, String(Date.now())); // signed in from the other tab
-    await act(async () => {
-      notifyAuthChange('SIGNED_IN', staffSession);
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+  it.each([
+    ['writes the fresh time after SIGNED_IN, like signIn does', true],
+    ['never writes a time, like a password reset link', false],
+  ])(
+    'does not sign out a session that appears while the expired page is open (%s)',
+    async (_name, writesTime) => {
+      localStorage.setItem(lastActivityKey, String(Date.now() - expiredMs)); // left from the idle session
+      savedSession = null;
+      const router = renderApp([routes.staffSessionExpired]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole('link', { name: 'Go to staff login' })).toBeInTheDocument();
 
-    expect(mocks.signOut).not.toHaveBeenCalled();
-    expect(router.state.location.pathname).toBe(routes.portalHome);
-  });
+      await act(async () => {
+        notifyAuthChange('SIGNED_IN', staffSession); // supabase-js broadcasts this first
+      });
+      if (writesTime) localStorage.setItem(lastActivityKey, String(Date.now()));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(mocks.signOut).not.toHaveBeenCalled();
+      expect(router.state.location.pathname).toBe(routes.portalHome);
+    },
+  );
 });

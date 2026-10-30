@@ -5,6 +5,7 @@ import { msSinceLastActivity } from '../../auth/lastActivity';
 import Logo from '../brand/Logo';
 import { Button, ErrorBanner } from '../ui';
 import { idleTimeout, routes } from '../../config/site';
+import { clearLastActivity } from '../../auth/lastActivity';
 
 const expiredAfterMs =
   (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
@@ -32,6 +33,11 @@ export default function SessionExpiredPage() {
       cancelled = true;
     };
   }, [isExpired]);
+
+  useEffect(() => {
+    if (loading || hasSession) return;
+    clearLastActivity();
+  }, [loading, hasSession]);
 
   function retry() {
     setFailed(false);
@@ -71,9 +77,11 @@ export default function SessionExpiredPage() {
       <Logo className="h-11 w-auto" />
       <div className="flex w-full max-w-110 flex-col gap-5 rounded-lg border border-neutral-300 bg-white p-6 md:p-10">
         <h1 className="type-h2">Your session has expired</h1>
-        <p className="type-body text-neutral-600">
-          Signed out for inactivity to keep customer data private.
-        </p>
+        {!loading && !hasSession && (
+          <p className="type-body text-neutral-600">
+            Signed out for inactivity to keep customer data private.
+          </p>
+        )}
         {action}
       </div>
     </main>
