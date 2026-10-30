@@ -110,6 +110,7 @@ describe('App', () => {
     '/portal/reports',
     '/portal/staff-accounts',
     '/portal/testimonials',
+    '/portal/customers/123',
   ])('shows the no-permission screen to an employee on %s', async (path) => {
     fakeServerRole('employee');
     renderApp(path, { session: staffSession });
