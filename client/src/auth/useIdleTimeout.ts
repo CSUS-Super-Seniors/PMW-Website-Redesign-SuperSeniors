@@ -33,7 +33,7 @@ export function useIdleTimeout(
       else id = setTimeout(check, idleLimit - idleFor);
     }
     function handleActivity() {
-      saveLastActivity();
+      if (msSinceLastActivity() < idleLimit) saveLastActivity();
       check();
     }
     function handleStorage(event: StorageEvent) {

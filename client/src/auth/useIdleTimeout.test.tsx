@@ -287,4 +287,39 @@ describe('useIdleTimeout', () => {
 
     expect(result.current.isIdle).toBe(false);
   });
+
+  it('does not bring back an expired session when a key is pressed after sleep', () => {
+    vi.useFakeTimers();
+    const onTimeout = vi.fn();
+    renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000); // slept: no timers ran, no focus event
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown'));
+    });
+
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the warning instead of resetting when a key is pressed after the idle limit', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useIdleTimeout(vi.fn(), 15, 2));
+
+    vi.setSystemTime(Date.now() + 16 * 60 * 1000);
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown'));
+    });
+
+    expect(result.current.isIdle).toBe(true);
+  });
+
+  it('does not expire a saved time that is only a second in the future', () => {
+    vi.useFakeTimers();
+    localStorage.setItem(lastActivityKey, String(Date.now() + 1000));
+    const onTimeout = vi.fn();
+
+    renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
 });

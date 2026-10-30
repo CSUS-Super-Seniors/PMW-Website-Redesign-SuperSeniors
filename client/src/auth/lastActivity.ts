@@ -1,4 +1,5 @@
 export const lastActivityKey = 'pmw:lastActivity';
+const clockSkewMs = 60 * 1000;
 
 // Used when localStorage is blocked, so the timer still works in this tab.
 let lastSeenInThisTab = Date.now();
@@ -29,8 +30,8 @@ export function msSinceLastActivity(): number {
     const saved = localStorage.getItem(lastActivityKey);
     if (saved === null) return 0;
     const last = Number(saved);
-    if (!Number.isFinite(last) || last > Date.now()) return Infinity;
-    return Date.now() - last;
+    if (!Number.isFinite(last) || last > Date.now() + clockSkewMs) return Infinity;
+    return Math.max(0, Date.now() - last);
   } catch {
     return Date.now() - lastSeenInThisTab;
   }
