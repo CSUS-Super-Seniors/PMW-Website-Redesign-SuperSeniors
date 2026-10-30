@@ -95,6 +95,24 @@ describe('PortalLayout', () => {
     expect(screen.getByText('Session expired page')).toBeInTheDocument();
   });
 
+  it('goes to the expired screen when Escape closes the warning after sleep', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+  });
+
   it('closing the warning keeps the user signed in', () => {
     vi.useFakeTimers();
     renderAt('/portal/dashboard');

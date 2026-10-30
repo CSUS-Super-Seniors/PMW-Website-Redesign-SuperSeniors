@@ -96,6 +96,11 @@ export function useIdleTimeout(
   }, [isIdle, idleLimit, totalLimit]);
 
   function stayLoggedIn() {
+    // The × button, Escape and the backdrop all end up here too, so check before saving.
+    if (msSinceLastActivity() >= totalLimit) {
+      onTimeoutRef.current();
+      return;
+    }
     saveLastActivity();
     setIsIdle(false);
   }

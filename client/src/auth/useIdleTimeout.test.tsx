@@ -322,4 +322,23 @@ describe('useIdleTimeout', () => {
 
     expect(onTimeout).not.toHaveBeenCalled();
   });
+
+  it('does not bring back an expired session when Stay signed in is clicked after sleep', () => {
+    vi.useFakeTimers();
+    const onTimeout = vi.fn();
+    const { result } = renderHook(() => useIdleTimeout(onTimeout, 15, 2));
+    act(() => {
+      vi.advanceTimersByTime(15 * 60 * 1000);
+    });
+    expect(result.current.isIdle).toBe(true);
+
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000); // asleep with the warning open; no timer ran
+    act(() => {
+      result.current.stayLoggedIn();
+    });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+    expect(Date.now() - Number(localStorage.getItem(lastActivityKey))).toBeGreaterThan(
+      60 * 60 * 1000,
+    ); // the old time was not overwritten
+  });
 });
