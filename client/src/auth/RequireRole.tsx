@@ -1,4 +1,5 @@
-import { Outlet } from 'react-router';
+import { Navigate, Outlet, useLocation } from 'react-router';
+import { routes } from '../config/site';
 import { useStaffRole } from './useStaffRole';
 import type { StaffRole } from './fetchStaffProfile';
 import NoPermissionPage from '../pages/NoPermissionPage';
@@ -7,6 +8,7 @@ type RequireRoleProps = { allowed: StaffRole[] };
 
 export default function RequireRole({ allowed }: RequireRoleProps) {
   const state = useStaffRole();
+  const location = useLocation();
 
   if (state.status === 'loading') {
     return (
@@ -15,6 +17,16 @@ export default function RequireRole({ allowed }: RequireRoleProps) {
           Loading...
         </p>
       </div>
+    );
+  }
+
+  if (state.status === 'unauthenticated') {
+    return (
+      <Navigate
+        to={routes.staffLogin}
+        replace
+        state={{ from: location.pathname + location.search }}
+      />
     );
   }
 

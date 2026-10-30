@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from './AuthContext';
 import RequireRole from './RequireRole';
+import { routes } from '../config/site';
 
 const session = {
   access_token: 'token-123',
@@ -25,6 +26,17 @@ function fakeServerRole(role: string) {
   );
 }
 
+function fakeServerStatus(status: number) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => ({}),
+    }),
+  );
+}
+
 function renderGuard() {
   const value: AuthContextValue = {
     session,
@@ -38,6 +50,7 @@ function renderGuard() {
       <MemoryRouter initialEntries={['/portal/customers']}>
         <Routes>
           <Route path="/portal/schedule" element={<p>Schedule page</p>} />
+          <Route path={routes.staffLogin} element={<p>Staff login page</p>} />
           <Route element={<RequireRole allowed={['owner']} />}>
             <Route path="/portal/customers" element={<p>Customers page</p>} />
           </Route>
@@ -89,5 +102,23 @@ describe('RequireRole', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Go to schedule' }));
 
     expect(await screen.findByText('Schedule page')).toBeInTheDocument();
+  });
+
+  it('shows the no-permission screen when the server says 403', async () => {
+    fakeServerStatus(403);
+    renderGuard();
+
+    expect(
+      await screen.findByRole('heading', { name: 'You do not have access to this page' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
+  });
+
+  it('sends the user to staff login when the server says 401', async () => {
+    fakeServerStatus(401);
+    renderGuard();
+
+    expect(await screen.findByText('Staff login page')).toBeInTheDocument();
+    expect(screen.queryByText('Customers page')).not.toBeInTheDocument();
   });
 });
