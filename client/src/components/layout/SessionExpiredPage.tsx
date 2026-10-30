@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
-import { msSinceLastActivity } from '../../auth/lastActivity';
+import { clearLastActivity, msSinceLastActivity } from '../../auth/lastActivity';
 import Logo from '../brand/Logo';
 import { Button, ErrorBanner } from '../ui';
 import { idleTimeout, routes } from '../../config/site';
-import { clearLastActivity } from '../../auth/lastActivity';
 
 const expiredAfterMs =
   (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
