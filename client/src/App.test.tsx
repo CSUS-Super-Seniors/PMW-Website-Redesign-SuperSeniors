@@ -51,6 +51,16 @@ describe('App', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows the business tagline on the home page, not developer notes', () => {
+    renderApp('/');
+
+    const main = screen.getByRole('main');
+    expect(main).toHaveTextContent(
+      'Family-run furniture repair and restoration in Carmichael, CA since 2011.',
+    );
+    expect(main).not.toHaveTextContent(/sprint|starter/i);
+  });
+
   it('shows the Services page inside the public layout', () => {
     renderApp('/services');
 
