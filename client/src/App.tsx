@@ -1,12 +1,15 @@
+
 import { Route, Routes } from 'react-router';
 import RequireAuth from './auth/RequireAuth';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { routes } from './config/site';
+import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
-import PlaceholderPage from './pages/PlaceholderPage';
-import StaffLoginRoute from './pages/StaffLoginRoute';
 import NotFoundPage from './pages/NotFoundPage';
+import PlaceholderPage from './pages/PlaceholderPage';
+import ServicesPage from './pages/ServicesPage';
+import StaffLoginRoute from './pages/StaffLoginRoute';
 
 function Home() {
   return (
@@ -24,22 +27,24 @@ export default function App() {
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
       <Route element={<RequireAuth />}>
-        {/* Every portal page sits behind the login. The portal pages replace this placeholder. */}
         <Route path="/portal" element={<PortalLayout />}>
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>
+
       <Route element={<PublicLayout />}>
         <Route path="/" element={<Home />} />
 
-        {/* Planned public pages that are not implemented yet. */}
+        {/* Implemented public pages */}
+        <Route path={routes.services} element={<ServicesPage />} />
+        <Route path={routes.contact} element={<ContactPage />} />
+
+        {/* Planned pages that are not implemented yet */}
         {[
-          routes.services,
           routes.gallery,
           routes.serviceArea,
           routes.testimonials,
           routes.about,
-          routes.contact,
           routes.requestEstimate,
           routes.privacy,
           routes.terms,
@@ -48,10 +53,13 @@ export default function App() {
           <Route key={path} path={path} element={<PlaceholderPage />} />
         ))}
 
-        {/* Unknown URLs display the helpful 404 page. */}
+        {/* Unknown URLs display the helpful 404 page */}
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-      {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
+
+      {import.meta.env.DEV && (
+        <Route path="/design-tokens" element={<DesignTokensPage />} />
+      )}
     </Routes>
   );
 }
