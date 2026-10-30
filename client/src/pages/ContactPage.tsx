@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { sendContactMessage, type ContactMessage } from '../api/contact';
+import { CONTACT_MESSAGE_LIMIT, contactMessageSchema } from '@pmw/validation';
+import { ContactValidationError, sendContactMessage, type ContactMessage } from '../api/contact';
 import { Button, ErrorBanner, Input, Textarea } from '../components/ui';
 import { business } from '../config/site';
 
@@ -11,18 +12,16 @@ type FieldErrors = Partial<Record<keyof Fields, string>>;
 type SendState = 'idle' | 'sending' | 'sent' | 'failed';
 
 const emptyFields: Fields = { name: '', contact: '', message: '' };
-const messageLimit = 500;
+const messageLimit = CONTACT_MESSAGE_LIMIT;
 const callLinkClass =
   'rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber';
 
 function isEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  return value.length > 0 && contactMessageSchema.shape.email.safeParse(value).success;
 }
 
 function isPhone(value: string) {
-  // Accept US numbers with common formatting and an optional +1 country code.
-  if (!/^\+?[\d\s().-]+$/.test(value)) return false;
-  return /^(?:1)?[2-9]\d{2}[2-9]\d{6}$/.test(value.replace(/\D/g, ''));
+  return value.length > 0 && contactMessageSchema.shape.phone.safeParse(value).success;
 }
 
 export default function ContactPage({ onSend = sendContactMessage }: ContactPageProps) {
@@ -33,6 +32,7 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
   const formRef = useRef<HTMLFormElement>(null);
   const successHeadingRef = useRef<HTMLHeadingElement>(null);
   const focusNameAfterReset = useRef(false);
+  const focusErrorAfterResponse = useRef<keyof Fields | null>(null);
   const sending = state === 'sending';
 
   useEffect(() => {
@@ -41,6 +41,10 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
     } else if (state === 'idle' && focusNameAfterReset.current) {
       focusNameAfterReset.current = false;
       formRef.current?.querySelector<HTMLInputElement>('[name="name"]')?.focus();
+    } else if (state === 'idle' && focusErrorAfterResponse.current) {
+      const field = focusErrorAfterResponse.current;
+      focusErrorAfterResponse.current = null;
+      formRef.current?.querySelector<HTMLElement>(`[name="${field}"]`)?.focus();
     }
   }, [state]);
 
@@ -83,8 +87,21 @@ export default function ContactPage({ onSend = sendContactMessage }: ContactPage
         message,
       });
       setState('sent');
-    } catch {
-      setState('failed');
+    } catch (error) {
+      if (error instanceof ContactValidationError) {
+        const serverErrors: FieldErrors = {
+          name: error.fieldErrors.name,
+          contact: error.fieldErrors.email ?? error.fieldErrors.phone,
+          message: error.fieldErrors.message,
+        };
+        setErrors(serverErrors);
+        focusErrorAfterResponse.current =
+          (Object.keys(serverErrors) as (keyof Fields)[]).find((field) => serverErrors[field]) ??
+          null;
+        setState('idle');
+      } else {
+        setState('failed');
+      }
     } finally {
       pending.current = false;
     }

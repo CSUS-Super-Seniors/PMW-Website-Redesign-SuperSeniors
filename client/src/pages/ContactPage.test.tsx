@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { ContactMessage } from '../api/contact';
+import { ContactValidationError, type ContactMessage } from '../api/contact';
 import { business } from '../config/site';
 import ContactPage from './ContactPage';
 
@@ -69,18 +69,65 @@ describe('ContactPage', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it.each(['not-an-email', 'alex@', 'alex@example', '12345', '916-CALL-NOW', '916555123456'])(
-    'rejects invalid contact information: %s',
-    async (contact) => {
-      const onSend = renderPage();
-      const user = await fillForm(contact);
-      await user.click(screen.getByRole('button', { name: 'Send message' }));
+  it.each([
+    'not-an-email',
+    'alex@',
+    'alex@example',
+    'a@b.c',
+    '12345',
+    '916-CALL-NOW',
+    '916555123456',
+  ])('rejects invalid contact information: %s', async (contact) => {
+    const onSend = renderPage();
+    const user = await fillForm(contact);
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
 
-      expect(screen.getByText('Enter a valid phone number or email address.')).toBeInTheDocument();
-      expect(screen.getByLabelText('Phone number or email')).toHaveFocus();
-      expect(onSend).not.toHaveBeenCalled();
-    },
-  );
+    expect(screen.getByText('Enter a valid phone number or email address.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Phone number or email')).toHaveFocus();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('shows server errors inline and focuses the first invalid field', async () => {
+    const onSend = vi
+      .fn<(message: ContactMessage) => Promise<void>>()
+      .mockRejectedValueOnce(
+        new ContactValidationError({
+          name: 'Name must be 100 characters or fewer.',
+          email: 'Enter a valid email address.',
+          message: 'Message must be 500 characters or fewer.',
+        }),
+      )
+      .mockResolvedValueOnce(undefined);
+    renderPage(onSend);
+    const user = await fillForm();
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByText('Name must be 100 characters or fewer.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your name')).toHaveFocus();
+    expect(screen.getByLabelText('Phone number or email')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+    expect(screen.getByText('Message must be 500 characters or fewer.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Your message')).toHaveValue('  Can you repair my table?  ');
+    expect(screen.queryByText(/Your message could not be sent/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(await screen.findByText('Message sent.')).toBeInTheDocument();
+  });
+
+  it('maps a server phone error to the combined contact field', async () => {
+    const onSend = vi
+      .fn<(message: ContactMessage) => Promise<void>>()
+      .mockRejectedValueOnce(
+        new ContactValidationError({ phone: 'Enter a valid US phone number.' }),
+      );
+    renderPage(onSend);
+    const user = await fillForm('(916) 643-5686');
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+    expect(await screen.findByText('Enter a valid US phone number.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Phone number or email')).toHaveFocus();
+    expect(screen.queryByText('Message sent.')).not.toBeInTheDocument();
+  });
 
   it.each([
     ['customer@example.com', 'customer@example.com', null],
