@@ -37,15 +37,15 @@ function fakeServerStatus(status: number) {
   );
 }
 
-function renderGuard() {
+function GuardTree({ currentSession }: { currentSession: Session }) {
   const value: AuthContextValue = {
-    session,
+    session: currentSession,
     loading: false,
     signOutFailed: false,
     signIn: () => Promise.resolve('wrong-credentials'),
     signOut: () => Promise.resolve('success'),
   };
-  return render(
+  return (
     <AuthContext.Provider value={value}>
       <MemoryRouter initialEntries={['/portal/customers']}>
         <Routes>
@@ -56,8 +56,12 @@ function renderGuard() {
           </Route>
         </Routes>
       </MemoryRouter>
-    </AuthContext.Provider>,
+    </AuthContext.Provider>
   );
+}
+
+function renderGuard() {
+  return render(<GuardTree currentSession={session} />);
 }
 
 describe('RequireRole', () => {
@@ -147,5 +151,20 @@ describe('RequireRole', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
 
     expect(await screen.findByText('Customers page')).toBeInTheDocument();
+  });
+
+  it('keeps an owner on the page when the token refreshes and the check would fail', async () => {
+    fakeServerRole('owner');
+    const { rerender } = render(<GuardTree currentSession={session} />);
+    expect(await screen.findByText('Customers page')).toBeInTheDocument();
+
+    const failingFetch = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', failingFetch);
+
+    const refreshed = { ...session, access_token: 'token-2' } as Session;
+    rerender(<GuardTree currentSession={refreshed} />);
+
+    expect(screen.getByText('Customers page')).toBeInTheDocument();
+    expect(failingFetch).not.toHaveBeenCalled();
   });
 });
