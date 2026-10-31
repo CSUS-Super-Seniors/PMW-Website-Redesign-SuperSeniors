@@ -1,9 +1,17 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { idleTimeout, routes } from '../../config/site';
 import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
-import { routes } from '../../config/site';
+import { lastActivityKey } from '../../auth/lastActivity';
 import PortalLayout from './PortalLayout';
+
+const pageRendered = vi.fn();
+
+function RecordingPage() {
+  pageRendered();
+  return <p>Page content</p>;
+}
 
 const auth: AuthContextValue = {
   session: null,
@@ -13,14 +21,18 @@ const auth: AuthContextValue = {
   signOut: () => Promise.resolve('success'),
 };
 
-function renderAt(path: string) {
+function renderAt(
+  path: string,
+  signOut: AuthContextValue['signOut'] = () => Promise.resolve('success'),
+) {
   return render(
-    <AuthContext.Provider value={auth}>
+    <AuthContext.Provider value={{ ...auth, signOut }}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/portal" element={<PortalLayout />}>
-            <Route path="*" element={<p>Page content</p>} />
+            <Route path="*" element={<RecordingPage />} />
           </Route>
+          <Route path={routes.staffSessionExpired} element={<p>Session expired page</p>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -28,6 +40,11 @@ function renderAt(path: string) {
 }
 
 describe('PortalLayout', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    pageRendered.mockClear();
+  });
+
   it('shows the nav links with their addresses', () => {
     renderAt('/portal/dashboard');
     const nav = screen.getByRole('navigation', { name: 'Portal' });
@@ -56,5 +73,95 @@ describe('PortalLayout', () => {
       'href',
       routes.home,
     );
+  });
+
+  it('shows the timeout warning after the idle time', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+  });
+
+  it('goes to the expired screen when the warning runs out', async () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningDurationMinutes * 60 * 1000);
+    });
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+  });
+
+  it('goes to the expired screen when Escape closes the warning after sleep', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+
+    vi.setSystemTime(Date.now() + 3 * 60 * 60 * 1000);
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+  });
+
+  it('closing the warning keeps the user signed in', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+
+    expect(
+      screen.queryByRole('dialog', { name: "You're about to be signed out" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the Log out dialog when the warning opens, and closes both on Stay signed in', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    expect(screen.getByRole('dialog', { name: 'Log out?' })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Log out?' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stay signed in' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('does not render the page when the saved time has already run out', () => {
+    localStorage.setItem(lastActivityKey, String(Date.now() - 3 * 60 * 60 * 1000));
+    renderAt('/portal/dashboard');
+
+    expect(screen.getByText('Session expired page')).toBeInTheDocument();
+    expect(screen.queryByText('Page content')).not.toBeInTheDocument();
+    expect(pageRendered).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,7 @@ export const routes = {
   terms: '/terms',
   staffLogin: '/staff/login',
   staffForgotPassword: '/staff/forgot-password',
+  staffSessionExpired: '/staff/session-expired',
   staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
@@ -67,3 +68,14 @@ export const footerCompanyLinks: NavLinkItem[] = [
   { label: 'About', to: routes.about },
   { label: 'Contact', to: routes.contact },
 ];
+
+export const idleTimeout = {
+  /** Time user sits idle before it shows the warning in minutes */
+  idleWarningMinutes: 15,
+  /** Time the warning will stay up in minutes */
+  idleWarningDurationMinutes: 2,
+} as const;
+
+/** Idle time plus warning time: after this long without activity the session counts as expired. */
+export const idleExpiredAfterMs =
+  (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;

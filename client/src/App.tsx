@@ -12,6 +12,7 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
+import SessionExpiredPage from './components/layout/SessionExpiredPage';
 
 function Home() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route path={routes.staffSessionExpired} element={<SessionExpiredPage />} />
       <Route path={routes.staffForgotPassword} element={<ForgotPasswordRoute />} />
       <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
       <Route element={<RequireAuth />}>
