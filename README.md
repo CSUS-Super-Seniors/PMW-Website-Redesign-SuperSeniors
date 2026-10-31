@@ -91,6 +91,19 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
+### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
+
+Step 1 validation and the responsive layout are implemented. Valid input
+currently shows an unavailable notice instead of advancing to Step 2.
+
+Remaining integration: connect successful validation to the service-area
+check (SSPMW-24), then the photo screen (SSPMW-31). Preserve values when
+returning to Step 1 and allow continuation with zero photos.
+
+The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
+Update `client/src/App.test.tsx` to cover advancement, service-area
+outcomes, retries, and Back navigation.
+
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
 Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),

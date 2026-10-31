@@ -6,6 +6,7 @@ import PublicLayout from './components/layout/PublicLayout';
 import { business, routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
+import EstimateRequestPage from './pages/EstimateRequestPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
 
         {/* Implemented public pages */}
+        <Route path={routes.requestEstimate} element={<EstimateRequestPage />} />
         <Route path={routes.services} element={<ServicesPage />} />
         <Route path={routes.contact} element={<ContactPage />} />
 
@@ -56,7 +58,6 @@ export default function App() {
           routes.serviceArea,
           routes.testimonials,
           routes.about,
-          routes.requestEstimate,
           routes.privacy,
           routes.terms,
         ].map((path) => (
