@@ -158,6 +158,55 @@ Every environment sets the same variables with its own values:
 - `NODE_ENV` is `development` in dev and `production` in staging and production builds.
 - The `SEED_*` variables only go in a developer's `server/.env`. Never add them to Vercel.
 
+### Staging setup and verification (SSPMW-227)
+
+The existing hosted PMW Website Redesign Supabase project is used for
+staging. Developers use local Supabase through Docker. Production will
+use a separate Supabase project under the client's account.
+
+#### Git branches and deployment environments
+
+| Git source                         | Deployment target                                 |
+| ---------------------------------- | ------------------------------------------------- |
+| Local development                  | Local React, Express, and Supabase through Docker |
+| Feature branches and pull requests | Vercel Preview with staging Supabase              |
+| `main`                             | Vercel Production once production is configured   |
+
+Vercel Preview requires these environment variables:
+
+- `SUPABASE_URL` (server)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-side secret)
+- `CLIENT_ORIGINS` (allowed website origins)
+- `VITE_SUPABASE_URL` (client)
+- `VITE_SUPABASE_PUBLISHABLE_KEY` (client)
+
+Never expose the service role key through a `VITE_` variable.
+Configure Preview and Production environment variables separately.
+
+#### Staging verification
+
+The initial staging deployment was verified for:
+
+- Homepage and static assets
+- `/api/health` endpoint
+- Supabase authentication
+- Staff login and logout
+- All 10 approved database migrations, confirmed with
+  `supabase migration list`
+
+Only apply database migrations to staging after their pull requests
+have been approved and merged into `main`. Do not apply unmerged
+database changes or destructive operations to staging.
+
+Protected staff API authorization requires separate verification
+after the staff profile permission fix is merged.
+
+#### DigitalOcean retirement
+
+DigitalOcean is the legacy hosting platform. Its resources must be
+confirmed shut down before the hosting migration is marked complete.
+The Vercel migration is tracked separately under SSPMW-387.
+
 ### Sample data
 
 `supabase/seed.sql` holds the sample data shown in the Figma mockups: customers such as Margaret Lewis, inquiries such as INQ-1048, and jobs J-1001 to J-1005. Running it again puts those rows back to their sample values instead of adding copies. Rows created in the app, such as extra jobs, notes or steps, are left alone.
@@ -201,57 +250,126 @@ Production builds always use the API, even if a stub is configured.
 3. Push the branch and open a pull request into `main`. Fill in the PR template.
 4. CI must pass and one teammate must approve before merging. Direct pushes to `main` are blocked.
 
-## Deploying (DigitalOcean App Platform)
+## Deploying (Vercel)
 
-Hosting is moving to Vercel (SSPMW-387). This section stays until that change replaces it.
+The application is hosted on Vercel using one project:
 
-The deployment configuration is defined in `.do/app.yaml`.
+- `client/`: React and Vite frontend, built into `client/dist`.
+- `api/index.ts`: Vercel serverless entry point for Express.
+- `server/`: Existing Express application and API routes.
+- `shared/`: Shared validation package.
+- `vercel.json`: Build configuration, API rewrites, and SPA routing.
 
-The application has two components:
+### Requirements
 
-- `api`: Express backend, listening on port 8080, serving `/api/*`.
-- `web`: React/Vite static site, serving `/` with `index.html` as the fallback for client-side routes.
+- Node.js 22.x
+- Vercel account and CLI
+- Hosted Supabase project with authorized credentials
 
-Both components deploy from the `main` branch after changes are merged.
+### Environment variables
 
-### Before deploying
+Configure the following in the Vercel project settings:
 
-1. Confirm the DigitalOcean account has the required billing or promotional credits.
-2. Connect the `CSUS-Super-Seniors/PMW-Website-Redesign-SuperSeniors` GitHub repository.
-3. In DigitalOcean App Platform, select **Create App** and load `.do/app.yaml`.
-4. On the create-app environment variables screen, enter the Supabase values **before starting the first deployment**:
-   - **API service (runtime):**
-     - `SUPABASE_URL`: Supabase project URL.
-     - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key (secret).
-   - **Web static site (build time):**
-     - `VITE_SUPABASE_URL`: Supabase project URL.
-     - `VITE_SUPABASE_PUBLISHABLE_KEY`: Supabase publishable key.
-5. Confirm the environment variables and estimated cost before creating the app.
-6. Set the hosted Supabase project's Auth settings listed in [Supabase Auth settings](#supabase-auth-settings).
+| Variable                        | Purpose                         |
+| ------------------------------- | ------------------------------- |
+| `SUPABASE_URL`                  | Hosted Supabase project URL     |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Server-only secret for Supabase |
+| `CLIENT_ORIGINS`                | Allowed frontend origins        |
+| `VITE_SUPABASE_URL`             | Public Supabase URL for React   |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Public Supabase publishable key |
 
-Never commit real credentials to the repository. The frontend's `VITE_` variables are embedded in the browser build and must never contain the service role key.
+For contact submissions, also configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `CONTACT_OWNER_EMAILS` in the intended Vercel environment, as described in the contact setup above. The serverless entry initializes the contact backend when these settings are present. Without them, the contact endpoint returns 503 while other routes remain available.
 
-The app spec sets `NODE_ENV=production`, `PORT=8080`, and `CLIENT_ORIGINS=${APP_URL}`. Never commit real secret keys.
+Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `VITE_` variable or commit it to Git.
 
-### After deploying
+The serverless API automatically adds exact HTTPS origins for `VERCEL_URL` (unique deployment), `VERCEL_BRANCH_URL` (stable branch alias), and `VERCEL_PROJECT_PRODUCTION_URL` (production address) when set. These system variables contain hostnames without a scheme. Enable Vercel system environment variables for this behavior. Other origins remain blocked.
 
-1. Wait for both components to finish deploying.
-2. Visit `https://<app-domain>/api/health` and confirm it returns `{"status":"ok"}`.
-3. Open the website and verify that its pages load.
-4. Test authentication with the configured Supabase project, including a password reset: the email should open `/staff/reset-password`.
-5. Check deployment logs if any checks fail.
+For additional custom domains, configure their exact origins in `CLIENT_ORIGINS`.
 
-### Local verification
+Preview and Production environment variables must be configured separately. Configure the hosted project as described in [Supabase Auth settings](#supabase-auth-settings).
+
+### Branches and environments
+
+After connecting Git integration, set the Vercel Production Branch to `main`:
+
+- Merges to `main` deploy to **Production** using Production environment variables.
+- Non-production branches and pull requests deploy to **Preview** using Preview environment variables. This includes `SSPMW-387-vercel-deployment` and `SSPMW-227-staging-setup` while they remain active.
+- Use a selected branch's stable Preview URL for staging verification, with Preview variables pointing to staging Supabase. This does not create a separate custom Staging environment. Configure Production credentials independently before cutover.
+
+Verify the Git integration and Production Branch setting in Vercel; repository configuration alone does not establish them. See [Vercel environments](https://vercel.com/docs/deployments/environments).
+
+### Hosting plan before launch
+
+[Vercel Hobby](https://vercel.com/docs/plans/hobby) is limited to personal, non-commercial use. Before launching the client's business website, discuss this restriction with the professor and client and agree on a suitable commercial hosting plan. Do not assume the class project makes a commercial launch eligible for Hobby.
+
+### Initial setup
 
 From the repository root:
 
 ```bash
+npx vercel login
+npx vercel link
+```
+
+Select the repository root (`./`) as the code directory.
+
+Git integration may require approval from the GitHub organization administrator.
+
+### Local verification
+
+```bash
 npm ci
-npm run build -w server
 npm run build -w client
+npm run build -w server
+npm run lint
+npm run typecheck
 npm test
 ```
 
+The root `npm run typecheck` command checks both server source and `api/index.ts` through `server/tsconfig.typecheck.json`. The server build still uses its original configuration and emits `server/dist/index.js` for local startup.
+
+### Preview deployment
+
+Run:
+
+```bash
+npx vercel deploy
+```
+
+Note: Vercel may assign a new project's first deployment to Production. Later deployments without `--prod` use Preview.
+
+After deployment, verify these URLs using the generated Preview deployment address:
+
+- `/` — React homepage
+- `/staff/login` — React Router fallback
+- `/api/health` — Express health endpoint
+
+For deployments protected by Vercel Authentication:
+
+```bash
+npx vercel curl /api/health --deployment <deployment-url> -i
+npx vercel curl /staff/login --deployment <deployment-url> -i
+```
+
+Expected API health response:
+
+```json
+{ "status": "ok" }
+```
+
+Confirm the website's JavaScript and CSS assets load successfully. Test authentication and password reset; the reset email should open `/staff/reset-password`. Test a contact submission as well: `/api/health` does not verify contact backend wiring or email delivery.
+
+### Production deployment
+
+Production deployment requires the correct Production environment variables, authorized deployment access, and successful testing.
+
+When approved:
+
+```bash
+npx vercel deploy --prod
+```
+
+Do not remove or shut down the existing DigitalOcean application until the team approves the migration and verifies the replacement deployment.
 To verify the API locally, configure the required environment variables, start the backend with `PORT=8080`, and request `http://localhost:8080/api/health`.
 
 ## Testing and CI (SSPMW-232)
