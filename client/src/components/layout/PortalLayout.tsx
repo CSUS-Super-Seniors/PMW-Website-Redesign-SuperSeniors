@@ -1,13 +1,29 @@
 import { useRef, useState } from 'react';
-import { Outlet } from 'react-router';
+import { Navigate, Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
+import { useIdleTimeout } from '../../auth/useIdleTimeout';
+import { idleExpiredAfterMs, idleTimeout, routes } from '../../config/site';
+import { SessionTimeoutDialog } from './SessionTimeoutDialog';
 import { ConfirmationDialog } from '../ui';
+import { msSinceLastActivity } from '../../auth/lastActivity';
 import PortalSidebar from './PortalSidebar';
 import PortalTopBar from './PortalTopBar';
 import PortalBottomNav from './PortalBottomNav';
 
 export default function PortalLayout() {
   const { session, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  function handleTimeout() {
+    navigate(routes.staffSessionExpired, { replace: true });
+  }
+
+  const { isIdle, stayLoggedIn } = useIdleTimeout(
+    handleTimeout,
+    idleTimeout.idleWarningMinutes,
+    idleTimeout.idleWarningDurationMinutes,
+  );
+
   const [confirmLogout, setConfirmLogout] = useState(false);
   const [logoutError, setLogoutError] = useState<string>();
   const logoutPending = useRef(false);
@@ -30,6 +46,10 @@ export default function PortalLayout() {
     }
   }
 
+  if (msSinceLastActivity() >= idleExpiredAfterMs) {
+    return <Navigate to={routes.staffSessionExpired} replace />;
+  }
+
   return (
     <div className="flex min-h-dvh">
       <PortalSidebar displayName={displayName} onLogout={() => setConfirmLogout(true)} />
@@ -42,8 +62,17 @@ export default function PortalLayout() {
       <div className="fixed inset-x-0 bottom-0 z-40 md:hidden">
         <PortalBottomNav />
       </div>
+      <SessionTimeoutDialog
+        isOpen={isIdle}
+        onStaySignedIn={() => {
+          setConfirmLogout(false);
+          setLogoutError(undefined);
+          stayLoggedIn();
+        }}
+        warningMinutes={idleTimeout.idleWarningDurationMinutes}
+      />
       <ConfirmationDialog
-        isOpen={confirmLogout}
+        isOpen={confirmLogout && !isIdle}
         onCancel={() => {
           if (logoutPending.current) return;
           setConfirmLogout(false);

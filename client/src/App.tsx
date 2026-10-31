@@ -3,7 +3,7 @@ import RequireAuth from './auth/RequireAuth';
 import RequireRole from './auth/RequireRole';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
-import { routes } from './config/site';
+import { business, routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
@@ -13,14 +13,13 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
+import SessionExpiredPage from './components/layout/SessionExpiredPage';
 
 function Home() {
   return (
     <main className="mx-auto w-full max-w-content px-4 py-10 xl:px-8">
-      <h1 className="type-h1">Peterson Mobile Woodworking</h1>
-      <p className="type-body-lg mt-2 text-neutral-600">
-        Website redesign starter. Replace this page in Sprint 2.
-      </p>
+      <h1 className="type-h1">{business.name}</h1>
+      <p className="type-body-lg mt-2 text-neutral-600">{business.tagline}</p>
     </main>
   );
 }
@@ -29,6 +28,7 @@ export default function App() {
   return (
     <Routes>
       <Route path={routes.staffLogin} element={<StaffLoginRoute />} />
+      <Route path={routes.staffSessionExpired} element={<SessionExpiredPage />} />
       <Route path={routes.staffForgotPassword} element={<ForgotPasswordRoute />} />
       <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
       <Route element={<RequireAuth />}>
