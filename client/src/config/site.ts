@@ -75,3 +75,7 @@ export const idleTimeout = {
   /** Time the warning will stay up in minutes */
   idleWarningDurationMinutes: 2,
 } as const;
+
+/** Idle time plus warning time: after this long without activity the session counts as expired. */
+export const idleExpiredAfterMs =
+  (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;

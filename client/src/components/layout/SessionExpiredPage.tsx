@@ -4,10 +4,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { msSinceLastActivity } from '../../auth/lastActivity';
 import Logo from '../brand/Logo';
 import { Button, ErrorBanner } from '../ui';
-import { idleTimeout, routes } from '../../config/site';
-
-const expiredAfterMs =
-  (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
+import { idleExpiredAfterMs, routes } from '../../config/site';
 
 export default function SessionExpiredPage() {
   const { session, loading, signOut } = useAuth();
@@ -16,7 +13,7 @@ export default function SessionExpiredPage() {
   const hasSession = session !== null;
   // Only the session that went idle is signed out here. A newer one (signed in with the
   // Back button, or in another tab) has fresh activity and goes to the portal instead.
-  const isExpired = hasSession && msSinceLastActivity() >= expiredAfterMs;
+  const isExpired = hasSession && msSinceLastActivity() >= idleExpiredAfterMs;
 
   useEffect(() => {
     signOutRef.current = signOut;

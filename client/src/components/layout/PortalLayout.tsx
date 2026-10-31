@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Navigate, Outlet, useNavigate } from 'react-router';
 import { useAuth } from '../../auth/AuthContext';
 import { useIdleTimeout } from '../../auth/useIdleTimeout';
-import { idleTimeout, routes } from '../../config/site';
+import { idleExpiredAfterMs, idleTimeout, routes } from '../../config/site';
 import { SessionTimeoutDialog } from './SessionTimeoutDialog';
 import { ConfirmationDialog } from '../ui';
 import { msSinceLastActivity } from '../../auth/lastActivity';
@@ -46,10 +46,7 @@ export default function PortalLayout() {
     }
   }
 
-  const expiredAfterMs =
-    (idleTimeout.idleWarningMinutes + idleTimeout.idleWarningDurationMinutes) * 60 * 1000;
-
-  if (msSinceLastActivity() >= expiredAfterMs) {
+  if (msSinceLastActivity() >= idleExpiredAfterMs) {
     return <Navigate to={routes.staffSessionExpired} replace />;
   }
 
@@ -69,6 +66,7 @@ export default function PortalLayout() {
         isOpen={isIdle}
         onStaySignedIn={() => {
           setConfirmLogout(false);
+          setLogoutError(undefined);
           stayLoggedIn();
         }}
         warningMinutes={idleTimeout.idleWarningDurationMinutes}

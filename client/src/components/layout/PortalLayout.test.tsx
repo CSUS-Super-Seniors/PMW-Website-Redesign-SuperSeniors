@@ -6,6 +6,13 @@ import { AuthContext, type AuthContextValue } from '../../auth/AuthContext';
 import { lastActivityKey } from '../../auth/lastActivity';
 import PortalLayout from './PortalLayout';
 
+const pageRendered = vi.fn();
+
+function RecordingPage() {
+  pageRendered();
+  return <p>Page content</p>;
+}
+
 const auth: AuthContextValue = {
   session: null,
   loading: false,
@@ -23,7 +30,7 @@ function renderAt(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="/portal" element={<PortalLayout />}>
-            <Route path="*" element={<p>Page content</p>} />
+            <Route path="*" element={<RecordingPage />} />
           </Route>
           <Route path={routes.staffSessionExpired} element={<p>Session expired page</p>} />
         </Routes>
@@ -35,6 +42,7 @@ function renderAt(
 describe('PortalLayout', () => {
   afterEach(() => {
     vi.useRealTimers();
+    pageRendered.mockClear();
   });
 
   it('shows the nav links with their addresses', () => {
@@ -128,11 +136,32 @@ describe('PortalLayout', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('hides the Log out dialog when the warning opens, and closes both on Stay signed in', () => {
+    vi.useFakeTimers();
+    renderAt('/portal/dashboard');
+    fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    expect(screen.getByRole('dialog', { name: 'Log out?' })).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(idleTimeout.idleWarningMinutes * 60 * 1000);
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'Log out?' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('dialog', { name: "You're about to be signed out" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stay signed in' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('does not render the page when the saved time has already run out', () => {
     localStorage.setItem(lastActivityKey, String(Date.now() - 3 * 60 * 60 * 1000));
     renderAt('/portal/dashboard');
 
     expect(screen.getByText('Session expired page')).toBeInTheDocument();
     expect(screen.queryByText('Page content')).not.toBeInTheDocument();
+    expect(pageRendered).not.toHaveBeenCalled();
   });
 });

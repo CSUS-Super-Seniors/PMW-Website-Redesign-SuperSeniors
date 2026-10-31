@@ -23,7 +23,10 @@ export function ensureLastActivity() {
   if (missing) saveLastActivity();
 }
 
-/** Milliseconds since the last activity in any tab. A non-number counts as expired; a future time restarts from now. */
+/** Milliseconds since the last activity in any tab. A non-number counts as expired; a future
+ *  time restarts from now. Not a pure read: the future-time repair writes to storage, and this
+ *  is also called while rendering. That is safe because the write is idempotent.
+ */
 export function msSinceLastActivity(): number {
   try {
     const saved = localStorage.getItem(lastActivityKey);
