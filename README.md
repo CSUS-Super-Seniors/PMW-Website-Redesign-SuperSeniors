@@ -9,7 +9,7 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 - `client/`: React + Vite + TypeScript + React Router + Tailwind CSS
 - `server/`: Node.js + Express + TypeScript (all routes under `/api`)
 - `shared/`: browser-compatible `@pmw/validation` workspace (Zod schemas and form configuration)
-- Tests: Vitest (unit). Playwright is added later (SSPMW-232).
+- Tests: Vitest (unit) and Playwright (browser).
 - CI: GitHub Actions runs lint, format check, type check, and tests on every PR to `main`.
 
 ## Getting started
@@ -91,18 +91,33 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 - After editing shared code while a dev server is running, run
   `npm run build -w @pmw/validation` and restart that dev server.
 
-### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
+### Estimate flow and photos (SSPMW-31 / SSPMW-39 / SSPMW-41)
 
-Step 1 validation and the responsive layout are implemented. Valid input
-currently shows an unavailable notice instead of advancing to Step 2.
+Step 1 field validation opens optional photos; service-area approval is deferred in all environments.
+SSPMW-24 must add approval in `continueFromDetails`, wire `createApp`'s fifth argument in both server entry points, and enforce the submit-time check.
+JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
+Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
+Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
+The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
 
-Remaining integration: connect successful validation to the service-area
-check (SSPMW-24), then the photo screen (SSPMW-31). Preserve values when
-returning to Step 1 and allow continuation with zero photos.
+`useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
+After applying both photo reconciliation/confirmation migrations, trusted submission code verifies inquiry ownership and calls:
 
-The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
-Update `client/src/App.test.tsx` to cover advancement, service-area
-outcomes, retries, and Back navigation.
+```ts
+const backend = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+await backend.attachPhotos(inquiryId, photoSession?.token ?? '', photos, { finalize: true });
+```
+
+Keep tokens/receipts private, including the session when removing all photos. Draft links are replaced atomically; finalized sets cannot change.
+After a lost submit response, retry the same inquiry ID and **original handoff before renewing/reuploading**; exact finalized retries work after expiry, but expired credentials cannot finalize drafts.
+SSPMW-70 must retain stable request/results, deduplicate inquiry creation/emails, and wait for attachment success before notification; photo confirmation is not proof of email delivery.
+Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
+Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; full submit-route spam/file protection remains SSPMW-95.
+
+- Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
+- Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
+- Cleanup: schedule `npm run cleanup:estimate-photos -w server` daily; dry-run by default, `-- --apply` deletes unattached files expired for over 24 hours.
+- Before completion: `npm run verify:storage -w server` against local Supabase, normal migration deployment, and PR review/merge remain required.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 

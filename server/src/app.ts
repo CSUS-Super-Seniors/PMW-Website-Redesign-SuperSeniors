@@ -11,7 +11,14 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-export function createApp(config: Config, backend: AuthBackend, contact?: ContactBackend) {
+import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
+export function createApp(
+  config: Config,
+  backend: AuthBackend,
+  contact?: ContactBackend,
+  photos?: EstimatePhotosBackend,
+  checkServiceArea?: (details: import('@pmw/validation').EstimateStep1Data) => Promise<boolean>,
+) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -29,6 +36,90 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
+  );
+  // Bounded, instance-local upload guard. Distributed perimeter limits remain SSPMW-95.
+  const uploadWindows = new Map<string, { start: number; count: number }>();
+  app.use('/api/estimates/photos', (req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    const now = Date.now();
+    for (const [key, value] of uploadWindows)
+      if (now - value.start >= 60000) uploadWindows.delete(key);
+    const key = req.ip ?? 'unknown';
+    const window = uploadWindows.get(key) ?? { start: now, count: 0 };
+    if ((!uploadWindows.has(key) && uploadWindows.size >= 10000) || window.count >= 60) {
+      res
+        .set('Retry-After', '60')
+        .status(429)
+        .json({ error: 'Too many photo requests. Please wait a minute and retry.' });
+      return;
+    }
+    window.count++;
+    uploadWindows.set(key, window);
+    if (!photos) {
+      res.status(503).json({ error: 'Photo uploads are temporarily unavailable.' });
+      return;
+    }
+    next();
+  });
+  app.post('/api/estimates/photos/session', (_req, res) => {
+    res.status(201).json(photos!.startSession());
+  });
+  app.post('/api/estimates/photos/session/renew', (req, res) => {
+    const token = /^Photo ([^\s]+)$/.exec(req.get('authorization') ?? '')?.[1] ?? '';
+    try {
+      res.json(photos!.renewSession(token));
+    } catch (error) {
+      res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+        error:
+          error instanceof PhotoRequestError
+            ? error.message
+            : 'Could not renew photo session. Please retry.',
+      });
+    }
+  });
+  app.put(
+    '/api/estimates/photos/:photoId',
+    express.raw({ type: () => true, limit: '1mb' }),
+    async (req, res) => {
+      const token = /^Photo ([^\s]+)$/.exec(req.get('authorization') ?? '')?.[1] ?? '';
+      try {
+        const result = await photos!.upload(
+          token,
+          String(req.params.photoId),
+          req.body,
+          req.get('content-type') ?? '',
+        );
+        res.status(201).json(result);
+      } catch (error) {
+        res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+          error:
+            error instanceof PhotoRequestError
+              ? error.message
+              : 'Photo upload failed. Please retry or remove the photo.',
+        });
+      }
+    },
+  );
+  app.post(
+    '/api/estimates/service-area',
+    express.json({ limit: '32kb', strict: false }),
+    async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const parsed = estimateStep1Schema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: 'Please check your details.' });
+        return;
+      }
+      if (!checkServiceArea) {
+        res.status(503).json({ error: 'Service-area checking is temporarily unavailable.' });
+        return;
+      }
+      try {
+        res.json({ inServiceArea: await checkServiceArea(parsed.data) });
+      } catch {
+        res.status(503).json({ error: 'Service-area checking is temporarily unavailable.' });
+      }
+    },
   );
   // Let the shared schema report valid JSON primitives as form-level errors.
   // Other routes retain the existing strict JSON parser.
@@ -104,6 +195,20 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
     res.status(501).json({ error: 'Not implemented' });
   });
   api.use(requireOwner);
+  api.get('/inquiry-photos/:photoId/view-url', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!photos) {
+      res.status(503).json({ error: 'Photo viewing is temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json(await photos.viewPhoto(String(req.params.photoId)));
+    } catch (error) {
+      res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+        error: error instanceof PhotoRequestError ? error.message : 'Could not load photo.',
+      });
+    }
+  });
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
   });

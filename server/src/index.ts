@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
+import { createEstimatePhotosBackend } from './estimatePhotos.js';
 try {
   const config = loadConfig();
   const supabase = createSupabaseAdmin(config);
@@ -14,7 +15,8 @@ try {
       'Contact messaging is unavailable: configure the contact email environment variables.',
     );
   }
-  const server = createApp(config, createAuthBackend(config, supabase), contact).listen(
+  const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+  const server = createApp(config, createAuthBackend(config, supabase), contact, photos).listen(
     config.port,
     '0.0.0.0',
     () => {

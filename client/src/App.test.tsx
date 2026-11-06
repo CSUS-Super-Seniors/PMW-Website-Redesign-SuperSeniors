@@ -61,7 +61,7 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Staff login' })).not.toBeInTheDocument();
   });
 
-  it('keeps the live form and validated details visible while the service-area and photo flow are unavailable', async () => {
+  it('opens the real photo step after field validation without requesting service-area approval', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ valid: true }));
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
@@ -81,16 +81,22 @@ describe('App', () => {
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
 
-    const notice = await screen.findByText(/continuing to photos is not available yet/);
-    expect(notice).toHaveTextContent('Your request has not been sent');
-    expect(notice).toHaveTextContent('service availability has not been confirmed');
-    await waitFor(() => expect(notice.closest('[role="status"]')).toHaveFocus());
+    expect(
+      await screen.findByRole('heading', { name: 'Add photos of your furniture' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/development preview/i)).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      '/api/estimates/validate-step-1',
+      expect.any(Object),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Request an estimate' })).toHaveFocus(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
     expect(screen.getByRole('heading', { name: 'Request an estimate' })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
     await user.type(screen.getByLabelText('Item'), ' repair');
-    expect(screen.queryByText(/continuing to photos is not available yet/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Item')).toHaveValue('Chair repair');
   });
   it('shows the business tagline on the home page, not developer notes', () => {
     renderApp('/');
@@ -100,6 +106,52 @@ describe('App', () => {
       'Family-run furniture repair and restoration in Carmichael, CA since 2011.',
     );
     expect(main).not.toHaveTextContent(/sprint|starter/i);
+  });
+
+  it('preserves details on Back and continues with zero photos without an upload or area request', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async () => Response.json({ valid: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    for (const [label, value] of [
+      ['First name', 'Ana'],
+      ['Last name', 'Smith'],
+      ['Email address', 'ana@example.com'],
+      ['Phone number', '9165550123'],
+      ['Service address', '123 Main St'],
+      ['Item', 'Chair'],
+      ['Describe the problem', 'Loose leg'],
+    ])
+      await user.type(screen.getByLabelText(label), value);
+    await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    await screen.findByLabelText('Choose photos');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByLabelText('Email address')).toHaveValue('ana@example.com');
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    await screen.findByLabelText('Choose photos');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your photos are ready' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('0 photo(s)');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.every(([url]) => url === '/api/estimates/validate-step-1')).toBe(
+      true,
+    );
+  });
+
+  it('keeps invalid Step 1 details on the form instead of advancing', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    expect(screen.getByLabelText('Service address')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('shows the Services page inside the public layout', () => {
