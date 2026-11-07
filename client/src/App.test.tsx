@@ -79,6 +79,7 @@ describe('App', () => {
       await user.type(screen.getByLabelText(label), value);
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
+    await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
 
     const notice = await screen.findByText(/continuing to photos is not available yet/);
@@ -88,8 +89,12 @@ describe('App', () => {
     expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
     expect(screen.getByRole('heading', { name: 'Request an estimate' })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
+      lead_source: 'referral',
+    });
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('referral');
 
-    await user.type(screen.getByLabelText('Item'), ' repair');
+    await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'yelp');
     expect(screen.queryByText(/continuing to photos is not available yet/)).not.toBeInTheDocument();
   });
   it('shows the business tagline on the home page, not developer notes', () => {

@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import {
   estimateStep1Schema,
   issueOptions,
+  leadSourceOptions,
   mapEstimateStep1Errors,
   type EstimateStep1Data,
   type EstimateStep1Errors,
@@ -21,9 +22,10 @@ export interface EstimateStep1FormProps {
   onEdit?: () => void;
 }
 
-// The empty select placeholder is a draft value, never a validated issue value.
-type Draft = Omit<EstimateStep1Input, 'issue_type' | 'text_ok'> & {
+// Empty select placeholders are draft values, never validated option values.
+type Draft = Omit<EstimateStep1Input, 'issue_type' | 'lead_source' | 'text_ok'> & {
   issue_type: string;
+  lead_source: string;
   text_ok: boolean;
 };
 
@@ -37,6 +39,7 @@ const fieldOrder = [
   'item',
   'issue_type',
   'description',
+  'lead_source',
 ] as const satisfies readonly (keyof EstimateStep1Input)[];
 
 export default function EstimateStep1Form({
@@ -53,6 +56,7 @@ export default function EstimateStep1Form({
     item: '',
     issue_type: '',
     description: '',
+    lead_source: '',
     ...initialValues,
     text_ok: initialValues?.text_ok ?? false,
   }));
@@ -164,7 +168,8 @@ export default function EstimateStep1Form({
         Your details
       </h2>
       <p className="type-body-sm mt-4 text-neutral-600">
-        We only use this information to respond to your estimate request.
+        We use your contact and repair details to respond to your estimate request. How you heard
+        about us helps us understand where our customers find us.
       </p>
       <p id="estimate-required" className="type-body-sm mt-2 text-neutral-600">
         All fields are required except text message permission.
@@ -303,6 +308,23 @@ export default function EstimateStep1Form({
               maxLength={estimateStep1Schema.shape.description.maxLength ?? undefined}
               error={fieldErrors.description}
             />
+          </div>
+          <div className="sm:col-span-2">
+            <Select
+              label="How did you hear about us?"
+              name="lead_source"
+              value={draft.lead_source}
+              onChange={(event) => updateField('lead_source', event.target.value)}
+              required
+              error={fieldErrors.lead_source}
+            >
+              <option value="">Select an option</option>
+              {leadSourceOptions.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
           </div>
         </fieldset>
         <p className="type-body-sm mt-6 text-neutral-600">

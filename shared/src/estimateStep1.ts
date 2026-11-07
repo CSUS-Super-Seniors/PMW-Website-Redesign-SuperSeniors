@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { leadSourceSchema } from './leadSource.js';
 
 // Approved provisional options, pending Todd's Q9 response.
 export const issueOptions = [
@@ -51,6 +52,7 @@ export const estimateStep1Schema = z.strictObject(
       { error: 'Select a problem from the list.' },
     ),
     description: requiredText('Description', 1000),
+    lead_source: leadSourceSchema,
   },
   {
     error: (issue) =>
