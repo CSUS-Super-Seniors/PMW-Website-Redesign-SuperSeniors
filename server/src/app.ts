@@ -11,7 +11,14 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-export function createApp(config: Config, backend: AuthBackend, contact?: ContactBackend) {
+import type { StaffBackend } from './staff.js';
+
+export function createApp(
+  config: Config,
+  backend: AuthBackend,
+  contact?: ContactBackend,
+  staff?: StaffBackend,
+) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -106,6 +113,18 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
   api.use(requireOwner);
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
+  });
+  api.get('/staff', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!staff) {
+      res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json({ staff: await staff.listStaff() });
+    } catch {
+      res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+    }
   });
   app.use('/api', api);
   app.use((_req, res) => {

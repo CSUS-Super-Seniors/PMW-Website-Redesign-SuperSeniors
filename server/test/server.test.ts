@@ -4,6 +4,8 @@ import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import type { AuthBackend } from '../src/supabase.js';
+import type { StaffBackend, StaffListItem } from '../src/staff.js';
+
 const env = {
   CLIENT_ORIGINS: 'http://localhost:5173',
   SUPABASE_URL: 'https://example.supabase.co',
@@ -100,13 +102,7 @@ test('owner can reach employee routes and owner-only areas', async () => {
     .post('/api/jobs/J-1001/media')
     .set('Authorization', 'Bearer valid')
     .expect(501);
-  for (const path of [
-    '/api/customers',
-    '/api/reports',
-    '/api/staff',
-    '/api/inquiries',
-    '/api/testimonials',
-  ]) {
+  for (const path of ['/api/customers', '/api/reports', '/api/inquiries', '/api/testimonials']) {
     await request(app).get(path).set('Authorization', 'Bearer valid').expect(404);
   }
 });
@@ -154,4 +150,71 @@ test('malformed JSON is sanitized and routes stay under api', async () => {
   const app = createApp(config, backend());
   await request(app).post('/api/me').set('Content-Type', 'application/json').send('{').expect(400);
   await request(app).get('/health').expect(404);
+});
+
+const staffRows: StaffListItem[] = [
+  {
+    id: 'user-1',
+    fullName: 'Todd Peterson',
+    email: 'todd@example.com',
+    role: 'owner',
+    lastLoginAt: '2026-11-06T18:30:00.000Z',
+    status: 'active',
+  },
+  {
+    id: 'user-2',
+    fullName: 'Sam Carter',
+    email: null,
+    role: 'employee',
+    lastLoginAt: null,
+    status: 'inactive',
+  },
+];
+
+function staffBackend(fail = false) {
+  const calls = { count: 0 };
+  const staff: StaffBackend = {
+    listStaff: async () => {
+      calls.count += 1;
+      if (fail) throw new Error('database exploded: secret-detail');
+      return staffRows;
+    },
+  };
+  return { staff, calls };
+}
+
+test('owner gets the staff list with all five fields', async () => {
+  const { staff } = staffBackend();
+  const response = await request(createApp(config, backend('owner'), undefined, staff))
+    .get('/api/staff')
+    .set('Authorization', 'Bearer valid')
+    .expect(200);
+  assert.deepEqual(response.body, { staff: staffRows });
+  assert.equal(response.headers['cache-control'], 'no-store');
+});
+
+test('employee is refused the staff list and the data is never read', async () => {
+  const { staff, calls } = staffBackend();
+  const response = await request(createApp(config, backend('employee'), undefined, staff))
+    .get('/api/staff')
+    .set('Authorization', 'Bearer valid')
+    .expect(403);
+  assert.equal(calls.count, 0);
+  assert.ok(!response.text.includes('todd@example.com'));
+});
+
+test('staff list requires a valid token', async () => {
+  const { staff } = staffBackend();
+  await request(createApp(config, backend('owner'), undefined, staff))
+    .get('/api/staff')
+    .expect(401);
+});
+
+test('staff list failure returns 503 without leaking details', async () => {
+  const { staff } = staffBackend(true);
+  const response = await request(createApp(config, backend('owner'), undefined, staff))
+    .get('/api/staff')
+    .set('Authorization', 'Bearer valid')
+    .expect(503);
+  assert.ok(!response.text.includes('secret-detail'));
 });
