@@ -83,4 +83,25 @@ describe('Vercel startup contact wiring', () => {
     expect(db.from).not.toHaveBeenCalled();
     expect(email).not.toHaveBeenCalled();
   });
+
+  it('wires the service-area check to the service_cities table', async () => {
+    const eq = vi.fn(async () => ({ data: [{ name: 'Carmichael' }], error: null }));
+    db.from.mockImplementation((table: string) =>
+      table === 'service_cities' ? { select: () => ({ eq }) } : { insert: db.insert },
+    );
+    const { default: app } = await import('../../api/index.js');
+
+    const inside = await request(app)
+      .post('/api/estimates/service-area')
+      .send({ city: 'Carmichael' })
+      .expect(200);
+    expect(inside.body).toEqual({ inServiceArea: true });
+    const outside = await request(app)
+      .post('/api/estimates/service-area')
+      .send({ city: 'Davis' })
+      .expect(200);
+    expect(outside.body).toEqual({ inServiceArea: false });
+    expect(db.from).toHaveBeenCalledWith('service_cities');
+    expect(eq).toHaveBeenCalledWith('is_active', true);
+  });
 });

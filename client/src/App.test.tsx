@@ -61,8 +61,12 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Staff login' })).not.toBeInTheDocument();
   });
 
-  it('keeps the live form and validated details visible while the service-area and photo flow are unavailable', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ valid: true }));
+  it('checks the service area and keeps the validated details visible while the photo flow is unavailable', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (url) =>
+      url === '/api/estimates/service-area'
+        ? Response.json({ inServiceArea: true })
+        : Response.json({ valid: true }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderApp('/estimate');
@@ -73,6 +77,7 @@ describe('App', () => {
       ['Email address', 'ana+chair@example.com'],
       ['Phone number', '(916) 555-0142'],
       ['Service address', '123 Main St'],
+      ['City', 'Carmichael'],
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
@@ -81,16 +86,21 @@ describe('App', () => {
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
 
-    const notice = await screen.findByText(/continuing to photos is not available yet/);
-    expect(notice).toHaveTextContent('Your request has not been sent');
-    expect(notice).toHaveTextContent('service availability has not been confirmed');
+    const notice = await screen.findByText(/continuing to photos is not available yet/i);
+    expect(notice).toHaveTextContent('request has not been sent');
+    expect(notice).toHaveTextContent('we serve your city');
     await waitFor(() => expect(notice.closest('[role="status"]')).toHaveFocus());
     expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
     expect(screen.getByRole('heading', { name: 'Request an estimate' })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/estimates/validate-step-1',
+      '/api/estimates/service-area',
+    ]);
 
     await user.type(screen.getByLabelText('Item'), ' repair');
-    expect(screen.queryByText(/continuing to photos is not available yet/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/continuing to photos is not available yet/i),
+    ).not.toBeInTheDocument();
   });
   it('shows the business tagline on the home page, not developer notes', () => {
     renderApp('/');
