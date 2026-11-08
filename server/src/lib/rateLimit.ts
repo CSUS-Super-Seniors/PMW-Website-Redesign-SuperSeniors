@@ -7,8 +7,13 @@ export interface RateLimitOptions {
   windowMs: number;
   /** Friendly text sent with the 429 response. */
   message: string;
-  /** Visitors tracked at once. When every slot is still active, new visitors wait. */
+  /**
+   * Visitors tracked one by one. When every slot is still active, new visitors share
+   * one overflow window, so a flood of addresses can't reset limits or lock people out.
+   */
   maxVisitors?: number;
+  /** Requests the shared overflow window allows (default 50 times `max`). */
+  overflowMax?: number;
   now?: () => number;
 }
 
@@ -55,10 +60,12 @@ export function createRateLimiter({
   max,
   windowMs,
   message,
-  maxVisitors = 10_000,
+  maxVisitors = 50_000,
+  overflowMax = max * 50,
   now = Date.now,
 }: RateLimitOptions): RequestHandler {
   const windows = new Map<string, { start: number; count: number }>();
+  let overflow = { start: 0, count: 0 };
 
   function refuse(res: Parameters<RequestHandler>[1], retryAfterMs: number) {
     res
@@ -85,11 +92,16 @@ export function createRateLimiter({
         }
       }
       if (windows.size >= maxVisitors) {
-        // Every tracked visitor is still inside their window. Dropping one would
-        // reset a live limit (a flood of new addresses would wipe them all), so new
-        // visitors wait until the oldest window ends.
-        const oldest = windows.values().next().value!;
-        refuse(res, oldest.start + windowMs - time);
+        // Every tracked visitor is still inside their window. Dropping one would reset
+        // a live limit, and refusing everyone new would lock real customers out during
+        // a flood. Instead, untracked visitors share one larger overflow window.
+        if (time - overflow.start >= windowMs) overflow = { start: time, count: 0 };
+        if (overflow.count >= overflowMax) {
+          refuse(res, overflow.start + windowMs - time);
+          return;
+        }
+        overflow.count++;
+        next();
         return;
       }
       window = { start: time, count: 0 };

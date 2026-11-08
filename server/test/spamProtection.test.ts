@@ -203,7 +203,7 @@ describe('createRateLimiter', () => {
     await request(app).post('/').expect(200);
   });
 
-  it('stays bounded in memory and never resets a visitor whose limit is still active', async () => {
+  it('stays bounded in memory, never resets an active limit, and never locks out new visitors', async () => {
     let time = 0;
     const app = express();
     app.set('trust proxy', 1);
@@ -214,6 +214,7 @@ describe('createRateLimiter', () => {
         windowMs: 60_000,
         message: 'Slow down',
         maxVisitors: 2,
+        overflowMax: 2,
         now: () => time,
       }),
       (_req, res) => {
@@ -225,14 +226,40 @@ describe('createRateLimiter', () => {
     time = 1;
     await from('203.0.113.2').expect(200);
     time = 2;
-    // Both slots are still active, so a new visitor waits instead of wiping .1's limit.
-    const full = await from('203.0.113.3').expect(429);
-    expect(full.headers['retry-after']).toBe('60');
+    // Both slots are still active: .1 keeps its limit...
     await from('203.0.113.1').expect(429);
+    // ...and new visitors go through the shared overflow window instead of a lockout.
+    await from('203.0.113.3').expect(200);
+    await from('203.0.113.4').expect(200);
+    const full = await from('203.0.113.5').expect(429);
+    expect(full.headers['retry-after']).toBe('60');
     time = 60_000;
     // .1's window has ended, so its slot is reused.
-    await from('203.0.113.3').expect(200);
+    await from('203.0.113.5').expect(200);
+    await from('203.0.113.5').expect(429);
     await from('203.0.113.2').expect(429);
+  });
+
+  it('lets a real visitor in after a flood of 50,000 IPv6 networks', async () => {
+    const limiter = createRateLimiter({ max: 5, windowMs: 3_600_000, message: 'Slow down' });
+    const send = (ip: string) => {
+      let status = 200;
+      const res = {
+        set: () => res,
+        status: (code: number) => {
+          status = code;
+          return res;
+        },
+        json: () => res,
+      };
+      let passed = false;
+      limiter({ ip, socket: {} } as never, res as never, () => {
+        passed = true;
+      });
+      return passed ? 200 : status;
+    };
+    for (let n = 0; n < 50_000; n++) send(`2001:db8:${(n >> 16) & 0xffff}:${n & 0xffff}::1`);
+    expect(send('203.0.113.9')).toBe(200);
   });
 });
 

@@ -138,9 +138,9 @@ is passed in, the route answers 501.
   `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). A visitor is one IPv4 address, or
   one IPv6 /64 network so a bot can't rotate through its addresses. Over the limit, the reply is
   429 with a friendly message and a `Retry-After` header. The count lives in each server
-  instance's memory, so it costs nothing but is per instance on Vercel. Up to 10,000 visitors are
-  tracked; when all of them are still inside their window, new visitors wait rather than wiping
-  someone's limit. The service-area check has its own fixed limit of 30 checks per 10 minutes.
+  instance's memory, so it costs nothing but is per instance on Vercel. Up to 50,000 visitors are
+  tracked one by one; during a flood beyond that, new visitors share one larger overflow window,
+  so nobody's limit is reset and real customers are not locked out. The service-area check has its own fixed limit of 30 checks per 10 minutes.
 - **Honeypot:** Step 1 has a hidden `pmw_extra` field that people never see. The form hands
   its value to the next step (`onContinue(details, spamCheck)`), and the submit request must send
   it. A filled honeypot gets a normal-looking 201 reply, but nothing is saved and no email is
