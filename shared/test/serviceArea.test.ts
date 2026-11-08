@@ -18,6 +18,10 @@ describe('normalizeCityName', () => {
     ['Carmichael, California', 'carmichael'],
     ['carmichael, ca.', 'carmichael'],
     ['Carmichael,', 'carmichael'],
+    ['Sacramento, CA 95821', 'sacramento'],
+    ['Sacramento CA 95821-1234', 'sacramento'],
+    ['Sacramento 95821', 'sacramento'],
+    ['Sacramento, California, 95821', 'sacramento'],
   ])('normalizes %j to %j', (input, expected) => {
     expect(normalizeCityName(input)).toBe(expected);
   });

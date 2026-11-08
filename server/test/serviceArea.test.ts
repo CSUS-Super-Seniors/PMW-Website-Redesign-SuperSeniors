@@ -82,7 +82,8 @@ describe('createServiceAreaBackend', () => {
 
 describe('POST /api/estimates/service-area', () => {
   const path = '/api/estimates/service-area';
-  const app = (serviceArea?: ServiceAreaBackend) => createApp(config, auth, undefined, serviceArea);
+  const app = (serviceArea?: ServiceAreaBackend) =>
+    createApp(config, auth, undefined, { serviceArea });
 
   it('answers in and out of the service area without authentication', async () => {
     const backend = createServiceAreaBackend(fakeCitiesTable(sampleRows()).client);

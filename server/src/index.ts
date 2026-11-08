@@ -15,12 +15,9 @@ try {
       'Contact messaging is unavailable: configure the contact email environment variables.',
     );
   }
-  const server = createApp(
-    config,
-    createAuthBackend(config, supabase),
-    contact,
-    createServiceAreaBackend(supabase),
-  ).listen(config.port, '0.0.0.0', () => {
+  const server = createApp(config, createAuthBackend(config, supabase), contact, {
+    serviceArea: createServiceAreaBackend(supabase),
+  }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });
   server.on('error', () => {

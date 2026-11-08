@@ -11,11 +11,8 @@ const contact = config.contactEmail
   ? createContactBackend(supabase, config.contactEmail)
   : undefined;
 
-const app = createApp(
-  config,
-  createAuthBackend(config, supabase),
-  contact,
-  createServiceAreaBackend(supabase),
-);
+const app = createApp(config, createAuthBackend(config, supabase), contact, {
+  serviceArea: createServiceAreaBackend(supabase),
+});
 
 export default app;

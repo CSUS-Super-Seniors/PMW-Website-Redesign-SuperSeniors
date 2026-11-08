@@ -27,12 +27,13 @@ export interface ServiceAreaCheckResponse {
 
 /**
  * Compares cities the way a customer types them: capitalization, extra spaces and a
- * trailing state ("Carmichael, CA") do not matter.
+ * trailing state or ZIP code ("Carmichael, CA 95608") do not matter.
  */
 export function normalizeCityName(value: string): string {
   return value
     .trim()
     .replace(/\s+/g, ' ')
+    .replace(/,?\s*\d{5}(-\d{4})?$/, '')
     .replace(/,?\s+(ca|california)\.?$/i, '')
     .replace(/,$/, '')
     .trim()

@@ -106,7 +106,7 @@ Update `client/src/App.test.tsx` to cover advancement, retries, and Back navigat
 
 Step 1 has a required City field. After the details pass validation, the form asks the server
 whether that city is in the `service_cities` table (active rows only). Capitalization, extra spaces
-and a trailing ", CA" do not matter. A city outside the area shows an "Outside our service area"
+and a trailing ", CA" or ZIP code do not matter. A city outside the area shows an "Outside our service area"
 error with a tap-to-call link, and the customer cannot continue. If the check can't run, the
 customer also can't continue and is asked to try again.
 

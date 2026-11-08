@@ -13,11 +13,16 @@ import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import { SERVICE_AREA_UNAVAILABLE_MESSAGE, type ServiceAreaBackend } from './serviceArea.js';
+/** Optional backends. Each route answers 503 or 501 when its backend is missing. */
+export interface AppOptions {
+  serviceArea?: ServiceAreaBackend;
+}
+
 export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  serviceArea?: ServiceAreaBackend,
+  { serviceArea }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
