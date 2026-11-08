@@ -14,7 +14,11 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-import { SERVICE_AREA_UNAVAILABLE_MESSAGE, type ServiceAreaBackend } from './serviceArea.js';
+import {
+  SERVICE_AREA_UNAVAILABLE_MESSAGE,
+  requireServiceArea,
+  type ServiceAreaBackend,
+} from './serviceArea.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
@@ -55,18 +59,22 @@ export function createApp(
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
   );
-  // Spam protection for the estimate submit route (SSPMW-95): the rate limit counts
-  // every attempt, then a filled honeypot is dropped before the handler runs.
+  // Estimate submit route. In order: the rate limit counts every attempt (SSPMW-95),
+  // a filled honeypot is dropped (SSPMW-95), an outside-area city is refused
+  // (SSPMW-24), and only then does the SSPMW-70 handler run.
   app.post(
     ESTIMATE_SUBMIT_PATH,
     createRateLimiter({ ...config.estimateRateLimit, message: ESTIMATE_RATE_LIMIT_MESSAGE }),
     // The submit handler reuses this parsed body (it includes photo receipts).
     express.json({ limit: '100kb', strict: false }),
     rejectHoneypot(ESTIMATE_HONEYPOT_FIELD),
-    estimateSubmit ??
-      ((_req, res) => {
-        res.status(501).json({ error: 'Not implemented' });
-      }),
+    ...(estimateSubmit
+      ? [requireServiceArea(serviceArea), estimateSubmit]
+      : [
+          ((_req, res) => {
+            res.status(501).json({ error: 'Not implemented' });
+          }) satisfies RequestHandler,
+        ]),
   );
   // Let the shared schema report valid JSON primitives as form-level errors.
   // Other routes retain the existing strict JSON parser.
@@ -86,6 +94,12 @@ export function createApp(
   // so the city list itself is never sent to the browser.
   app.post(
     '/api/estimates/service-area',
+    // Generous for a customer who corrects their city, but each check reads the database.
+    createRateLimiter({
+      max: 30,
+      windowMs: 10 * 60_000,
+      message: 'Too many checks in a short time. Please wait a few minutes and try again.',
+    }),
     express.json({ limit: '1kb', strict: false }),
     async (req, res) => {
       res.set('Cache-Control', 'no-store');

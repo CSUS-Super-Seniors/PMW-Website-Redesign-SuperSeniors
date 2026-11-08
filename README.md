@@ -117,12 +117,11 @@ customer also can't continue and is asked to try again.
   `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
   active cities aren't secret; the Service Area page will show them). Bad input returns 400; an
   unreadable city list returns 503.
-- The submit route (SSPMW-70) must mount `requireServiceArea(serviceArea)` from
-  `server/src/serviceArea.ts` after its body is parsed. It checks only the city: a missing or
-  invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets 422
-  (`code: "outside_service_area"`) even when the browser check was skipped. It sets
-  `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's `in_service_area`
-  column, and the handler still validates the rest of the body.
+- The submit route runs `requireServiceArea` (see spam protection below). It checks only the
+  city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
+  422 (`code: "outside_service_area"`) even when the browser check was skipped. The SSPMW-70
+  handler reads `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's
+  `in_service_area` column, and still validates the rest of the body.
 - The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
   Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
   for local, dev and staging. Production cities come from the client's Q7 answer.
@@ -130,22 +129,26 @@ customer also can't continue and is asked to try again.
 ## Estimate form spam protection (SSPMW-95)
 
 The estimate form is public and accepts photos, so the submit route is protected before its
-handler (SSPMW-70) runs. `createApp(config, auth, contact, { estimateSubmit })` mounts it on
-`POST /api/estimates` (`ESTIMATE_SUBMIT_PATH`) and runs the handler only for requests that pass.
-Until that handler is passed in, the route answers 501.
+handler (SSPMW-70) runs. `createApp(config, auth, contact, { serviceArea, estimateSubmit })`
+mounts `POST /api/estimates` (`ESTIMATE_SUBMIT_PATH`) in this order: rate limit, JSON body,
+honeypot, service-area check (`requireServiceArea`, SSPMW-24), then the handler. Until the handler
+is passed in, the route answers 501.
 
-- **Rate limit:** each visitor IP gets `ESTIMATE_RATE_LIMIT_MAX` submissions per
-  `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). Over the limit, the reply is 429 with
-  a friendly message and a `Retry-After` header. The count lives in each server instance's memory,
-  so it costs nothing but is per instance on Vercel.
-- **Honeypot:** Step 1 has a hidden `company_website` field that people never see. The form hands
+- **Rate limit:** each visitor gets `ESTIMATE_RATE_LIMIT_MAX` submissions per
+  `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). A visitor is one IPv4 address, or
+  one IPv6 /64 network so a bot can't rotate through its addresses. Over the limit, the reply is
+  429 with a friendly message and a `Retry-After` header. The count lives in each server
+  instance's memory, so it costs nothing but is per instance on Vercel. Up to 10,000 visitors are
+  tracked; when all of them are still inside their window, new visitors wait rather than wiping
+  someone's limit. The service-area check has its own fixed limit of 30 checks per 10 minutes.
+- **Honeypot:** Step 1 has a hidden `pmw_extra` field that people never see. The form hands
   its value to the next step (`onContinue(details, spamCheck)`), and the submit request must send
   it. A filled honeypot gets a normal-looking 201 reply, but nothing is saved and no email is
   sent. An empty one is removed from the body before the handler sees it.
 - **Photo checks:** `checkEstimatePhoto(bytes, contentType, maxBytes)` in
   `server/src/lib/photoChecks.ts` reads the file's first bytes, so a renamed non-image is refused
   (415) even when the browser checks are bypassed. Files over 10 MB are refused (413). The photo
-  upload route (SSPMW-31) should call it for every upload and can pass a smaller limit.
+  upload route (SSPMW-31) should call it for every upload and can pass a smaller limit. It checks the file signature, not every byte; photos stay private and are only served back as images.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 

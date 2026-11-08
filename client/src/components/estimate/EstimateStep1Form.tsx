@@ -236,7 +236,7 @@ export default function EstimateStep1Form({
             only bots fill it in. Not display:none, which many bots know to skip. */}
         <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
           <label>
-            Company website (leave blank)
+            Leave this empty
             <input
               ref={honeypotRef}
               type="text"

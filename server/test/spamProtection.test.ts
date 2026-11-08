@@ -5,7 +5,7 @@ import { ESTIMATE_HONEYPOT_FIELD, ESTIMATE_RATE_LIMIT_MESSAGE } from '@pmw/valid
 import { ESTIMATE_SUBMIT_PATH, createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { rejectHoneypot } from '../src/lib/honeypot.js';
-import { createRateLimiter } from '../src/lib/rateLimit.js';
+import { createRateLimiter, rateLimitKey } from '../src/lib/rateLimit.js';
 import {
   MAX_ESTIMATE_PHOTO_UPLOAD_BYTES,
   checkEstimatePhoto,
@@ -26,6 +26,7 @@ const customer = {
   first_name: 'Margaret',
   last_name: 'Lewis',
   email: 'margaret@example.com',
+  city: 'Carmichael',
   item: 'Dining chair',
 };
 
@@ -34,6 +35,7 @@ function appWithSubmit(env: Record<string, string> = {}) {
   const saveInquiry = vi.fn();
   const sendEmails = vi.fn();
   const app = createApp(loadConfig({ ...baseEnv, ...env }), auth, undefined, {
+    serviceArea: { isInServiceArea: async (city) => city === 'Carmichael' },
     estimateSubmit: (req, res) => {
       saveInquiry(req.body);
       sendEmails();
@@ -126,6 +128,44 @@ describe('estimate submit route protection', () => {
     await from('203.0.113.99').expect(429);
   });
 
+  it('refuses an outside-area city on the submit route after the spam checks', async () => {
+    const { app, saveInquiry } = appWithSubmit();
+    const response = await request(app)
+      .post(ESTIMATE_SUBMIT_PATH)
+      .send({ ...customer, city: 'Davis', [ESTIMATE_HONEYPOT_FIELD]: '' })
+      .expect(422);
+    expect(response.body.code).toBe('outside_service_area');
+    expect(saveInquiry).not.toHaveBeenCalled();
+
+    // A bot gets the fake success before the city is even looked at.
+    await request(app)
+      .post(ESTIMATE_SUBMIT_PATH)
+      .send({ ...customer, city: 'Davis', [ESTIMATE_HONEYPOT_FIELD]: 'spam' })
+      .expect(201);
+    expect(saveInquiry).not.toHaveBeenCalled();
+  });
+
+  it('limits rotating IPv6 addresses from one /64 as one visitor', async () => {
+    const { app } = appWithSubmit({ ESTIMATE_RATE_LIMIT_MAX: '1', TRUST_PROXY_HOPS: '1' });
+    const from = (ip: string) =>
+      request(app).post(ESTIMATE_SUBMIT_PATH).set('X-Forwarded-For', ip).send(customer);
+    await from('2001:db8:1:2::1').expect(201);
+    await from('2001:db8:1:2::2').expect(429);
+    await from('2001:db8:1:2:ffff:1:2:3').expect(429);
+    await from('2001:db8:1:3::1').expect(201);
+  });
+
+  it('limits the service-area check too, but generously', async () => {
+    const { app } = appWithSubmit();
+    for (let i = 0; i < 30; i++)
+      await request(app).post('/api/estimates/service-area').send({ city: 'Davis' }).expect(200);
+    const blocked = await request(app)
+      .post('/api/estimates/service-area')
+      .send({ city: 'Davis' })
+      .expect(429);
+    expect(blocked.body.error).toMatch(/Too many checks/);
+  });
+
   it('does not limit or trap the other public estimate endpoints', async () => {
     const { app } = appWithSubmit({ ESTIMATE_RATE_LIMIT_MAX: '1' });
     for (let i = 0; i < 3; i++)
@@ -163,7 +203,7 @@ describe('createRateLimiter', () => {
     await request(app).post('/').expect(200);
   });
 
-  it('stays bounded in memory by dropping the oldest visitor', async () => {
+  it('stays bounded in memory and never resets a visitor whose limit is still active', async () => {
     let time = 0;
     const app = express();
     app.set('trust proxy', 1);
@@ -185,10 +225,28 @@ describe('createRateLimiter', () => {
     time = 1;
     await from('203.0.113.2').expect(200);
     time = 2;
-    await from('203.0.113.3').expect(200); // drops .1, the oldest
-    await from('203.0.113.3').expect(429);
+    // Both slots are still active, so a new visitor waits instead of wiping .1's limit.
+    const full = await from('203.0.113.3').expect(429);
+    expect(full.headers['retry-after']).toBe('60');
+    await from('203.0.113.1').expect(429);
+    time = 60_000;
+    // .1's window has ended, so its slot is reused.
+    await from('203.0.113.3').expect(200);
     await from('203.0.113.2').expect(429);
-    await from('203.0.113.1').expect(200); // forgotten, so counted fresh
+  });
+});
+
+describe('rateLimitKey', () => {
+  it.each([
+    ['203.0.113.7', '203.0.113.7'],
+    ['::ffff:203.0.113.7', '203.0.113.7'],
+    ['2001:db8:1:2::1', '2001:0db8:0001:0002::/64'],
+    ['2001:DB8:1:2:a:b:c:d', '2001:0db8:0001:0002::/64'],
+    ['::1', '0000:0000:0000:0000::/64'],
+    ['fe80::1%eth0', 'fe80:0000:0000:0000::/64'],
+    [undefined, 'unknown'],
+  ])('keys %s as %s', (ip, key) => {
+    expect(rateLimitKey(ip)).toBe(key);
   });
 });
 
@@ -274,6 +332,14 @@ describe('checkEstimatePhoto', () => {
       error: 'Photos must be 10 MB or smaller.',
     });
   });
+
+  it.each(['image/jpg', 'image/pjpeg', 'application/octet-stream', ''])(
+    'lets the content decide when the browser declares %j',
+    (type) => {
+      expect(checkEstimatePhoto(jpeg, type)).toMatchObject({ ok: true, type: 'image/jpeg' });
+      expect(checkEstimatePhoto(pdf, type)).toMatchObject({ ok: false, status: 415 });
+    },
+  );
 
   it('supports a smaller limit for already-compressed uploads', () => {
     const big = Buffer.alloc(1024 * 1024 + 1);

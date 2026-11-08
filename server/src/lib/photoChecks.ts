@@ -14,14 +14,25 @@ export function detectImageType(bytes: Buffer): EstimatePhotoType | undefined {
   return undefined;
 }
 
+/**
+ * The browser's Content-Type, or undefined when it says nothing useful. "image/jpg"
+ * is a common misspelling of image/jpeg, and generic types defer to the content.
+ */
+function normalizeDeclaredType(value: string | undefined): string | undefined {
+  const type = value?.split(';')[0]?.trim().toLowerCase();
+  if (!type || type === 'application/octet-stream') return undefined;
+  return type === 'image/jpg' || type === 'image/pjpeg' ? 'image/jpeg' : type;
+}
+
 export type EstimatePhotoCheck =
   | { ok: true; type: EstimatePhotoType; extension: 'jpg' | 'png' }
   | { ok: false; status: 400 | 413 | 415; error: string };
 
 /**
  * Server-side check for an uploaded estimate photo: JPG or PNG by content, and no
- * larger than `maxBytes`. When the browser sent a Content-Type, it must agree with
- * the content, so a renamed file is refused either way.
+ * larger than `maxBytes`. When the browser sent a specific image type, it must agree
+ * with the content, so a renamed file is refused either way. This checks the file's
+ * signature, not every byte: photos stay private and are only served back as images.
  */
 export function checkEstimatePhoto(
   bytes: unknown,
@@ -37,7 +48,7 @@ export function checkEstimatePhoto(
       error: `Photos must be ${Math.floor(maxBytes / (1024 * 1024)) || 1} MB or smaller.`,
     };
   const type = detectImageType(bytes);
-  const declared = declaredType?.split(';')[0]?.trim().toLowerCase();
+  const declared = normalizeDeclaredType(declaredType);
   if (!type || (declared && declared !== type))
     return { ok: false, status: 415, error: 'Photos must be JPG or PNG images.' };
   return { ok: true, type, extension: type === 'image/jpeg' ? 'jpg' : 'png' };
