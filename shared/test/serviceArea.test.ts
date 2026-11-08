@@ -22,13 +22,21 @@ describe('normalizeCityName', () => {
     ['Sacramento CA 95821-1234', 'sacramento'],
     ['Sacramento 95821', 'sacramento'],
     ['Sacramento, California, 95821', 'sacramento'],
+    ['Carmichael,CA', 'carmichael'],
+    ['Carmichael, Calif.', 'carmichael'],
+    ['Carmichael, CA 95608, USA', 'carmichael'],
+    ['Carmichael CA US', 'carmichael'],
+    ['Carmichael\u00a0', 'carmichael'],
   ])('normalizes %j to %j', (input, expected) => {
     expect(normalizeCityName(input)).toBe(expected);
   });
 
-  it('keeps a city whose name only starts with "Ca"', () => {
-    expect(normalizeCityName('Calistoga')).toBe('calistoga');
-  });
+  it.each(['Calistoga', 'Benicia', 'Pasadena', 'Fresno'])(
+    'keeps letters that only look like a state or country in %s',
+    (city) => {
+      expect(normalizeCityName(city)).toBe(city.toLowerCase());
+    },
+  );
 });
 
 describe('isCityInServiceArea', () => {

@@ -27,17 +27,21 @@ export interface ServiceAreaCheckResponse {
 
 /**
  * Compares cities the way a customer types them: capitalization, extra spaces and a
- * trailing state or ZIP code ("Carmichael, CA 95608") do not matter.
+ * trailing state, ZIP code or country ("Carmichael, CA 95608, USA") do not matter.
  */
 export function normalizeCityName(value: string): string {
-  return value
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/,?\s*\d{5}(-\d{4})?$/, '')
-    .replace(/,?\s+(ca|california)\.?$/i, '')
-    .replace(/,$/, '')
-    .trim()
-    .toLowerCase();
+  return (
+    value
+      .trim()
+      .replace(/\s+/g, ' ')
+      // Each suffix needs a comma or space before it, so "Benicia" keeps its "ca".
+      .replace(/(?:,\s*|\s+)(usa|us|united states)\.?$/i, '')
+      .replace(/(?:,\s*|\s+)\d{5}(?:-\d{4})?$/, '')
+      .replace(/(?:,\s*|\s+)(ca|calif|california)\.?$/i, '')
+      .replace(/,$/, '')
+      .trim()
+      .toLowerCase()
+  );
 }
 
 export function isCityInServiceArea(city: string, serviceCities: readonly string[]): boolean {
