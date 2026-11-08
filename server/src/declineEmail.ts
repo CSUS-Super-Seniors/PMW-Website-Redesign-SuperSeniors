@@ -30,6 +30,21 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+// Anything a mail app could turn into a link: a URL, "www.", an address, or a domain.
+const LINK_LIKE = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.|@|\b[a-z0-9-]+\.[a-z]{2,24}\b)/i;
+
+/**
+ * The public form doesn't verify the email address, so a spammer could put someone
+ * else's address on a request and a link in the name or item. Declines go out from
+ * the business's domain, so customer text that looks like a link (or runs long) is
+ * replaced with a plain word instead of being repeated.
+ */
+function safeCustomerText(value: string, maxLength: number, fallback: string): string {
+  const text = oneLine(value);
+  if (!text || text.length > maxLength || LINK_LIKE.test(text)) return fallback;
+  return text;
+}
+
 export function customerAddress(inquiry: Pick<DeclinedInquiry, 'email'>): string | undefined {
   const email = inquiry.email?.trim();
   return email && email.length <= 254 && MAILBOX.test(email) ? email : undefined;
@@ -40,8 +55,8 @@ export function customerAddress(inquiry: Pick<DeclinedInquiry, 'email'>): string
  * into the shared branded template.
  */
 export function buildDeclineEmail(inquiry: DeclinedInquiry): { subject: string; text: string } {
-  const firstName = oneLine(inquiry.first_name) || 'there';
-  const item = oneLine(inquiry.item) || 'item';
+  const firstName = safeCustomerText(inquiry.first_name, 40, 'there');
+  const item = safeCustomerText(inquiry.item, 60, 'item');
   const inquiryNumber = oneLine(inquiry.inquiry_number);
   return {
     subject: `Your estimate request ${inquiryNumber}`,

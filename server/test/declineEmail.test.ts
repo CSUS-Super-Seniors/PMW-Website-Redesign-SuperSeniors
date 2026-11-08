@@ -58,13 +58,47 @@ describe('buildDeclineEmail', () => {
   it('keeps customer text on one line so it cannot add lines or headers', () => {
     const { subject, text } = buildDeclineEmail({
       ...inquiry,
-      first_name: 'Ana\r\nBcc: x@example.com',
+      first_name: 'Ana\r\nBcc: Todd',
       item: '  Oak\n\n  table  ',
       inquiry_number: 'INQ-1\r\n2',
     });
     expect(subject).toBe('Your estimate request INQ-1 2');
-    expect(text.split('\n')[0]).toBe('Hi Ana Bcc: x@example.com,');
+    expect(text.split('\n')[0]).toBe('Hi Ana Bcc: Todd,');
     expect(text).toContain('your Oak table.');
+  });
+
+  it.each([
+    ['https://spam.example/win', 'Oak table'],
+    ['Ana', 'chair, see www.spam.example'],
+    ['Ana', 'chair spam.example'],
+    ['Ana', 'chair, email me at win@spam.example'],
+    ['Visit spam.ru now', 'chair'],
+    ['Ana', 'ftp://spam.example'],
+  ])('never repeats link-like customer text (%j, %j)', (first_name, item) => {
+    const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
+    expect(text).not.toMatch(/spam/i);
+    expect(text).toContain('(INQ-1048)');
+  });
+
+  it('replaces a long name or item with a plain word', () => {
+    const { text } = buildDeclineEmail({
+      ...inquiry,
+      first_name: 'A'.repeat(41),
+      item: 'B'.repeat(61),
+    });
+    expect(text).toContain('Hi there,');
+    expect(text).toContain('your item.');
+    expect(buildDeclineEmail({ ...inquiry, item: 'B'.repeat(60) }).text).toContain('B'.repeat(60));
+  });
+
+  it('keeps ordinary names and items with punctuation', () => {
+    const { text } = buildDeclineEmail({
+      ...inquiry,
+      first_name: "D'Angelo-Marie",
+      item: 'Mid-century oak dresser (3 drawers)',
+    });
+    expect(text).toContain("Hi D'Angelo-Marie,");
+    expect(text).toContain('your Mid-century oak dresser (3 drawers).');
   });
 
   it('falls back to friendly words when a name or item is blank', () => {

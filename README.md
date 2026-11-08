@@ -128,6 +128,9 @@ does not prove inbox delivery. N9 branding will be adopted when available.
 
 When an owner declines an estimate request, the customer gets a short plain-text email with their
 first name, inquiry number, item and the business phone number. Internal notes are never included.
+Because the form doesn't verify email addresses, a name or item that looks like a link, an email
+address or a domain (or runs long) is replaced with a plain word, so spam text is never resent from
+the business's domain. The decline screen should also offer declining spam without emailing.
 It uses the same Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and
 replies go to `CONTACT_OWNER_EMAILS`. The wording in `server/src/declineEmail.ts` is a draft until
 Girlie and Todd approve it.
@@ -136,7 +139,8 @@ The decline action (SSPMW-172) sets the inquiry's status to `closed` first, then
 `notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws,
 so a failed email can't undo the decline. It returns `sent`, `no_email`, `unavailable` or `failed`
 so the screen can tell the owner when the customer wasn't emailed. Resend's idempotency key stops
-a retried decline from emailing the customer twice.
+a decline retried within 24 hours from emailing the customer twice (a duplicate shows as
+`failed`).
 
 ## Database
 
