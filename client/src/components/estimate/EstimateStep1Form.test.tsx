@@ -148,7 +148,10 @@ describe('EstimateStep1Form', () => {
 
     resolve(reply({ valid: true }));
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledExactlyOnceWith({ ...details, text_ok: false }),
+      expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+        { ...details, text_ok: false },
+        { company_website: '' },
+      ),
     );
     expect(screen.getByLabelText('Email address')).toHaveValue(details.email);
     expect(continueButton()).toBeEnabled();
@@ -162,7 +165,10 @@ describe('EstimateStep1Form', () => {
     await user.click(continueButton());
 
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({ ...details, text_ok: true, issue_type: 'other' }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, text_ok: true, issue_type: 'other' },
+        { company_website: '' },
+      ),
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
       text_ok: true,
@@ -224,11 +230,10 @@ describe('EstimateStep1Form', () => {
     fetchMock.mockResolvedValueOnce(reply({ valid: true }));
     await user.click(continueButton());
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({
-        ...details,
-        phone: '(916) 555-0142',
-        text_ok: false,
-      }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, phone: '(916) 555-0142', text_ok: false },
+        { company_website: '' },
+      ),
     );
   });
 
@@ -320,7 +325,10 @@ describe('EstimateStep1Form', () => {
     await user.type(screen.getByLabelText('City'), 'Carmichael');
     await user.click(continueButton());
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({ ...details, city: 'Carmichael', text_ok: false }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, city: 'Carmichael', text_ok: false },
+        { company_website: '' },
+      ),
     );
   });
 
@@ -428,5 +436,27 @@ describe('EstimateStep1Form', () => {
     expect(signal.aborted).toBe(true);
     resolve(reply({ valid: true }));
     await waitFor(() => expect(onContinue).not.toHaveBeenCalled());
+  });
+  it('keeps the honeypot out of the details and the tab order, and hands its value to the submit step', async () => {
+    fetchMock.mockResolvedValue(reply({ valid: true }));
+    const { user, container, onContinue } = renderForm(details);
+    const honeypot = container.querySelector<HTMLInputElement>('[name="company_website"]')!;
+
+    expect(honeypot).toHaveAttribute('tabindex', '-1');
+    expect(honeypot.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.queryByRole('textbox', { name: /company website/i })).not.toBeInTheDocument();
+
+    fireEvent.change(honeypot, { target: { value: 'https://spam.example' } });
+    await user.click(continueButton());
+
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+        { ...details, text_ok: false },
+        { company_website: 'https://spam.example' },
+      ),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).not.toHaveProperty(
+      'company_website',
+    );
   });
 });

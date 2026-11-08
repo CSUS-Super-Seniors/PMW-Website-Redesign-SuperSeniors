@@ -1,4 +1,4 @@
-import express, { type ErrorRequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import {
@@ -7,25 +7,38 @@ import {
   estimateStep1Schema,
   mapEstimateStep1Errors,
   serviceAreaCheckSchema,
+  ESTIMATE_HONEYPOT_FIELD,
+  ESTIMATE_RATE_LIMIT_MESSAGE,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import { SERVICE_AREA_UNAVAILABLE_MESSAGE, type ServiceAreaBackend } from './serviceArea.js';
+import { rejectHoneypot } from './lib/honeypot.js';
+import { createRateLimiter } from './lib/rateLimit.js';
+
+/** Where the estimate request form submits (SSPMW-70 adds the handler). */
+export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
+
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */
 export interface AppOptions {
   serviceArea?: ServiceAreaBackend;
+  /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
+  estimateSubmit?: RequestHandler;
 }
 
 export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea }: AppOptions = {},
+  { serviceArea, estimateSubmit }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
+  // Rate limits key on req.ip, which is only the visitor's address when this matches
+  // the hosting. Never trust more proxies than really sit in front of the app.
+  app.set('trust proxy', config.trustProxyHops);
   app.use(helmet());
   app.use((req, res, next) => {
     const origin = req.get('origin');
@@ -41,6 +54,19 @@ export function createApp(
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
+  );
+  // Spam protection for the estimate submit route (SSPMW-95): the rate limit counts
+  // every attempt, then a filled honeypot is dropped before the handler runs.
+  app.post(
+    ESTIMATE_SUBMIT_PATH,
+    createRateLimiter({ ...config.estimateRateLimit, message: ESTIMATE_RATE_LIMIT_MESSAGE }),
+    // The submit handler reuses this parsed body (it includes photo receipts).
+    express.json({ limit: '100kb', strict: false }),
+    rejectHoneypot(ESTIMATE_HONEYPOT_FIELD),
+    estimateSubmit ??
+      ((_req, res) => {
+        res.status(501).json({ error: 'Not implemented' });
+      }),
   );
   // Let the shared schema report valid JSON primitives as form-level errors.
   // Other routes retain the existing strict JSON parser.

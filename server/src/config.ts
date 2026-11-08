@@ -4,13 +4,37 @@ export interface ContactEmailConfig {
   to: string[];
 }
 
+export interface RateLimitConfig {
+  max: number;
+  windowMs: number;
+}
+
 export interface Config {
   port: number;
   clientOrigins: string[];
+  /** Proxies in front of the app whose X-Forwarded-For can be trusted (Vercel: 1). */
+  trustProxyHops: number;
+  /** Estimate submissions allowed per visitor IP in one window. */
+  estimateRateLimit: RateLimitConfig;
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   contactEmail?: ContactEmailConfig;
 }
+function wholeNumberSetting(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || value < min || value > max)
+    throw new Error(`${key} must be a whole number from ${min} to ${max}`);
+  return value;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const required = ['CLIENT_ORIGINS', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
   const missing = required.filter((key) => !env[key]?.trim());
@@ -62,9 +86,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
     contactEmail = { apiKey: env.RESEND_API_KEY!.trim(), from, to: [...new Set(to)] };
   }
+  const trustProxyHops = wholeNumberSetting(env, 'TRUST_PROXY_HOPS', 0, 0, 10);
+  const estimateRateLimit = {
+    max: wholeNumberSetting(env, 'ESTIMATE_RATE_LIMIT_MAX', 5, 1, 1000),
+    windowMs: wholeNumberSetting(env, 'ESTIMATE_RATE_LIMIT_WINDOW_MINUTES', 60, 1, 1440) * 60_000,
+  };
   return {
     port,
     clientOrigins,
+    trustProxyHops,
+    estimateRateLimit,
     supabaseUrl,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
     contactEmail,
