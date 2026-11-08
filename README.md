@@ -124,6 +124,20 @@ of prompting duplicate submissions. Validation failures return 400 with inline
 field errors; configuration or save failures return 503. Notification acceptance
 does not prove inbox delivery. N9 branding will be adopted when available.
 
+## Decline email (SSPMW-215)
+
+When an owner declines an estimate request, the customer gets a short plain-text email with their
+first name, inquiry number, item and the business phone number. Internal notes are never included.
+It uses the same Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and
+replies go to `CONTACT_OWNER_EMAILS`. The wording in `server/src/declineEmail.ts` is a draft until
+Girlie and Todd approve it.
+
+The decline action (SSPMW-172) sets the inquiry's status to `closed` first, then calls
+`notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws,
+so a failed email can't undo the decline. It returns `sent`, `no_email`, `unavailable` or `failed`
+so the screen can tell the owner when the customer wasn't emailed. Resend's idempotency key stops
+a retried decline from emailing the customer twice.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).

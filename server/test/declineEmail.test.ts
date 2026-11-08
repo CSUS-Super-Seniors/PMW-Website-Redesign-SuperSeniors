@@ -1,0 +1,214 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import express from 'express';
+import request from 'supertest';
+import { loadConfig } from '../src/config.js';
+import {
+  buildDeclineEmail,
+  createDeclineEmailFromConfig,
+  createDeclineEmailSender,
+  notifyCustomerOfDecline,
+  type DeclineEmailSender,
+  type DeclinedInquiry,
+} from '../src/declineEmail.js';
+
+const inquiry: DeclinedInquiry = {
+  id: '5eed0003-0000-4000-8000-000000001048',
+  inquiry_number: 'INQ-1048',
+  first_name: 'Margaret',
+  item: 'Dining chair',
+  email: 'margaret@example.com',
+};
+const emailConfig = {
+  apiKey: 'test-email-key',
+  from: 'estimates@example.com',
+  replyTo: ['owner@example.com'],
+};
+const accepted = () => Response.json({ id: 'email-1' });
+
+let errorLog: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+});
+afterEach(() => errorLog.mockRestore());
+
+describe('buildDeclineEmail', () => {
+  it('includes the first name, inquiry number, item and business phone', () => {
+    const { subject, text } = buildDeclineEmail(inquiry);
+    expect(subject).toBe('Your estimate request INQ-1048');
+    expect(text).toContain('Hi Margaret,');
+    expect(text).toContain('your Dining chair');
+    expect(text).toContain('(INQ-1048)');
+    expect(text).toContain('(916) 643-5686');
+    expect(text).toContain('Peterson Mobile Woodworking');
+  });
+
+  it('never includes internal notes or other inquiry fields', () => {
+    const withNotes = {
+      ...inquiry,
+      description: 'Customer description',
+      notes: 'INTERNAL: price shopper, do not take',
+      phone: '(916) 555-0142',
+      address: '4821 Fair Oaks Blvd',
+    } as DeclinedInquiry;
+    const { subject, text } = buildDeclineEmail(withNotes);
+    for (const value of ['INTERNAL', 'Customer description', '555-0142', 'Fair Oaks Blvd'])
+      expect(`${subject}\n${text}`).not.toContain(value);
+  });
+
+  it('keeps customer text on one line so it cannot add lines or headers', () => {
+    const { subject, text } = buildDeclineEmail({
+      ...inquiry,
+      first_name: 'Ana\r\nBcc: x@example.com',
+      item: '  Oak\n\n  table  ',
+      inquiry_number: 'INQ-1\r\n2',
+    });
+    expect(subject).toBe('Your estimate request INQ-1 2');
+    expect(text.split('\n')[0]).toBe('Hi Ana Bcc: x@example.com,');
+    expect(text).toContain('your Oak table.');
+  });
+
+  it('falls back to friendly words when a name or item is blank', () => {
+    const { text } = buildDeclineEmail({ ...inquiry, first_name: '  ', item: '' });
+    expect(text).toContain('Hi there,');
+    expect(text).toContain('your item.');
+  });
+});
+
+describe('createDeclineEmailSender', () => {
+  it('sends a plain-text email through Resend to the address on the inquiry', async () => {
+    const fetchEmail = vi.fn<typeof fetch>(async () => accepted());
+    await createDeclineEmailSender(emailConfig, fetchEmail).send({
+      ...inquiry,
+      email: '  Margaret@Example.com ',
+    });
+
+    expect(fetchEmail).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchEmail.mock.calls[0]!;
+    expect(url).toBe('https://api.resend.com/emails');
+    expect(init?.method).toBe('POST');
+    expect(init?.headers).toEqual({
+      Authorization: 'Bearer test-email-key',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `inquiry-declined/${inquiry.id}`,
+    });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({
+      from: 'estimates@example.com',
+      to: ['Margaret@Example.com'],
+      reply_to: ['owner@example.com'],
+      ...buildDeclineEmail(inquiry),
+    });
+    expect(body).not.toHaveProperty('html');
+  });
+
+  it('leaves reply_to out when no owner addresses are set', async () => {
+    const fetchEmail = vi.fn<typeof fetch>(async () => accepted());
+    await createDeclineEmailSender({ apiKey: 'k', from: 'a@example.com' }, fetchEmail).send(
+      inquiry,
+    );
+    expect(JSON.parse(String(fetchEmail.mock.calls[0]![1]?.body))).not.toHaveProperty('reply_to');
+  });
+
+  it.each([
+    () => Response.json({ message: 'invalid' }, { status: 422 }),
+    () => Response.json({}),
+    () => Response.json({ id: ' ' }),
+  ])('throws when Resend does not accept the email', async (response) => {
+    const sender = createDeclineEmailSender(emailConfig, async () => response());
+    await expect(sender.send(inquiry)).rejects.toThrow();
+  });
+
+  it.each([null, '', 'not-an-email', 'a@b'])(
+    'never calls Resend without a usable address (%j)',
+    async (email) => {
+      const fetchEmail = vi.fn<typeof fetch>();
+      await expect(
+        createDeclineEmailSender(emailConfig, fetchEmail).send({ ...inquiry, email }),
+      ).rejects.toThrow('no usable email address');
+      expect(fetchEmail).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('notifyCustomerOfDecline', () => {
+  it('reports a sent email', async () => {
+    const sender = { send: vi.fn(async () => undefined) };
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('sent');
+    expect(sender.send).toHaveBeenCalledExactlyOnceWith(inquiry);
+  });
+
+  it('never throws when sending fails, and logs only the inquiry id', async () => {
+    const sender = { send: vi.fn().mockRejectedValue(new Error('Resend: margaret@example.com')) };
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('failed');
+    expect(errorLog).toHaveBeenCalledWith('Decline email failed', { inquiryId: inquiry.id });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('margaret');
+  });
+
+  it('skips inquiries without an email address and an unconfigured sender', async () => {
+    const sender = { send: vi.fn() };
+    await expect(notifyCustomerOfDecline(sender, { ...inquiry, email: null })).resolves.toBe(
+      'no_email',
+    );
+    await expect(notifyCustomerOfDecline(undefined, inquiry)).resolves.toBe('unavailable');
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('createDeclineEmailFromConfig', () => {
+  const env = {
+    CLIENT_ORIGINS: 'http://localhost:5173',
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'test-secret',
+  };
+
+  it('uses the Resend settings and sends replies to the owners', async () => {
+    const fetchEmail = vi.fn<typeof fetch>(async () => accepted());
+    const config = loadConfig({
+      ...env,
+      RESEND_API_KEY: 'resend-key',
+      RESEND_FROM_EMAIL: 'contact@example.com',
+      CONTACT_OWNER_EMAILS: 'girlie@example.com,todd@example.com',
+    });
+    await createDeclineEmailFromConfig(config, fetchEmail)!.send(inquiry);
+    const body = JSON.parse(String(fetchEmail.mock.calls[0]![1]?.body));
+    expect(body.from).toBe('contact@example.com');
+    expect(body.reply_to).toEqual(['girlie@example.com', 'todd@example.com']);
+    expect(fetchEmail.mock.calls[0]![1]?.headers).toMatchObject({
+      Authorization: 'Bearer resend-key',
+    });
+  });
+
+  it('is unavailable when email is not configured', () => {
+    expect(createDeclineEmailFromConfig(loadConfig(env))).toBeUndefined();
+  });
+});
+
+describe('decline flow contract (how SSPMW-172 uses this)', () => {
+  /** Stand-in for the decline route: save the status first, then email. */
+  function declineApp(sender: DeclineEmailSender) {
+    const statuses = new Map([[inquiry.id, 'new']]);
+    const app = express();
+    app.post('/inquiries/:id/decline', async (req, res) => {
+      statuses.set(req.params.id, 'closed');
+      const email = await notifyCustomerOfDecline(sender, inquiry);
+      res.json({ status: statuses.get(req.params.id), email });
+    });
+    return { app, statuses };
+  }
+
+  it('sends the email on decline', async () => {
+    const send = vi.fn(async () => undefined);
+    const { app } = declineApp({ send });
+    const response = await request(app).post(`/inquiries/${inquiry.id}/decline`).expect(200);
+    expect(response.body).toEqual({ status: 'closed', email: 'sent' });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the Declined status when the email fails', async () => {
+    const { app, statuses } = declineApp({ send: vi.fn().mockRejectedValue(new Error('down')) });
+    const response = await request(app).post(`/inquiries/${inquiry.id}/decline`).expect(200);
+    expect(response.body).toEqual({ status: 'closed', email: 'failed' });
+    expect(statuses.get(inquiry.id)).toBe('closed');
+  });
+});
