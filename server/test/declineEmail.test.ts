@@ -86,9 +86,19 @@ describe('buildDeclineEmail', () => {
     ['Ana', 'javascript:alert(1)'],
     ['Ana', 'mailto:a'],
     ['Ana', 'data:text/html,hi'],
+    ['Ana', 'spam\u00ad.com refund'],
+    ['Ana', 'spam\u200b.com refund'],
+    ['Ana', 'spam.\u200bcom refund'],
+    ['Ana', 'spam\u2060.com refund'],
+    ['Ana', 'call 888\u200b555\u200b0199'],
+    ['Ana', 'call 888/555/0199'],
+    ['Ana', 'call 888_555_0199'],
+    ['Ana', 'call 888\u00b7555\u00b70199'],
+    ['Ana', 'call 888|555|0199'],
+    ['Ana', 'sms:8885550199'],
   ])('never repeats link-like customer text (%j, %j)', (first_name, item) => {
     const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
-    expect(text).not.toMatch(/spam|555|1888|192\.168|пример|javascript|mailto|data:/i);
+    expect(text).not.toMatch(/spam|555|1888|192\.168|пример|javascript|mailto|data:|sms:/i);
     expect(text).toContain('(INQ-1048)');
   });
 
@@ -109,6 +119,9 @@ describe('buildDeclineEmail', () => {
     ['Ana', '3.5 ft bookshelf'],
     ['Ana', 'Re: chair from 1998, 2004'],
     ['Ana', 'Table 120 x 60 x 75 cm'],
+    ['Ana', 'Size:3ft table'],
+    ['Ana', 'Chair: oak, 8:00 AM pickup'],
+    ['José', 'Mesa de comedor'],
   ])('keeps ordinary text that only looks a little like a link (%j, %j)', (first_name, item) => {
     const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
     expect(text).toContain(`Hi ${first_name},`);

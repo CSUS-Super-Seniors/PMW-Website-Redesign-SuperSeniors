@@ -41,17 +41,19 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-// Things a mail app could turn into a link. Checked after NFKC normalization, so
-// full-width letters and dots count too.
+// Things a mail app could turn into a link. Checked after NFKC normalization and
+// with invisible format characters removed, so full-width letters and dots, and
+// tricks like "spam\u00ad.com", count too.
 const LINK_PATTERNS = [
-  /\b[a-z][a-z0-9+.-]*:(?=\S)/i, // a scheme: http://, tel:, mailto:, javascript:
+  /[a-z][a-z0-9+.-]*:\/\//i, // any scheme with "//", like http:// or ftp://
+  /\b(?:tel|sms|smsto|mailto|callto|facetime|skype|whatsapp|javascript|vbscript|data|file):(?=\S)/i,
   /www\.|@/i, // "www." or an email address
   /[\p{L}\p{N}_-]+[.\u3002\uff61][\p{L}]{2,}/u, // name.tld in any script, incl. "。"
-  /(?:\d[\s().+-]*){7,}/, // a phone number (7 or more digits), which phones make tappable
+  /(?:\d[\s().+\-/_\u00b7\u2022|]*){7,}/, // a phone number (7+ digits), which phones make tappable
 ];
 
 function looksLikeLink(text: string): boolean {
-  const normalized = text.normalize('NFKC');
+  const normalized = text.normalize('NFKC').replace(/\p{Cf}/gu, '');
   return LINK_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
