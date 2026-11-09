@@ -74,9 +74,21 @@ describe('buildDeclineEmail', () => {
     ['Ana', 'chair, email me at win@spam.example'],
     ['Visit spam.ru now', 'chair'],
     ['Ana', 'ftp://spam.example'],
+    ['Ana', 'refund? call 1-888-555-0199'],
+    ['Call +1 (888) 555-0199', 'chair'],
+    ['Ana', 'tel:18885550199'],
+    ['Ana', '192.168.10.20/login'],
+    ['Ana', 'пример.рф'],
+    ['Ana', 'spam．com'],
+    ['Ana', 'ｓｐａｍ．ｃｏｍ'],
+    ['Ana', 'spam。com'],
+    ['Ana', 'spam_site.com'],
+    ['Ana', 'javascript:alert(1)'],
+    ['Ana', 'mailto:a'],
+    ['Ana', 'data:text/html,hi'],
   ])('never repeats link-like customer text (%j, %j)', (first_name, item) => {
     const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
-    expect(text).not.toMatch(/spam/i);
+    expect(text).not.toMatch(/spam|555|1888|192\.168|пример|javascript|mailto|data:/i);
     expect(text).toContain('(INQ-1048)');
   });
 
@@ -89,6 +101,18 @@ describe('buildDeclineEmail', () => {
     expect(text).toContain('Hi there,');
     expect(text).toContain('your item.');
     expect(buildDeclineEmail({ ...inquiry, item: 'B'.repeat(60) }).text).toContain('B'.repeat(60));
+  });
+
+  it.each([
+    ['Zoë', 'Oak table'],
+    ['Ana', 'St. Helena rocking chair'],
+    ['Ana', '3.5 ft bookshelf'],
+    ['Ana', 'Re: chair from 1998, 2004'],
+    ['Ana', 'Table 120 x 60 x 75 cm'],
+  ])('keeps ordinary text that only looks a little like a link (%j, %j)', (first_name, item) => {
+    const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
+    expect(text).toContain(`Hi ${first_name},`);
+    expect(text).toContain(`your ${item}.`);
   });
 
   it('keeps ordinary names and items with punctuation', () => {
@@ -136,6 +160,29 @@ describe('createDeclineEmailSender', () => {
     expect(body).not.toHaveProperty('html');
   });
 
+  it('resolves sent when Resend accepts the email', async () => {
+    const sender = createDeclineEmailSender(emailConfig, async () => accepted());
+    await expect(sender.send(inquiry)).resolves.toBe('sent');
+  });
+
+  it.each(['invalid_idempotent_request', 'concurrent_idempotent_requests'])(
+    'treats a 409 %s as already sent, not a failure',
+    async (name) => {
+      const sender = createDeclineEmailSender(emailConfig, async () =>
+        Response.json({ name, message: 'duplicate' }, { status: 409 }),
+      );
+      await expect(sender.send(inquiry)).resolves.toBe('already_sent');
+    },
+  );
+
+  it.each([
+    () => Response.json({ name: 'validation_error' }, { status: 409 }),
+    () => new Response('not json', { status: 409 }),
+  ])('still fails on any other 409', async (response) => {
+    const sender = createDeclineEmailSender(emailConfig, async () => response());
+    await expect(sender.send(inquiry)).rejects.toThrow('could not be sent');
+  });
+
   it('leaves reply_to out when no owner addresses are set', async () => {
     const fetchEmail = vi.fn<typeof fetch>(async () => accepted());
     await createDeclineEmailSender({ apiKey: 'k', from: 'a@example.com' }, fetchEmail).send(
@@ -167,9 +214,14 @@ describe('createDeclineEmailSender', () => {
 
 describe('notifyCustomerOfDecline', () => {
   it('reports a sent email', async () => {
-    const sender = { send: vi.fn(async () => undefined) };
+    const sender = { send: vi.fn(async () => 'sent' as const) };
     await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('sent');
     expect(sender.send).toHaveBeenCalledExactlyOnceWith(inquiry);
+  });
+
+  it('reports an email Resend had already sent', async () => {
+    const sender = { send: vi.fn(async () => 'already_sent' as const) };
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('already_sent');
   });
 
   it('never throws when sending fails, and logs only the inquiry id', async () => {
@@ -219,7 +271,11 @@ describe('createDeclineEmailFromConfig', () => {
 });
 
 describe('decline flow contract (how SSPMW-172 uses this)', () => {
-  /** Stand-in for the decline route: save the status first, then email. */
+  /**
+   * Stand-in for the decline route, saving the status first and then emailing. These
+   * tests show the helper's side of the contract (it never rejects), so a route that
+   * saves first stays saved. The real route and its tests come with SSPMW-172.
+   */
   function declineApp(sender: DeclineEmailSender) {
     const statuses = new Map([[inquiry.id, 'new']]);
     const app = express();
@@ -231,15 +287,15 @@ describe('decline flow contract (how SSPMW-172 uses this)', () => {
     return { app, statuses };
   }
 
-  it('sends the email on decline', async () => {
-    const send = vi.fn(async () => undefined);
+  it('reports the email to a route that saved the decline first', async () => {
+    const send = vi.fn(async () => 'sent' as const);
     const { app } = declineApp({ send });
     const response = await request(app).post(`/inquiries/${inquiry.id}/decline`).expect(200);
     expect(response.body).toEqual({ status: 'closed', email: 'sent' });
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the Declined status when the email fails', async () => {
+  it('never rejects when the email fails, so a route that saved first keeps Declined', async () => {
     const { app, statuses } = declineApp({ send: vi.fn().mockRejectedValue(new Error('down')) });
     const response = await request(app).post(`/inquiries/${inquiry.id}/decline`).expect(200);
     expect(response.body).toEqual({ status: 'closed', email: 'failed' });

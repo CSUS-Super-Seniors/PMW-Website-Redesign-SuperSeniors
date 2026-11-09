@@ -20,8 +20,19 @@ export interface DeclineEmailConfig {
 }
 
 export interface DeclineEmailSender {
-  send(inquiry: DeclinedInquiry): Promise<void>;
+  /** `already_sent` means Resend had already sent this decline's email. */
+  send(inquiry: DeclinedInquiry): Promise<'sent' | 'already_sent'>;
 }
+
+/**
+ * Resend's 409 replies for a reused idempotency key: the email for this decline was
+ * already sent with different details, or is being sent by a request still running.
+ * Either way the customer has (or is getting) the email, so it isn't a failure.
+ */
+const ALREADY_SENT_ERRORS = new Set([
+  'invalid_idempotent_request',
+  'concurrent_idempotent_requests',
+]);
 
 const MAILBOX = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
@@ -30,8 +41,19 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-// Anything a mail app could turn into a link: a URL, "www.", an address, or a domain.
-const LINK_LIKE = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.|@|\b[a-z0-9-]+\.[a-z]{2,24}\b)/i;
+// Things a mail app could turn into a link. Checked after NFKC normalization, so
+// full-width letters and dots count too.
+const LINK_PATTERNS = [
+  /\b[a-z][a-z0-9+.-]*:(?=\S)/i, // a scheme: http://, tel:, mailto:, javascript:
+  /www\.|@/i, // "www." or an email address
+  /[\p{L}\p{N}_-]+[.\u3002\uff61][\p{L}]{2,}/u, // name.tld in any script, incl. "。"
+  /(?:\d[\s().+-]*){7,}/, // a phone number (7 or more digits), which phones make tappable
+];
+
+function looksLikeLink(text: string): boolean {
+  const normalized = text.normalize('NFKC');
+  return LINK_PATTERNS.some((pattern) => pattern.test(normalized));
+}
 
 /**
  * The public form doesn't verify the email address, so a spammer could put someone
@@ -41,7 +63,7 @@ const LINK_LIKE = /(?:[a-z][a-z0-9+.-]*:\/\/|www\.|@|\b[a-z0-9-]+\.[a-z]{2,24}\b
  */
 function safeCustomerText(value: string, maxLength: number, fallback: string): string {
   const text = oneLine(value);
-  if (!text || text.length > maxLength || LINK_LIKE.test(text)) return fallback;
+  if (!text || text.length > maxLength || looksLikeLink(text)) return fallback;
   return text;
 }
 
@@ -88,7 +110,7 @@ export function createDeclineEmailSender(
         headers: {
           Authorization: `Bearer ${email.apiKey}`,
           'Content-Type': 'application/json',
-          // A retried decline never sends the customer a second email.
+          // Within 24 hours, a retried decline never sends the customer a second email.
           'Idempotency-Key': `inquiry-declined/${inquiry.id}`,
         },
         signal: AbortSignal.timeout(10000),
@@ -100,6 +122,11 @@ export function createDeclineEmailSender(
           ...(email.replyTo?.length ? { reply_to: email.replyTo } : {}),
         }),
       });
+      if (response.status === 409) {
+        const error: unknown = await response.json().catch(() => undefined);
+        const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined;
+        if (typeof name === 'string' && ALREADY_SENT_ERRORS.has(name)) return 'already_sent';
+      }
       if (!response.ok) throw new Error('Decline email could not be sent.');
       const result: unknown = await response.json();
       if (
@@ -111,6 +138,7 @@ export function createDeclineEmailSender(
       ) {
         throw new Error('Decline email was not acknowledged.');
       }
+      return 'sent';
     },
   };
 }
@@ -132,7 +160,7 @@ export function createDeclineEmailFromConfig(
     : undefined;
 }
 
-export type DeclineEmailResult = 'sent' | 'no_email' | 'unavailable' | 'failed';
+export type DeclineEmailResult = 'sent' | 'already_sent' | 'no_email' | 'unavailable' | 'failed';
 
 /**
  * Call after the decline is saved (SSPMW-172 sets the inquiry's status to `closed`).
@@ -146,8 +174,7 @@ export async function notifyCustomerOfDecline(
   if (!customerAddress(inquiry)) return 'no_email';
   if (!sender) return 'unavailable';
   try {
-    await sender.send(inquiry);
-    return 'sent';
+    return await sender.send(inquiry);
   } catch {
     // Inquiry id only: no customer details or provider errors in the logs.
     console.error('Decline email failed', { inquiryId: inquiry.id });
