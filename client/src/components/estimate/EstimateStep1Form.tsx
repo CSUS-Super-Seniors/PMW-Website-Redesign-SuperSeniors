@@ -16,6 +16,7 @@ import { Button, Checkbox, ErrorBanner, InlineFieldError, Input, Select, Textare
 import { business, routes } from '../../config/site';
 import { validateEstimateStep1 } from '../../lib/validateEstimateStep1';
 import {
+  ServiceAreaRateLimitedError,
   checkEstimateServiceArea,
   type CheckServiceArea,
 } from '../../lib/checkEstimateServiceArea';
@@ -159,12 +160,14 @@ export default function EstimateStep1Form({
       let inServiceArea: boolean;
       try {
         inServiceArea = await checkServiceArea(local.data.city, controller.signal);
-      } catch {
+      } catch (error) {
         if (!controller.signal.aborted) {
           showErrors({
             fieldErrors: {},
             formErrors: [
-              'We could not check whether we serve your city. Check your connection and try again.',
+              error instanceof ServiceAreaRateLimitedError
+                ? error.message
+                : 'We could not check whether we serve your city. Check your connection and try again.',
             ],
           });
         }

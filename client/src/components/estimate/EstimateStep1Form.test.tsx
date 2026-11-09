@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { issueOptions, type EstimateStep1Input } from '@pmw/validation';
 import EstimateStep1Form, { type EstimateStep1Continuation } from './EstimateStep1Form';
-import type { CheckServiceArea } from '../../lib/checkEstimateServiceArea';
+import {
+  ServiceAreaRateLimitedError,
+  type CheckServiceArea,
+} from '../../lib/checkEstimateServiceArea';
 
 const details: EstimateStep1Input = {
   first_name: 'Zoë-Marie',
@@ -345,6 +348,18 @@ describe('EstimateStep1Form', () => {
 
     await user.click(continueButton());
     await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+  });
+
+  it('asks the customer to wait when they have checked their city too many times', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    checkServiceArea.mockRejectedValueOnce(new ServiceAreaRateLimitedError());
+    const { user, onContinue } = renderForm(details);
+    await user.click(continueButton());
+
+    const message = await screen.findByText(/checked several times in a short time/);
+    await waitFor(() => expect(message.closest('[tabindex="-1"]')).toHaveFocus());
+    expect(screen.queryByText(/Check your connection/)).not.toBeInTheDocument();
+    expect(onContinue).not.toHaveBeenCalled();
   });
 
   it('aborts a pending service-area check when the form unmounts', async () => {

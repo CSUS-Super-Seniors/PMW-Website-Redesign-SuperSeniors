@@ -9,6 +9,7 @@ import {
   serviceAreaCheckSchema,
   ESTIMATE_HONEYPOT_FIELD,
   ESTIMATE_RATE_LIMIT_MESSAGE,
+  SERVICE_AREA_RATE_LIMIT_MESSAGE,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
@@ -18,6 +19,7 @@ import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
   type ServiceAreaBackend,
+  type ServiceAreaLocals,
 } from './serviceArea.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
@@ -29,8 +31,21 @@ export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 export interface AppOptions {
   serviceArea?: ServiceAreaBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
-  estimateSubmit?: RequestHandler;
+  estimateSubmit?: EstimateSubmitHandler;
 }
+
+/**
+ * The submit handler runs after the rate limit, honeypot and service-area check, so
+ * `res.locals.inServiceArea` is always `true` there. It still validates the rest of
+ * the body with the shared schema.
+ */
+export type EstimateSubmitHandler = RequestHandler<
+  Record<string, string>,
+  unknown,
+  unknown,
+  Record<string, unknown>,
+  ServiceAreaLocals
+>;
 
 export function createApp(
   config: Config,
@@ -98,7 +113,7 @@ export function createApp(
     createRateLimiter({
       max: 30,
       windowMs: 10 * 60_000,
-      message: 'Too many checks in a short time. Please wait a few minutes and try again.',
+      message: SERVICE_AREA_RATE_LIMIT_MESSAGE,
     }),
     express.json({ limit: '1kb', strict: false }),
     async (req, res) => {

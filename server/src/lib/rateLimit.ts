@@ -8,11 +8,17 @@ export interface RateLimitOptions {
   /** Friendly text sent with the 429 response. */
   message: string;
   /**
-   * Visitors tracked one by one. When every slot is still active, new visitors share
-   * one overflow window, so a flood of addresses can't reset limits or lock people out.
+   * Visitors tracked one by one. When every slot is still active, new visitors are
+   * counted in overflow buckets instead (see `overflowBuckets`).
    */
   maxVisitors?: number;
-  /** Requests the shared overflow window allows (default 50 times `max`). */
+  /**
+   * Overflow buckets. Each untracked visitor always lands in the same bucket (by a
+   * hash of its key), so one address can't use up the overflow for everyone, and a
+   * flood has to fill every bucket to slow down new visitors.
+   */
+  overflowBuckets?: number;
+  /** Requests each overflow bucket allows per window (default 2 times `max`). */
   overflowMax?: number;
   now?: () => number;
 }
@@ -49,6 +55,16 @@ export function rateLimitKey(ip: string | undefined): string {
   return groups ? `${groups.slice(0, 4).join(':')}::/64` : ip;
 }
 
+/** FNV-1a hash of the visitor key, so each key always maps to the same bucket. */
+function overflowBucket(key: string, buckets: number): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0) % buckets;
+}
+
 /**
  * Fixed-window limit per visitor, kept in this server's memory. On Vercel each
  * running instance keeps its own count, so a burst spread across instances can get
@@ -61,11 +77,12 @@ export function createRateLimiter({
   windowMs,
   message,
   maxVisitors = 50_000,
-  overflowMax = max * 50,
+  overflowBuckets = 4096,
+  overflowMax = max * 2,
   now = Date.now,
 }: RateLimitOptions): RequestHandler {
   const windows = new Map<string, { start: number; count: number }>();
-  let overflow = { start: 0, count: 0 };
+  const overflow = new Map<number, { start: number; count: number }>();
 
   function refuse(res: Parameters<RequestHandler>[1], retryAfterMs: number) {
     res
@@ -93,14 +110,18 @@ export function createRateLimiter({
       }
       if (windows.size >= maxVisitors) {
         // Every tracked visitor is still inside their window. Dropping one would reset
-        // a live limit, and refusing everyone new would lock real customers out during
-        // a flood. Instead, untracked visitors share one larger overflow window.
-        if (time - overflow.start >= windowMs) overflow = { start: time, count: 0 };
-        if (overflow.count >= overflowMax) {
-          refuse(res, overflow.start + windowMs - time);
+        // a live limit, so untracked visitors are counted in a fixed set of buckets.
+        const bucket = overflowBucket(key, overflowBuckets);
+        let shared = overflow.get(bucket);
+        if (!shared || time - shared.start >= windowMs) {
+          shared = { start: time, count: 0 };
+          overflow.set(bucket, shared);
+        }
+        if (shared.count >= overflowMax) {
+          refuse(res, shared.start + windowMs - time);
           return;
         }
-        overflow.count++;
+        shared.count++;
         next();
         return;
       }

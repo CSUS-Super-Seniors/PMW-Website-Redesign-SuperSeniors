@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { ESTIMATE_HONEYPOT_FIELD, ESTIMATE_RATE_LIMIT_MESSAGE } from '@pmw/validation';
+import {
+  ESTIMATE_HONEYPOT_FIELD,
+  ESTIMATE_RATE_LIMIT_MESSAGE,
+  SERVICE_AREA_RATE_LIMIT_MESSAGE,
+} from '@pmw/validation';
 import { ESTIMATE_SUBMIT_PATH, createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { rejectHoneypot } from '../src/lib/honeypot.js';
@@ -163,7 +167,7 @@ describe('estimate submit route protection', () => {
       .post('/api/estimates/service-area')
       .send({ city: 'Davis' })
       .expect(429);
-    expect(blocked.body.error).toMatch(/Too many checks/);
+    expect(blocked.body.error).toBe(SERVICE_AREA_RATE_LIMIT_MESSAGE);
   });
 
   it('does not limit or trap the other public estimate endpoints', async () => {
@@ -214,6 +218,8 @@ describe('createRateLimiter', () => {
         windowMs: 60_000,
         message: 'Slow down',
         maxVisitors: 2,
+        // One bucket, so every untracked visitor shares it in this test.
+        overflowBuckets: 1,
         overflowMax: 2,
         now: () => time,
       }),
@@ -228,7 +234,7 @@ describe('createRateLimiter', () => {
     time = 2;
     // Both slots are still active: .1 keeps its limit...
     await from('203.0.113.1').expect(429);
-    // ...and new visitors go through the shared overflow window instead of a lockout.
+    // ...and new visitors go through the overflow bucket instead of a lockout.
     await from('203.0.113.3').expect(200);
     await from('203.0.113.4').expect(200);
     const full = await from('203.0.113.5').expect(429);
@@ -240,9 +246,15 @@ describe('createRateLimiter', () => {
     await from('203.0.113.2').expect(429);
   });
 
-  it('lets a real visitor in after a flood of 50,000 IPv6 networks', async () => {
-    const limiter = createRateLimiter({ max: 5, windowMs: 3_600_000, message: 'Slow down' });
-    const send = (ip: string) => {
+  /** Calls the limiter directly, without HTTP, for flood-sized tests. */
+  function directLimiter(options: Partial<Parameters<typeof createRateLimiter>[0]> = {}) {
+    const limiter = createRateLimiter({
+      max: 5,
+      windowMs: 3_600_000,
+      message: 'Slow down',
+      ...options,
+    });
+    return (ip: string) => {
       let status = 200;
       const res = {
         set: () => res,
@@ -258,8 +270,28 @@ describe('createRateLimiter', () => {
       });
       return passed ? 200 : status;
     };
+  }
+
+  it('after a flood of 50,000 IPv6 networks, one address cannot drain the overflow for everyone', () => {
+    const send = directLimiter();
     for (let n = 0; n < 50_000; n++) send(`2001:db8:${(n >> 16) & 0xffff}:${n & 0xffff}::1`);
+
+    // The attacker's next address gets its bucket's 10 requests, then 429.
+    const attacker = '198.51.100.7';
+    const results = Array.from({ length: 12 }, () => send(attacker));
+    expect(results.filter((status) => status === 200)).toHaveLength(10);
+    expect(results.at(-1)).toBe(429);
+
+    // A real customer lands in a different bucket and still gets through.
     expect(send('203.0.113.9')).toBe(200);
+  });
+
+  it('only slows new visitors down once a flood has filled every overflow bucket', () => {
+    const send = directLimiter({ maxVisitors: 1, overflowBuckets: 4, overflowMax: 1 });
+    send('192.0.2.1'); // takes the only tracked slot
+    let passed = 0;
+    for (let n = 2; n < 200; n++) if (send(`192.0.2.${n}`) === 200) passed++;
+    expect(passed).toBe(4); // one per bucket, then the buckets are full
   });
 });
 
