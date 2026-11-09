@@ -70,7 +70,12 @@ describe('buildDeclineEmail', () => {
   it.each([
     ['https://spam.example/win', 'Oak table'],
     ['Ana', 'chair, see www.spam.example'],
-    ['Ana', 'chair spam.example'],
+    ['Ana', 'chair spam.shop'],
+    ['Ana', 'chair, see bit.ly/spam'],
+    ['Ana', 'chair spam.co.uk'],
+    ['Ana', 'win at spam.furniture'],
+    ['Ana', 'see spam.com.2 now'],
+    ['Ana', 'see spam.com.unit now'],
     ['Ana', 'chair, email me at win@spam.example'],
     ['Visit spam.ru now', 'chair'],
     ['Ana', 'ftp://spam.example'],
@@ -122,6 +127,12 @@ describe('buildDeclineEmail', () => {
     ['Ana', 'Size:3ft table'],
     ['Ana', 'Chair: oak, 8:00 AM pickup'],
     ['José', 'Mesa de comedor'],
+    // A dot between words is only a link when the ending is a real top-level domain.
+    ['Mr.Smith', 'Oak table'],
+    ['Ana', 'shelf.unit'],
+    ['Ana', 'St.Louis rocking chair'],
+    ['Dr.Who', 'J.R.R. bookshelf'],
+    ['Ana', 'v1.2 chair'],
   ])('keeps ordinary text that only looks a little like a link (%j, %j)', (first_name, item) => {
     const { text } = buildDeclineEmail({ ...inquiry, first_name, item });
     expect(text).toContain(`Hi ${first_name},`);

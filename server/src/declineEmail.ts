@@ -1,3 +1,5 @@
+import { domainToASCII } from 'node:url';
+import { parse as parseHostname } from 'tldts';
 import { businessContact } from '@pmw/validation';
 import type { Config } from './config.js';
 
@@ -48,13 +50,35 @@ const LINK_PATTERNS = [
   /[a-z][a-z0-9+.-]*:\/\//i, // any scheme with "//", like http:// or ftp://
   /\b(?:tel|sms|smsto|mailto|callto|facetime|skype|whatsapp|javascript|vbscript|data|file):(?=\S)/i,
   /www\.|@/i, // "www." or an email address
-  /[\p{L}\p{N}_-]+[.\u3002\uff61][\p{L}]{2,}/u, // name.tld in any script, incl. "。"
   /(?:\d[\s().+\-/_\u00b7\u2022|]*){7,}/, // a phone number (7+ digits), which phones make tappable
 ];
 
+/** Dot-separated words in any script, including the ideographic dots "。" and "｡". */
+const HOSTNAME_LIKE = /[\p{L}\p{N}_-]+(?:[.\u3002\uff61][\p{L}\p{N}_-]+)+/gu;
+
+/**
+ * True when the text names a domain on a real top-level domain (spam.com, bit.ly,
+ * пример.рф). "Mr.Smith" or "shelf.unit" end in something that isn't a TLD, so no
+ * site can live there and mail apps don't link them. Every place the name could end
+ * is checked, so "spam.com.2" or "spam.com.unit" still count.
+ */
+function containsDomain(text: string): boolean {
+  for (const [match] of text.matchAll(HOSTNAME_LIKE)) {
+    const labels = match.toLowerCase().split(/[.\u3002\uff61]/);
+    for (let end = 2; end <= labels.length; end += 1) {
+      // Ends in a number ("v1.2", "3.5"): not a domain. IP addresses count as phone numbers.
+      if (/^\d+$/.test(labels[end - 1] ?? '')) continue;
+      const ascii = domainToASCII(labels.slice(0, end).join('.'));
+      // A name that can't be converted isn't trusted: treat it as a link.
+      if (!ascii || parseHostname(ascii).isIcann) return true;
+    }
+  }
+  return false;
+}
+
 function looksLikeLink(text: string): boolean {
   const normalized = text.normalize('NFKC').replace(/\p{Cf}/gu, '');
-  return LINK_PATTERNS.some((pattern) => pattern.test(normalized));
+  return LINK_PATTERNS.some((pattern) => pattern.test(normalized)) || containsDomain(normalized);
 }
 
 /**
