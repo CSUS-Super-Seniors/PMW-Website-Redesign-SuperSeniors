@@ -371,33 +371,20 @@ export default function EstimateStep1Form({
   );
 }
 
-/** Error tone of the shared Banner, with a call link the customer can tap on a phone. */
+/** The shared error banner, with a call link the customer can tap on a phone. */
 function OutsideServiceAreaError() {
   return (
-    <div
-      role="alert"
-      className="flex w-full items-start gap-3 rounded-lg border border-error bg-error-light p-4 text-dark-brown"
-    >
-      <span
-        aria-hidden="true"
-        className="flex size-6 shrink-0 items-center justify-center rounded-full bg-error text-white"
-      >
-        !
-      </span>
-      <div className="min-w-0 flex-1 break-words">
-        <p className="type-label">Outside our service area</p>
-        <p className="type-body">{OUTSIDE_SERVICE_AREA_MESSAGE}</p>
-        <p className="type-body mt-2">
-          Call us at{' '}
-          <a
-            href={business.phoneHref}
-            className="inline-flex min-h-11 items-center rounded-sm text-walnut underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
-          >
-            {business.phoneDisplay}
-          </a>{' '}
-          and we’ll let you know if we can help.
-        </p>
-      </div>
-    </div>
+    <ErrorBanner title="Outside our service area" message={OUTSIDE_SERVICE_AREA_MESSAGE}>
+      <p className="type-body mt-2">
+        Call us at{' '}
+        <a
+          href={business.phoneHref}
+          className="inline-flex min-h-11 items-center rounded-sm text-walnut underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+        >
+          {business.phoneDisplay}
+        </a>{' '}
+        and we’ll let you know if we can help.
+      </p>
+    </ErrorBanner>
   );
 }

@@ -180,10 +180,19 @@ describe('requireServiceArea (submit route guard)', () => {
     });
   });
 
-  it.each([{}, { city: '' }, { city: 7 }])('refuses a missing or invalid city %j', async (body) => {
+  it.each([
+    [{}, 'City is required.'],
+    [{ city: '' }, 'City is required.'],
+    [{ city: 7 }, 'City must be text.'],
+  ])('refuses a missing or invalid city %j with the Step 1 error shape', async (body, message) => {
     const isInServiceArea = vi.fn();
     const { app, saved } = submitApp({ isInServiceArea });
-    await request(app).post('/submit').send(body).expect(400);
+    const response = await request(app).post('/submit').send(body).expect(400);
+    expect(response.body).toEqual({
+      error: message,
+      fieldErrors: { city: message },
+      formErrors: [],
+    });
     expect(isInServiceArea).not.toHaveBeenCalled();
     expect(saved).not.toHaveBeenCalled();
   });

@@ -30,17 +30,27 @@ export function createServiceAreaBackend(client: Pick<SupabaseClient, 'from'>): 
 export const SERVICE_AREA_UNAVAILABLE_MESSAGE =
   'We could not check your service area right now. Please try again or call us.';
 
+/** What `requireServiceArea` leaves on `res.locals` for the submit handler. */
+export interface ServiceAreaLocals {
+  inServiceArea: true;
+}
+
 /**
  * Guard for the estimate submit route (SSPMW-70). Mount it after the JSON body is
- * parsed and validated. An outside-area city is refused with 422 even when the
- * browser check was skipped. On success `res.locals.inServiceArea` is `true`, which
- * the route stores on the inquiry's `in_service_area` column.
+ * parsed. It checks only the city, so the handler still validates the rest of the
+ * body. A missing or invalid city gets 400 with `fieldErrors.city` (the Step 1 error
+ * shape), and an outside-area city is refused with 422 even when the browser check
+ * was skipped. Only cities in the area reach the handler, with
+ * `res.locals.inServiceArea` set to `true` for the inquiry's `in_service_area` column.
  */
-export function requireServiceArea(backend: ServiceAreaBackend | undefined): RequestHandler {
+export function requireServiceArea(
+  backend: ServiceAreaBackend | undefined,
+): RequestHandler<Record<string, string>, unknown, unknown, unknown, Partial<ServiceAreaLocals>> {
   return async (req, res, next) => {
     const city = cityField.safeParse((req.body as { city?: unknown } | undefined)?.city);
     if (!city.success) {
-      res.status(400).json({ error: city.error.issues[0]?.message ?? 'City is required.' });
+      const message = city.error.issues[0]?.message ?? 'City is required.';
+      res.status(400).json({ error: message, fieldErrors: { city: message }, formErrors: [] });
       return;
     }
     if (!backend) {
