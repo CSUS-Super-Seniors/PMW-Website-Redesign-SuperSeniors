@@ -1,4 +1,4 @@
-import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import express, { type ErrorRequestHandler, type Request, type RequestHandler } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import {
@@ -43,7 +43,7 @@ export type EstimateSubmitHandler = RequestHandler<
   Record<string, string>,
   unknown,
   unknown,
-  Record<string, unknown>,
+  Request['query'],
   ServiceAreaLocals
 >;
 

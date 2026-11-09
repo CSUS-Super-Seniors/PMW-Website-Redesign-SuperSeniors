@@ -141,9 +141,10 @@ Until the handler is passed in, the route answers 501.
   429 with a friendly message and a `Retry-After` header. The count lives in each server
   instance's memory, so it costs nothing but is per instance on Vercel.
   - Up to 50,000 visitors are tracked one by one. During a flood beyond that, new visitors are
-    counted in 4,096 overflow buckets (each visitor always in the same one, 10 requests per bucket
-    per window). Nobody's limit is reset, one address can't use up the overflow for everyone, and
-    new visitors are only slowed down if a flood fills every bucket.
+    counted in 4,096 overflow buckets, chosen by network (an IPv4 /24 or IPv6 /48) so one network
+    always lands in the same bucket, 10 requests per bucket per window. Nobody's limit is reset, one
+    network can't use up the overflow for everyone, and new visitors are only slowed down if a flood
+    from thousands of separate networks fills every bucket.
   - This limits each visitor, not the total. A total cap (for example, refusing new inquiries past
     a daily count) belongs in the SSPMW-70 handler, which can count saved inquiries.
   - `POST /api/estimates/service-area` has its own limit of 30 checks per 10 minutes. Over it,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import express from 'express';
+import express, { type RequestHandler } from 'express';
 import request from 'supertest';
 import {
   ESTIMATE_HONEYPOT_FIELD,
@@ -176,6 +176,17 @@ describe('estimate submit route protection', () => {
       await request(app).post('/api/estimates/validate-step-1').send({}).expect(400);
   });
 
+  it('accepts a submit handler declared as a plain express RequestHandler', async () => {
+    const handler: RequestHandler = (_req, res) => {
+      res.status(201).json({ success: true });
+    };
+    const app = createApp(loadConfig(baseEnv), auth, undefined, {
+      serviceArea: { isInServiceArea: async () => true },
+      estimateSubmit: handler,
+    });
+    await request(app).post(ESTIMATE_SUBMIT_PATH).send(customer).expect(201);
+  });
+
   it('answers 501 until the SSPMW-70 submit handler is passed in', async () => {
     const app = createApp(loadConfig(baseEnv), auth);
     await request(app).post(ESTIMATE_SUBMIT_PATH).send(customer).expect(501);
@@ -221,6 +232,7 @@ describe('createRateLimiter', () => {
         // One bucket, so every untracked visitor shares it in this test.
         overflowBuckets: 1,
         overflowMax: 2,
+        hashSeed: 1,
         now: () => time,
       }),
       (_req, res) => {
@@ -252,6 +264,7 @@ describe('createRateLimiter', () => {
       max: 5,
       windowMs: 3_600_000,
       message: 'Slow down',
+      hashSeed: 1,
       ...options,
     });
     return (ip: string) => {
@@ -290,8 +303,21 @@ describe('createRateLimiter', () => {
     const send = directLimiter({ maxVisitors: 1, overflowBuckets: 4, overflowMax: 1 });
     send('192.0.2.1'); // takes the only tracked slot
     let passed = 0;
-    for (let n = 2; n < 200; n++) if (send(`192.0.2.${n}`) === 200) passed++;
+    for (let n = 2; n < 200; n++) if (send(`10.${n}.0.1`) === 200) passed++;
     expect(passed).toBe(4); // one per bucket, then the buckets are full
+  });
+
+  it('lets one IPv6 /48 or IPv4 /24 fill only one overflow bucket', () => {
+    const send = directLimiter({ maxVisitors: 1, overflowBuckets: 4096, overflowMax: 1 });
+    send('192.0.2.1'); // takes the only tracked slot
+    // Every /64 of one /48, and every address of one /24, shares a single bucket.
+    let passed = 0;
+    for (let n = 0; n < 5_000; n++) if (send(`2001:db8:42:${n.toString(16)}::1`) === 200) passed++;
+    for (let n = 1; n < 255; n++) if (send(`198.51.100.${n}`) === 200) passed++;
+    expect(passed).toBe(2);
+    // Visitors on other networks are unaffected.
+    expect(send('203.0.113.9')).toBe(200);
+    expect(send('2001:db8:99::1')).toBe(200);
   });
 });
 

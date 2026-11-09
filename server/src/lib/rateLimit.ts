@@ -20,6 +20,8 @@ export interface RateLimitOptions {
   overflowBuckets?: number;
   /** Requests each overflow bucket allows per window (default 2 times `max`). */
   overflowMax?: number;
+  /** Seed for the bucket hash. Random per server by default; tests pass a fixed one. */
+  hashSeed?: number;
   now?: () => number;
 }
 
@@ -55,9 +57,21 @@ export function rateLimitKey(ip: string | undefined): string {
   return groups ? `${groups.slice(0, 4).join(':')}::/64` : ip;
 }
 
-/** FNV-1a hash of the visitor key, so each key always maps to the same bucket. */
-function overflowBucket(key: string, buckets: number): number {
-  let hash = 0x811c9dc5;
+/**
+ * The network an overflow bucket is chosen by: an IPv4 /24 or an IPv6 /48. A single
+ * network can then fill only one bucket, so locking out new visitors takes thousands
+ * of separate networks, not one cheap IPv6 /48 split into /64s.
+ */
+function overflowNetwork(key: string): string {
+  if (key.endsWith('::/64')) return `${key.split(':').slice(0, 3).join(':')}::/48`;
+  if (isIPv4(key)) return `${key.split('.').slice(0, 3).join('.')}.0/24`;
+  return key;
+}
+
+/** Seeded FNV-1a hash of the visitor's network, so it always maps to the same bucket. */
+function overflowBucket(key: string, buckets: number, seed: number): number {
+  let hash = (0x811c9dc5 ^ seed) >>> 0;
+  key = overflowNetwork(key);
   for (let i = 0; i < key.length; i++) {
     hash ^= key.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193);
@@ -79,6 +93,7 @@ export function createRateLimiter({
   maxVisitors = 50_000,
   overflowBuckets = 4096,
   overflowMax = max * 2,
+  hashSeed = Math.floor(Math.random() * 0x100000000),
   now = Date.now,
 }: RateLimitOptions): RequestHandler {
   const windows = new Map<string, { start: number; count: number }>();
@@ -111,7 +126,7 @@ export function createRateLimiter({
       if (windows.size >= maxVisitors) {
         // Every tracked visitor is still inside their window. Dropping one would reset
         // a live limit, so untracked visitors are counted in a fixed set of buckets.
-        const bucket = overflowBucket(key, overflowBuckets);
+        const bucket = overflowBucket(key, overflowBuckets, hashSeed);
         let shared = overflow.get(bucket);
         if (!shared || time - shared.start >= windowMs) {
           shared = { start: time, count: 0 };
