@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient, User } from '@supabase/supabase-js';
 
 export interface StaffListItem {
   id: string;
@@ -13,32 +13,44 @@ export interface StaffBackend {
   listStaff(): Promise<StaffListItem[]>;
 }
 
+const AUTH_PAGE_SIZE = 1000;
+
+// Supabase returns auth users one page at a time; follow nextPage until it runs out.
+async function loadAuthUsers(client: Pick<SupabaseClient, 'auth'>): Promise<User[]> {
+  const users: User[] = [];
+  let page: number | null = 1;
+  while (page !== null) {
+    const { data, error } = await client.auth.admin.listUsers({ page, perPage: AUTH_PAGE_SIZE });
+    if (error || !data) throw new Error('Staff email lookup failed');
+    users.push(...data.users);
+    page = data.nextPage;
+  }
+  return users;
+}
+
 export function createStaffBackend(client: Pick<SupabaseClient, 'from' | 'auth'>): StaffBackend {
   return {
     async listStaff() {
       const { data: profiles, error } = await client
         .from('staff_profiles')
-        .select('id,full_name,role,status,last_login_at')
+        .select('id,full_name,role,status')
         .order('full_name');
       if (error || !profiles) throw new Error('Staff list lookup failed');
 
-      // Email is not in staff_profiles; it lives in Supabase Auth (auth.users).
-      const { data: authData, error: authError } = await client.auth.admin.listUsers({
-        page: 1,
-        perPage: 1000,
+      // Email and last login live in Supabase Auth (auth.users), not in staff_profiles.
+      const authUsers = new Map((await loadAuthUsers(client)).map((user) => [user.id, user]));
+
+      return profiles.map((profile) => {
+        const authUser = authUsers.get(profile.id);
+        return {
+          id: profile.id,
+          fullName: profile.full_name,
+          email: authUser?.email ?? null,
+          lastLoginAt: authUser?.last_sign_in_at ?? null,
+          role: profile.role,
+          status: profile.status,
+        };
       });
-      if (authError || !authData) throw new Error('Staff email lookup failed');
-
-      const emails = new Map(authData.users.map((user) => [user.id, user.email ?? null]));
-
-      return profiles.map((profile) => ({
-        id: profile.id,
-        fullName: profile.full_name,
-        email: emails.get(profile.id) ?? null,
-        role: profile.role,
-        lastLoginAt: profile.last_login_at,
-        status: profile.status,
-      }));
     },
   };
 }
