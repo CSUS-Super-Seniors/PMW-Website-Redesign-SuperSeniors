@@ -11,7 +11,16 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-export function createApp(config: Config, backend: AuthBackend, contact?: ContactBackend) {
+import type { InquiryBackend } from './inquiries.js';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function createApp(
+  config: Config,
+  backend: AuthBackend,
+  contact?: ContactBackend,
+  inquiries?: InquiryBackend,
+) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -106,6 +115,33 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
   api.use(requireOwner);
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
+  });
+  api.post('/inquiries/:inquiryId/accept', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const inquiryId = String(req.params.inquiryId);
+    // Anything that is not a UUID can't be an inquiry, and would only make the database error.
+    if (!UUID_PATTERN.test(inquiryId)) {
+      res.status(404).json({ error: 'Estimate request not found.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Accepting requests is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await inquiries.acceptInquiry(inquiryId);
+      if (result.outcome === 'not-found') {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      if (result.outcome === 'not-acceptable') {
+        res.status(409).json({ error: 'This estimate request was already accepted or declined.' });
+        return;
+      }
+      res.json({ job: result.job });
+    } catch {
+      res.status(503).json({ error: 'The request could not be accepted. Please try again.' });
+    }
   });
   app.use('/api', api);
   app.use((_req, res) => {
