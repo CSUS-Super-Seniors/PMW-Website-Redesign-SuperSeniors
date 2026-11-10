@@ -43,6 +43,7 @@ function fakeDatabase(
     files?: string[];
   },
   failing: string[] = [],
+  hooks: { beforeInsert?: (table: string, tables: Record<string, Row[]>) => void } = {},
 ) {
   const tables: Record<string, Row[]> = {
     inquiries: seed.inquiries ?? [],
@@ -70,6 +71,20 @@ function fakeDatabase(
       }
       let matched: Row[];
       if (action === 'insert') {
+        hooks.beforeInsert?.(table, tables);
+        // Mirrors the unique index from the unique_job_per_inquiry migration.
+        if (
+          table === 'jobs' &&
+          payload.inquiry_id &&
+          rows.some((row) => row.inquiry_id === payload.inquiry_id)
+        ) {
+          return {
+            data: null,
+            error: Object.assign(new Error('duplicate key value violates unique constraint'), {
+              code: '23505',
+            }),
+          };
+        }
         counter += 1;
         const row: Row = {
           id: `${table}-${counter}`,
@@ -318,12 +333,15 @@ test('a deleted customer is ignored and a new one is created', async () => {
 test('a customer already linked to the inquiry wins over a match', async () => {
   const db = fakeDatabase({
     inquiries: [inquiry({ customer_id: 'customer-linked' })],
-    customers: [customer()],
+    customers: [
+      customer(),
+      customer({ id: 'customer-linked', email: 'other@example.com', phone: null }),
+    ],
   });
 
   await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
-  assert.equal(db.tables.customers.length, 1);
+  assert.equal(db.tables.customers.length, 2);
   assert.equal(db.tables.jobs[0].customer_id, 'customer-linked');
 });
 
@@ -506,4 +524,109 @@ test('jobMediaPath keeps the file extension in lower case and tolerates none', (
     jobMediaPath('job-1', { id: PHOTO_ID, storage_path: 'abc/noextension' }),
     `job-1/before/inquiry-${PHOTO_ID}`,
   );
+});
+
+test('if another Accept creates the job first, that job is used and our new customer is removed', async () => {
+  const db = fakeDatabase({ inquiries: [inquiry()] }, [], {
+    beforeInsert: (table, tables) => {
+      // Simulates a second owner finishing between our lookup and our insert.
+      if (table !== 'jobs' || tables.jobs.length > 0) return;
+      tables.customers.push(
+        customer({ id: 'customer-winner', email: 'winner@example.com', phone: null }),
+      );
+      tables.jobs.push({
+        id: 'job-winner',
+        job_number: 'J-1999',
+        customer_id: 'customer-winner',
+        inquiry_id: INQUIRY_ID,
+        created_at: '2026-11-10T00:00:00.000Z',
+      });
+    },
+  });
+
+  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.deepEqual(result, {
+    outcome: 'accepted',
+    job: { id: 'job-winner', jobNumber: 'J-1999' },
+  });
+  assert.equal(db.tables.jobs.length, 1);
+  assert.deepEqual(
+    db.tables.customers.map((row) => row.id),
+    ['customer-winner'],
+  );
+  assert.deepEqual(pick(db.tables.inquiries[0], ['status', 'customer_id']), {
+    status: 'converted',
+    customer_id: 'customer-winner',
+  });
+});
+
+test('a linked customer who was deleted is not used, and a new customer is created', async () => {
+  const db = fakeDatabase({
+    inquiries: [inquiry({ customer_id: 'customer-linked' })],
+    customers: [
+      customer({
+        id: 'customer-linked',
+        email: 'other@example.com',
+        phone: null,
+        deleted_at: '2026-06-01T00:00:00.000Z',
+      }),
+    ],
+  });
+
+  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.equal(db.tables.customers.length, 2);
+  assert.notEqual(db.tables.jobs[0].customer_id, 'customer-linked');
+});
+
+test('a deleted linked customer falls back to an active customer with the same email', async () => {
+  const db = fakeDatabase({
+    inquiries: [inquiry({ customer_id: 'customer-linked' })],
+    customers: [
+      customer(),
+      customer({
+        id: 'customer-linked',
+        email: 'other@example.com',
+        phone: null,
+        deleted_at: '2026-06-01T00:00:00.000Z',
+      }),
+    ],
+  });
+
+  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.equal(db.tables.customers.length, 2);
+  assert.equal(db.tables.jobs[0].customer_id, 'customer-existing');
+});
+
+test('a declined inquiry is not accepted even if a stray job points at it', async () => {
+  const db = fakeDatabase({
+    inquiries: [inquiry({ status: 'closed' })],
+    customers: [customer()],
+    jobs: [
+      {
+        id: 'job-stray',
+        job_number: 'J-1500',
+        customer_id: 'customer-existing',
+        inquiry_id: INQUIRY_ID,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+  });
+
+  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.deepEqual(result, { outcome: 'not-acceptable', status: 'closed' });
+  assert.equal(db.tables.inquiries[0].status, 'closed');
+  assert.equal(db.tables.jobs.length, 1);
+});
+
+test('an inquiry marked accepted but with no job cannot be accepted', async () => {
+  const db = fakeDatabase({ inquiries: [inquiry({ status: 'converted' })] });
+
+  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.deepEqual(result, { outcome: 'not-acceptable', status: 'converted' });
+  assert.equal(db.tables.jobs.length, 0);
 });

@@ -297,7 +297,12 @@ export function createApp(
         return;
       }
       res.json({ job: result.job });
-    } catch {
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details, so this is safe to log.
+      console.error('Accept inquiry failed', {
+        inquiryId,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
       res.status(503).json({ error: 'The request could not be accepted. Please try again.' });
     }
   });

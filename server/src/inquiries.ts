@@ -45,6 +45,10 @@ const ACCEPTABLE_STATUSES = ['new', 'contacted'];
 const ACCEPTED_STATUS = 'converted';
 const INQUIRY_PHOTOS_BUCKET = 'inquiry photos';
 const JOB_MEDIA_BUCKET = 'job media';
+// Postgres error code for breaking a unique index.
+const UNIQUE_VIOLATION = '23505';
+
+class JobAlreadyExistsError extends Error {}
 
 interface InquiryPhotoRow {
   id: string;
@@ -83,6 +87,18 @@ async function findJobForInquiry(client: InquiryClient, inquiryId: string) {
   return data as ExistingJobRow | null;
 }
 
+// A customer who was soft-deleted can't receive new jobs, even when the inquiry points at them.
+async function isActiveCustomer(client: InquiryClient, customerId: string) {
+  const { data, error } = await client
+    .from('customers')
+    .select('id')
+    .eq('id', customerId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) throw new Error('Customer lookup failed');
+  return data !== null;
+}
+
 // Oldest active customer with the same email, otherwise with the same phone digits.
 async function findMatchingCustomerId(client: InquiryClient, inquiry: InquiryRow) {
   const email = normalizeEmail(inquiry.email);
@@ -115,7 +131,9 @@ async function findMatchingCustomerId(client: InquiryClient, inquiry: InquiryRow
 }
 
 async function resolveCustomer(client: InquiryClient, inquiry: InquiryRow) {
-  if (inquiry.customer_id) return { id: inquiry.customer_id, created: false };
+  if (inquiry.customer_id && (await isActiveCustomer(client, inquiry.customer_id))) {
+    return { id: inquiry.customer_id, created: false };
+  }
 
   const matchedId = await findMatchingCustomerId(client, inquiry);
   if (matchedId) return { id: matchedId, created: false };
@@ -152,6 +170,7 @@ async function createJob(client: InquiryClient, inquiry: InquiryRow, customerId:
     })
     .select('id,job_number')
     .single();
+  if (error?.code === UNIQUE_VIOLATION) throw new JobAlreadyExistsError('Job already exists');
   if (error || !data?.id || !data.job_number) throw new Error('Job could not be created');
   return { id: data.id as string, jobNumber: data.job_number as string };
 }
@@ -219,9 +238,12 @@ export function createInquiryBackend(client: InquiryClient): InquiryBackend {
       if (!inquiry) return { outcome: 'not-found' };
 
       const existingJob = await findJobForInquiry(client, inquiry.id);
-      if (!existingJob && !ACCEPTABLE_STATUSES.includes(inquiry.status)) {
-        return { outcome: 'not-acceptable', status: inquiry.status };
-      }
+      // A job means an earlier Accept got partway or finished, so a repeat is allowed.
+      // A declined inquiry is never accepted, even if a stray job points at it.
+      const canAccept =
+        ACCEPTABLE_STATUSES.includes(inquiry.status) ||
+        (existingJob !== null && inquiry.status === ACCEPTED_STATUS);
+      if (!canAccept) return { outcome: 'not-acceptable', status: inquiry.status };
 
       let job: AcceptedJob;
       let customerId: string;
@@ -232,11 +254,16 @@ export function createInquiryBackend(client: InquiryClient): InquiryBackend {
         const customer = await resolveCustomer(client, inquiry);
         try {
           job = await createJob(client, inquiry, customer.id);
+          customerId = customer.id;
         } catch (error) {
           if (customer.created) await removeCustomer(client, customer.id);
-          throw error;
+          if (!(error instanceof JobAlreadyExistsError)) throw error;
+          // Another Accept created the job between our check and our insert. Use theirs.
+          const winner = await findJobForInquiry(client, inquiry.id);
+          if (!winner) throw error;
+          job = { id: winner.id, jobNumber: winner.job_number };
+          customerId = winner.customer_id;
         }
-        customerId = customer.id;
       }
 
       // Photos are copied before the status changes, so a failure leaves the inquiry open.

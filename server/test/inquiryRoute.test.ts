@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
@@ -99,15 +99,28 @@ test('an inquiry that was already declined is a 409', async () => {
   assert.match(response.body.error, /already accepted or declined/);
 });
 
-test('a backend failure is a 503 that does not leak the cause', async () => {
-  const { backend } = fakeInquiries(new Error('password authentication failed for user postgres'));
-  const response = await request(
-    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
-  )
-    .post(acceptPath)
-    .set('Authorization', 'Bearer valid')
-    .expect(503);
-  assert.ok(!response.text.includes('postgres'));
+test('a backend failure is a 503 that does not leak the cause, and is logged', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const { backend } = fakeInquiries(
+      new Error('password authentication failed for user postgres'),
+    );
+    const response = await request(
+      createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+    )
+      .post(acceptPath)
+      .set('Authorization', 'Bearer valid')
+      .expect(503);
+
+    assert.ok(!response.text.includes('postgres'));
+    assert.equal(logged.mock.calls.length, 1);
+    assert.deepEqual(logged.mock.calls[0], [
+      'Accept inquiry failed',
+      { inquiryId, reason: 'password authentication failed for user postgres' },
+    ]);
+  } finally {
+    logged.mockRestore();
+  }
 });
 
 test('accepting is a 503 when no inquiry backend is configured', async () => {
