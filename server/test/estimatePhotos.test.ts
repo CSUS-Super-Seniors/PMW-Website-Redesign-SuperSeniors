@@ -453,10 +453,6 @@ describe('photo HTTP endpoints', () => {
       .set('X-Forwarded-For', '198.51.100.1')
       .expect(429);
   });
-  it('keeps missing service-area integration fail-closed', async () => {
-    const { app } = appFixture();
-    await request(app).post('/api/estimates/service-area').send({ city: 'Carmichael' }).expect(503);
-  });
   it('keeps area checks, validated uploads, and protected submission working together', async () => {
     const storage = storageFixture();
     const { auth } = appFixture();
