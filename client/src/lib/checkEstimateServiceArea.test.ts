@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { checkEstimateServiceArea } from './checkEstimateServiceArea';
+import { ServiceAreaRateLimitedError, checkEstimateServiceArea } from './checkEstimateServiceArea';
 
 const fetchMock = vi.fn<typeof fetch>();
 const signal = new AbortController().signal;
@@ -34,4 +34,13 @@ it.each([
 ])('throws instead of approving on an unexpected response', async (response) => {
   fetchMock.mockResolvedValue(response());
   await expect(checkEstimateServiceArea('Carmichael', signal)).rejects.toThrow();
+});
+
+it('throws a friendly rate-limit error on 429 instead of a generic failure', async () => {
+  fetchMock.mockResolvedValue(
+    Response.json({ success: false, error: 'server text' }, { status: 429 }),
+  );
+  const error = await checkEstimateServiceArea('Carmichael', signal).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(ServiceAreaRateLimitedError);
+  expect((error as Error).message).toMatch(/wait a few minutes/);
 });

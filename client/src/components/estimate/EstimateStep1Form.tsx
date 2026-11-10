@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import {
   CITY_MAX_LENGTH,
   OUTSIDE_SERVICE_AREA_MESSAGE,
+  ESTIMATE_HONEYPOT_FIELD,
   estimateStep1Schema,
   issueOptions,
   mapEstimateStep1Errors,
@@ -15,11 +16,18 @@ import { Button, Checkbox, ErrorBanner, InlineFieldError, Input, Select, Textare
 import { business, routes } from '../../config/site';
 import { validateEstimateStep1 } from '../../lib/validateEstimateStep1';
 import {
+  ServiceAreaRateLimitedError,
   checkEstimateServiceArea,
   type CheckServiceArea,
 } from '../../lib/checkEstimateServiceArea';
 
-export type EstimateStep1Continuation = (details: EstimateStep1Data) => void | Promise<void>;
+/** Sent with the final submit (SSPMW-70) so the server can drop bot requests. */
+export type EstimateSpamCheck = { [ESTIMATE_HONEYPOT_FIELD]: string };
+
+export type EstimateStep1Continuation = (
+  details: EstimateStep1Data,
+  spamCheck: EstimateSpamCheck,
+) => void | Promise<void>;
 
 export interface EstimateStep1FormProps {
   onContinue: EstimateStep1Continuation;
@@ -74,6 +82,7 @@ export default function EstimateStep1Form({
   const [pending, setPending] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ field?: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   const inFlight = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
@@ -151,12 +160,14 @@ export default function EstimateStep1Form({
       let inServiceArea: boolean;
       try {
         inServiceArea = await checkServiceArea(local.data.city, controller.signal);
-      } catch {
+      } catch (error) {
         if (!controller.signal.aborted) {
           showErrors({
             fieldErrors: {},
             formErrors: [
-              'We could not check whether we serve your city. Check your connection and try again.',
+              error instanceof ServiceAreaRateLimitedError
+                ? error.message
+                : 'We could not check whether we serve your city. Check your connection and try again.',
             ],
           });
         }
@@ -170,7 +181,9 @@ export default function EstimateStep1Form({
       }
 
       try {
-        await onContinue(local.data);
+        await onContinue(local.data, {
+          [ESTIMATE_HONEYPOT_FIELD]: honeypotRef.current?.value ?? '',
+        });
       } catch {
         if (!controller.signal.aborted) {
           showErrors({
@@ -222,6 +235,21 @@ export default function EstimateStep1Form({
             {outsideArea && <OutsideServiceAreaError />}
           </div>
         )}
+        {/* Honeypot (SSPMW-95): off screen and skipped by keyboard and screen readers, so
+            only bots fill it in. Not display:none, which many bots know to skip. */}
+        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+          <label>
+            Leave this empty
+            <input
+              ref={honeypotRef}
+              type="text"
+              name={ESTIMATE_HONEYPOT_FIELD}
+              tabIndex={-1}
+              autoComplete="off"
+              defaultValue=""
+            />
+          </label>
+        </div>
         <fieldset disabled={pending} className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-2">
           <legend className="sr-only">Contact and repair details</legend>
           <Input

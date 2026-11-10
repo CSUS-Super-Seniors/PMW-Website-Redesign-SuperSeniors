@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EstimateStep1Data } from '@pmw/validation';
-import EstimateStep1Form from '../components/estimate/EstimateStep1Form';
+import EstimateStep1Form, {
+  type EstimateSpamCheck,
+} from '../components/estimate/EstimateStep1Form';
 import { business } from '../config/site';
 
 export default function EstimateRequestPage() {
   // Keep the validated, in-service-area handoff in memory; Step 2 wiring is pending.
-  const [validatedDetails, setValidatedDetails] = useState<EstimateStep1Data | null>(null);
+  // The spam check travels with it, so the submit request (SSPMW-70) can send it.
+  const [handoff, setHandoff] = useState<{
+    details: EstimateStep1Data;
+    spamCheck: EstimateSpamCheck;
+  } | null>(null);
+  const validatedDetails = handoff?.details ?? null;
   const noticeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,8 +30,8 @@ export default function EstimateRequestPage() {
         </p>
         <div className="mt-6 md:mt-8">
           <EstimateStep1Form
-            onContinue={setValidatedDetails}
-            onEdit={() => setValidatedDetails(null)}
+            onContinue={(details, spamCheck) => setHandoff({ details, spamCheck })}
+            onEdit={() => setHandoff(null)}
           />
         </div>
         {validatedDetails && (

@@ -4,7 +4,10 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { issueOptions, type EstimateStep1Input } from '@pmw/validation';
 import EstimateStep1Form, { type EstimateStep1Continuation } from './EstimateStep1Form';
-import type { CheckServiceArea } from '../../lib/checkEstimateServiceArea';
+import {
+  ServiceAreaRateLimitedError,
+  type CheckServiceArea,
+} from '../../lib/checkEstimateServiceArea';
 
 const details: EstimateStep1Input = {
   first_name: 'Zoë-Marie',
@@ -148,7 +151,10 @@ describe('EstimateStep1Form', () => {
 
     resolve(reply({ valid: true }));
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledExactlyOnceWith({ ...details, text_ok: false }),
+      expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+        { ...details, text_ok: false },
+        { pmw_extra: '' },
+      ),
     );
     expect(screen.getByLabelText('Email address')).toHaveValue(details.email);
     expect(continueButton()).toBeEnabled();
@@ -162,7 +168,10 @@ describe('EstimateStep1Form', () => {
     await user.click(continueButton());
 
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({ ...details, text_ok: true, issue_type: 'other' }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, text_ok: true, issue_type: 'other' },
+        { pmw_extra: '' },
+      ),
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
       text_ok: true,
@@ -224,11 +233,10 @@ describe('EstimateStep1Form', () => {
     fetchMock.mockResolvedValueOnce(reply({ valid: true }));
     await user.click(continueButton());
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({
-        ...details,
-        phone: '(916) 555-0142',
-        text_ok: false,
-      }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, phone: '(916) 555-0142', text_ok: false },
+        { pmw_extra: '' },
+      ),
     );
   });
 
@@ -320,7 +328,10 @@ describe('EstimateStep1Form', () => {
     await user.type(screen.getByLabelText('City'), 'Carmichael');
     await user.click(continueButton());
     await waitFor(() =>
-      expect(onContinue).toHaveBeenCalledWith({ ...details, city: 'Carmichael', text_ok: false }),
+      expect(onContinue).toHaveBeenCalledWith(
+        { ...details, city: 'Carmichael', text_ok: false },
+        { pmw_extra: '' },
+      ),
     );
   });
 
@@ -337,6 +348,18 @@ describe('EstimateStep1Form', () => {
 
     await user.click(continueButton());
     await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+  });
+
+  it('asks the customer to wait when they have checked their city too many times', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    checkServiceArea.mockRejectedValueOnce(new ServiceAreaRateLimitedError());
+    const { user, onContinue } = renderForm(details);
+    await user.click(continueButton());
+
+    const message = await screen.findByText(/checked several times in a short time/);
+    await waitFor(() => expect(message.closest('[tabindex="-1"]')).toHaveFocus());
+    expect(screen.queryByText(/Check your connection/)).not.toBeInTheDocument();
+    expect(onContinue).not.toHaveBeenCalled();
   });
 
   it('aborts a pending service-area check when the form unmounts', async () => {
@@ -428,5 +451,25 @@ describe('EstimateStep1Form', () => {
     expect(signal.aborted).toBe(true);
     resolve(reply({ valid: true }));
     await waitFor(() => expect(onContinue).not.toHaveBeenCalled());
+  });
+  it('keeps the honeypot out of the details and the tab order, and hands its value to the submit step', async () => {
+    fetchMock.mockResolvedValue(reply({ valid: true }));
+    const { user, container, onContinue } = renderForm(details);
+    const honeypot = container.querySelector<HTMLInputElement>('[name="pmw_extra"]')!;
+
+    expect(honeypot).toHaveAttribute('tabindex', '-1');
+    expect(honeypot.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.queryByRole('textbox', { name: /leave this empty/i })).not.toBeInTheDocument();
+
+    fireEvent.change(honeypot, { target: { value: 'https://spam.example' } });
+    await user.click(continueButton());
+
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+        { ...details, text_ok: false },
+        { pmw_extra: 'https://spam.example' },
+      ),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).not.toHaveProperty('pmw_extra');
   });
 });

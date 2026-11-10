@@ -104,4 +104,15 @@ describe('Vercel startup contact wiring', () => {
     expect(db.from).toHaveBeenCalledWith('service_cities');
     expect(eq).toHaveBeenCalledWith('is_active', true);
   });
+
+  it('trusts the one Vercel proxy so each visitor gets their own estimate rate limit', async () => {
+    vi.stubEnv('ESTIMATE_RATE_LIMIT_MAX', '1');
+    const { default: app } = await import('../../api/index.js');
+    const from = (ip: string) =>
+      request(app).post('/api/estimates').set('X-Forwarded-For', ip).send({ item: 'Chair' });
+
+    await from('203.0.113.1').expect(501);
+    await from('203.0.113.1').expect(429);
+    await from('203.0.113.2').expect(501);
+  });
 });

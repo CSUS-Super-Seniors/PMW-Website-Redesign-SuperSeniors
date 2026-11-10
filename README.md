@@ -56,18 +56,21 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 
-| Variable                    | Purpose                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| `PORT`                      | API port (default 3001)                                                                     |
-| `NODE_ENV`                  | `development` locally                                                                       |
-| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
-| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
-| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
-| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
-| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
-| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
-| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
+| Variable                             | Purpose                                                                                     |
+| ------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `PORT`                               | API port (default 3001)                                                                     |
+| `NODE_ENV`                           | `development` locally                                                                       |
+| `CLIENT_ORIGINS`                     | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
+| `SUPABASE_URL`                       | Supabase API URL. For local development, use the URL from `npx supabase status`             |
+| `SUPABASE_PUBLISHABLE_KEY`           | Supabase publishable (anon) key                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY`          | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
+| `ESTIMATE_RATE_LIMIT_MAX`            | Estimate submissions allowed per visitor IP in one window (default 5)                       |
+| `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` | Length of that window in minutes (default 60)                                               |
+| `TRUST_PROXY_HOPS`                   | Proxies in front of the API whose client IP header is trusted. 0 locally; Vercel uses 1     |
+| `SEED_DATABASE_URL`                  | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
+| `SEED_ALLOWED_PROJECT_REFS`          | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
+| `SEED_BLOCKED_PROJECT_REFS`          | Production project refs. The seed always refuses these, even if they are also allowed       |
+| `SEED_TEST_DATABASE_URL`             | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
 
 ### Client (`client/.env`)
 
@@ -112,17 +115,52 @@ customer also can't continue and is asked to try again.
 
 - Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
   `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
-  active cities aren't secret; the Service Area page will show them). Bad input returns 400; an
-  unreadable city list returns 503.
-- The submit route (SSPMW-70) must mount `requireServiceArea(serviceArea)` from
-  `server/src/serviceArea.ts` after its body is parsed. It checks only the city: a missing or
-  invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets 422
-  (`code: "outside_service_area"`) even when the browser check was skipped. It sets
-  `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's `in_service_area`
-  column, and the handler still validates the rest of the body.
+  active cities aren't secret; the Service Area page will show them). Bad input returns 400, an
+  unreadable city list returns 503, and too many checks return 429 (see spam protection below).
+- The submit route runs `requireServiceArea` (see spam protection below). It checks only the
+  city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
+  422 (`code: "outside_service_area"`) even when the browser check was skipped. The SSPMW-70
+  handler reads `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's
+  `in_service_area` column, and still validates the rest of the body.
 - The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
   Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
   for local, dev and staging. Production cities come from the client's Q7 answer.
+
+## Estimate form spam protection (SSPMW-95)
+
+The estimate form is public and accepts photos, so the submit route is protected before its
+handler (SSPMW-70) runs. `createApp(config, auth, contact, { serviceArea, estimateSubmit })`
+mounts `POST /api/estimates` (`ESTIMATE_SUBMIT_PATH`) in this order: rate limit, JSON body,
+honeypot, service-area check (`requireServiceArea`, SSPMW-24), then the handler. The handler is
+typed as `EstimateSubmitHandler`, so `res.locals.inServiceArea` is known to be `true` there.
+Until the handler is passed in, the route answers 501.
+
+- **Rate limit:** each visitor gets `ESTIMATE_RATE_LIMIT_MAX` submissions per
+  `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). A visitor is one IPv4 address, or
+  one IPv6 /64 network so a bot can't rotate through its addresses. Over the limit, the reply is
+  429 with a friendly message and a `Retry-After` header. The count lives in each server
+  instance's memory, so it costs nothing but is per instance on Vercel.
+  - Up to 50,000 visitors are tracked one by one. During a flood beyond that, new visitors are
+    counted in 4,096 overflow buckets, chosen by network (an IPv4 /24 or IPv6 /48) so one network
+    always lands in the same bucket, 10 requests per bucket per window. Nobody's limit is reset, one
+    network can't use up the overflow for everyone, and new visitors are only slowed down if a flood
+    from thousands of separate networks fills every bucket.
+  - This limits each visitor, not the total. A total cap (for example, refusing new inquiries past
+    a daily count) belongs in the SSPMW-70 handler, which can count saved inquiries.
+  - `POST /api/estimates/service-area` has its own limit of 30 checks per 10 minutes. Over it,
+    Step 1 asks the customer to wait a few minutes or call.
+- **Honeypot:** Step 1 has a hidden `pmw_extra` field that people never see. The form hands
+  its value to the page (`onContinue(details, spamCheck)`), which keeps it for the submit step.
+  The submit request should send it. A filled honeypot gets a normal-looking 201 reply, but
+  nothing is saved and no email is sent. An empty one is removed from the body before the handler
+  sees it. Leaving the field out is treated as clean, so this catches bots that fill in every
+  input, not scripts that post straight to the API (the rate limit covers those).
+- **Photo checks:** `checkEstimatePhoto(bytes, contentType, maxBytes)` in
+  `server/src/lib/photoChecks.ts` reads the file's first bytes, so a renamed non-image is refused
+  (415) even when the browser checks are bypassed. Files over 10 MB are refused (413). The photo
+  upload route (SSPMW-31) should call it on each upload's bytes and can pass a smaller limit. It
+  checks the file signature, not every byte, so photos must stay private and only be served back
+  as images. Only JPG and PNG pass, matching the SSPMW-31 and SSPMW-95 stories.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
@@ -314,6 +352,8 @@ Configure the following in the Vercel project settings:
 For contact submissions, also configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `CONTACT_OWNER_EMAILS` in the intended Vercel environment, as described in the contact setup above. The serverless entry initializes the contact backend when these settings are present. Without them, the contact endpoint returns 503 while other routes remain available.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `VITE_` variable or commit it to Git.
+
+The serverless entry sets `TRUST_PROXY_HOPS` to 1 when it is not configured, because Vercel's proxy sets the visitor's IP. Leave it unset on Vercel: setting it to 0 there would make every visitor share one rate limit. If another proxy or CDN is ever put in front of Vercel, this number has to change. `ESTIMATE_RATE_LIMIT_MAX` and `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` are optional there too.
 
 The serverless API automatically adds exact HTTPS origins for `VERCEL_URL` (unique deployment), `VERCEL_BRANCH_URL` (stable branch alias), and `VERCEL_PROJECT_PRODUCTION_URL` (production address) when set. These system variables contain hostnames without a scheme. Enable Vercel system environment variables for this behavior. Other origins remain blocked.
 
