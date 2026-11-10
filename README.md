@@ -99,6 +99,10 @@ JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using 
 Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
 Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
 The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
+SSPMW-31 is partial for inquiry attachment: `attachPhotos` currently has no application caller,
+so this flow does not create `inquiry_photos` rows. Removal from previews and the handoff is
+implemented; attachment and exclusion of removed photos on the saved inquiry remain deferred
+to SSPMW-70 and are not verified end to end here.
 
 `useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
 After applying both photo reconciliation/confirmation migrations, trusted submission code verifies inquiry ownership and calls:
@@ -116,8 +120,35 @@ Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:p
 
 - Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
 - Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
-- Cleanup: schedule `npm run cleanup:estimate-photos -w server` daily; dry-run by default, `-- --apply` deletes unattached files expired for over 24 hours.
+- Cleanup: `.github/workflows/cleanup-estimate-photos.yml` runs daily at 10:23 UTC with `--apply`, deleting only unattached uploads expired for over 24 hours. The command `npm run cleanup:estimate-photos -w server` remains a dry run by default.
 - Before completion: `npm run verify:storage -w server` against local Supabase, normal migration deployment, and PR review/merge remain required.
+
+#### Photo rate limiting behind Vercel
+
+The Vercel entry point (`api/index.ts`) sets Express `trust proxy` to one hop so the
+photo limiter uses each visitor's IP. Vercel overwrites `X-Forwarded-For` with the
+connecting client's address ([Vercel request headers](https://vercel.com/docs/headers/request-headers));
+Express reads the nearest forwarded address with this setting
+([Express proxy configuration](https://expressjs.com/en/guide/behind-proxies/)).
+The direct local server keeps proxy trust disabled. Revisit this setting if the
+hosting topology changes. Limits remain instance-local; distributed protection is SSPMW-95.
+
+#### Daily photo cleanup setup
+
+Create a GitHub Actions environment named `estimate-photo-cleanup` for the Supabase
+project whose uploads should be cleaned. Set its secrets `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`, and its variable `CLIENT_ORIGINS` to that deployment's
+allowed website origin(s). The existing script validates these server settings;
+it does not send HTTP requests to the website. Keep staging and production credentials separate.
+
+The schedule starts only after the workflow reaches the repository's default branch
+and these settings exist. Local changes alone do not activate it. From the Actions
+tab, manually run **Clean up abandoned estimate photos** with `apply` unchecked to
+inspect the eligible count; check `apply` to delete eligible objects. Scheduled runs
+always apply cleanup. The job has read-only repository permissions, prevents
+overlapping cleanup runs, and reports failures through its Actions run status.
+The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
+attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 

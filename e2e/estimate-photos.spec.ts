@@ -109,6 +109,23 @@ for (const viewport of [
     });
     await expect(page.getByRole('alert')).toContainText('Choose a JPG or PNG');
     await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+    await page.getByLabel('Choose photos').setInputFiles({
+      name: 'oversized.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    await expect(
+      page.getByRole('alert').filter({ hasText: 'This photo is too large' }),
+    ).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Choose a JPG or PNG' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(`validation-errors-${viewport.width}.png`),
+      fullPage: true,
+    });
     expect(attempts).toBe(2);
     expect(
       apiRequests.every((url) => new URL(url).pathname.startsWith('/api/estimates/photos/')),

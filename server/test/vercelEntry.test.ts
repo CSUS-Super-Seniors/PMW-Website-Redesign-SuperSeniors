@@ -84,3 +84,29 @@ describe('Vercel startup contact wiring', () => {
     expect(email).not.toHaveBeenCalled();
   });
 });
+
+describe('Vercel photo rate limiting', () => {
+  it('gives different forwarded client IPs independent request limits', async () => {
+    const { default: app } = await import('../../api/index.js');
+    for (let i = 0; i < 60; i++) {
+      await request(app)
+        .post('/api/estimates/photos/session')
+        .set('X-Forwarded-For', '192.0.2.1')
+        .expect(201);
+    }
+    const limited = await request(app)
+      .post('/api/estimates/photos/session')
+      .set('X-Forwarded-For', '192.0.2.1')
+      .expect(429);
+    expect(limited.headers['retry-after']).toBe('60');
+    await request(app)
+      .post('/api/estimates/photos/session')
+      .set('X-Forwarded-For', '192.0.2.2')
+      .expect(201);
+    // Additional, untrusted left-hand entries cannot create a fresh bucket.
+    await request(app)
+      .post('/api/estimates/photos/session')
+      .set('X-Forwarded-For', '198.51.100.9, 192.0.2.1')
+      .expect(429);
+  });
+});

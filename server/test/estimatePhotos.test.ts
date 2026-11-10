@@ -439,6 +439,20 @@ describe('photo HTTP endpoints', () => {
       await request(app).post('/api/estimates/photos/session').expect(201);
     await request(app).post('/api/estimates/photos/session').expect(429);
   });
+  it('does not trust client-supplied forwarded IPs on the direct server', async () => {
+    const { app } = appFixture();
+    expect(app.get('trust proxy')).toBe(false);
+    for (let i = 0; i < 60; i++) {
+      await request(app)
+        .post('/api/estimates/photos/session')
+        .set('X-Forwarded-For', `192.0.2.${i + 1}`)
+        .expect(201);
+    }
+    await request(app)
+      .post('/api/estimates/photos/session')
+      .set('X-Forwarded-For', '198.51.100.1')
+      .expect(429);
+  });
   it('keeps missing service-area integration fail-closed', async () => {
     const { app } = appFixture();
     const details = {

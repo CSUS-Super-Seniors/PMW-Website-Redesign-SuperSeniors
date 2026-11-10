@@ -13,5 +13,8 @@ const contact = config.contactEmail
 
 const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
 const app = createApp(config, createAuthBackend(config, supabase), contact, photos);
+// Vercel overwrites X-Forwarded-For with the connecting client's IP.
+// Trust only that nearest hop; the directly exposed local server trusts none.
+app.set('trust proxy', 1);
 
 export default app;
