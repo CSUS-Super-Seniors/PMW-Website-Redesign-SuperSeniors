@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createApp } from '../src/app.js';
+import { createApp, type EstimateSubmitHandler } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createEstimatePhotosBackend, type EstimatePhotosBackend } from '../src/estimatePhotos.js';
 
@@ -370,7 +370,7 @@ function appFixture(role = 'owner') {
     verifyToken: vi.fn(async () => ({ id })),
     loadProfile: vi.fn(async () => ({ role, status: 'active' })),
   };
-  return { backend, auth, app: createApp(config, auth, undefined, backend) };
+  return { backend, auth, app: createApp(config, auth, undefined, { photos: backend }) };
 }
 
 describe('photo HTTP endpoints', () => {
@@ -441,7 +441,7 @@ describe('photo HTTP endpoints', () => {
   });
   it('does not trust client-supplied forwarded IPs on the direct server', async () => {
     const { app } = appFixture();
-    expect(app.get('trust proxy')).toBe(false);
+    expect(app.get('trust proxy')).toBe(0);
     for (let i = 0; i < 60; i++) {
       await request(app)
         .post('/api/estimates/photos/session')
@@ -455,16 +455,46 @@ describe('photo HTTP endpoints', () => {
   });
   it('keeps missing service-area integration fail-closed', async () => {
     const { app } = appFixture();
-    const details = {
-      first_name: 'Ana',
-      last_name: 'Smith',
-      email: 'ana@example.com',
-      phone: '9165550123',
-      address: '123 Main St',
-      item: 'Chair',
-      issue_type: 'other',
-      description: 'Broken leg',
-    };
-    await request(app).post('/api/estimates/service-area').send(details).expect(503);
+    await request(app).post('/api/estimates/service-area').send({ city: 'Carmichael' }).expect(503);
+  });
+  it('keeps area checks, validated uploads, and protected submission working together', async () => {
+    const storage = storageFixture();
+    const { auth } = appFixture();
+    const submit = vi.fn<EstimateSubmitHandler>((_req, res) => {
+      res.status(201).json({ success: true });
+    });
+    const app = createApp(config, auth, undefined, {
+      photos: storage.backend,
+      serviceArea: { isInServiceArea: async (city) => city === 'Carmichael' },
+      estimateSubmit: submit,
+    });
+    await request(app)
+      .post('/api/estimates/service-area')
+      .send({ city: 'Carmichael' })
+      .expect(200, { inServiceArea: true });
+    const session = await request(app).post('/api/estimates/photos/session').expect(201);
+    const upload = () =>
+      request(app)
+        .put(`/api/estimates/photos/${id}`)
+        .set('Authorization', `Photo ${session.body.token}`)
+        .set('Content-Type', 'image/jpeg');
+    await upload().send(Buffer.from('not a JPEG')).expect(415);
+    await upload()
+      .send(Buffer.alloc(1024 * 1024 + 1))
+      .expect(413);
+    expect(storage.upload).not.toHaveBeenCalled();
+    await upload().send(jpeg).expect(201);
+    expect(storage.upload).toHaveBeenCalledTimes(1);
+    await request(app).post('/api/estimates').send({ city: 'Davis' }).expect(422);
+    await request(app)
+      .post('/api/estimates')
+      .send({ city: 'Carmichael', pmw_extra: 'spam' })
+      .expect(201);
+    expect(submit).not.toHaveBeenCalled();
+    await request(app)
+      .post('/api/estimates')
+      .send({ city: 'Carmichael', pmw_extra: '' })
+      .expect(201);
+    expect(submit).toHaveBeenCalledTimes(1);
   });
 });

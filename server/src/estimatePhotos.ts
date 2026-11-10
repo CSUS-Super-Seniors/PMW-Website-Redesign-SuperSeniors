@@ -8,6 +8,7 @@ import {
   type UploadedEstimatePhoto,
 } from '@pmw/validation';
 import { createStorageHelper } from './lib/storage.js';
+import { checkEstimatePhoto } from './lib/photoChecks.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SESSION_SECONDS = 24 * 60 * 60;
@@ -111,16 +112,13 @@ export function createEstimatePhotosBackend(
     async upload(token, id, bytes, contentType) {
       const owner = session(token);
       if (!UUID.test(id)) throw new PhotoRequestError('Invalid photo identifier.');
-      if (!Buffer.isBuffer(bytes) || bytes.length === 0 || bytes.length > MAX_ESTIMATE_PHOTO_BYTES)
-        throw new PhotoRequestError('Choose a nonempty photo compressed to 1 MB or less.');
-      const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-      const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).equals(bytes.subarray(0, 8));
-      const type = jpeg ? 'image/jpeg' : png ? 'image/png' : undefined;
-      if (!type || contentType !== type) throw new PhotoRequestError('Choose a JPG or PNG photo.');
+      const checked = checkEstimatePhoto(bytes, contentType, MAX_ESTIMATE_PHOTO_BYTES);
+      if (!checked.ok) throw new PhotoRequestError(checked.error, checked.status);
+      const type = checked.type;
       await ensurePrivate();
       const hash = createHash('sha256').update(bytes).digest('hex');
       // Content-addressed immutable paths make retrying a lost response safe.
-      const storagePath = `estimate-uploads/${owner.expiresAt}/${owner.id}/${id}-${hash}.${jpeg ? 'jpg' : 'png'}`;
+      const storagePath = `estimate-uploads/${owner.expiresAt}/${owner.id}/${id}-${hash}.${checked.extension}`;
       const bucket = client.storage.from(PHOTO_BUCKET);
       const { error } = await bucket.upload(storagePath, bytes, {
         contentType: type,

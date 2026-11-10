@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { compressImage } from './compressImage';
+import { compressImage, detectPhotoType } from './compressImage';
 import { MAX_ORIGINAL_PHOTO_BYTES, prepareEstimatePhoto } from './estimatePhotos';
 
-vi.mock('./compressImage', () => ({ compressImage: vi.fn() }));
+vi.mock('./compressImage', () => ({ compressImage: vi.fn(), detectPhotoType: vi.fn() }));
 
 const jpeg = [0xff, 0xd8, 0xff, 0xe0];
 const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -13,17 +13,21 @@ function photo(header: number[], size = 100, type = 'image/jpeg') {
 }
 
 beforeEach(() => {
+  vi.mocked(detectPhotoType).mockReset();
+  vi.mocked(detectPhotoType).mockResolvedValue('image/jpeg');
   vi.mocked(compressImage).mockReset();
   vi.mocked(compressImage).mockImplementation(async (file) => file);
 });
 
 describe('prepareEstimatePhoto', () => {
   it.each([
-    { header: jpeg, type: 'image/jpeg' },
-    { header: png, type: 'image/png' },
-  ])('accepts supported image headers and uses existing compression', async ({ header, type }) => {
+    { header: jpeg, type: 'image/jpeg' as const },
+    { header: png, type: 'image/png' as const },
+  ])('accepts supported detected types and uses existing compression', async ({ header, type }) => {
+    vi.mocked(detectPhotoType).mockResolvedValue(type);
     const input = photo(header, 100, type);
     expect(await prepareEstimatePhoto(input)).toBe(input);
+    expect(detectPhotoType).toHaveBeenCalledWith(input);
     expect(compressImage).toHaveBeenCalledWith(input);
   });
 
@@ -38,15 +42,22 @@ describe('prepareEstimatePhoto', () => {
       '10 MB or less',
     );
     expect(compressImage).not.toHaveBeenCalled();
+    expect(detectPhotoType).not.toHaveBeenCalled();
   });
 
   it.each([
-    new File(['not a photo'], 'fake.jpg', { type: 'image/jpeg' }),
-    new File(['RIFFxxxxxxxxWEBP'], 'photo.webp', { type: 'image/webp' }),
-  ])('rejects unsupported bytes, regardless of file hints', async (input) => {
-    await expect(prepareEstimatePhoto(input)).rejects.toThrow('JPG or PNG');
-    expect(compressImage).not.toHaveBeenCalled();
-  });
+    { detected: undefined },
+    { detected: 'image/webp' as const },
+    { detected: 'image/heic' as const },
+  ])(
+    'rejects unsupported detected types, regardless of file hints: $detected',
+    async ({ detected }) => {
+      vi.mocked(detectPhotoType).mockResolvedValue(detected);
+      const input = new File(['not a JPG or PNG'], 'fake.jpg', { type: 'image/jpeg' });
+      await expect(prepareEstimatePhoto(input)).rejects.toThrow('JPG or PNG');
+      expect(compressImage).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects empty files', async () => {
     await expect(prepareEstimatePhoto(new File([], 'empty.png'))).rejects.toThrow('empty');
@@ -56,6 +67,14 @@ describe('prepareEstimatePhoto', () => {
   it('normalizes a generic MIME hint on a real JPEG', async () => {
     const result = await prepareEstimatePhoto(photo(jpeg, 100, 'application/octet-stream'));
     expect(result.type).toBe('image/jpeg');
+  });
+
+  it('keeps detection failures readable without attempting compression', async () => {
+    vi.mocked(detectPhotoType).mockRejectedValueOnce(new Error('File read failed'));
+    await expect(prepareEstimatePhoto(photo(jpeg))).rejects.toThrow(
+      'This photo could not be read.',
+    );
+    expect(compressImage).not.toHaveBeenCalled();
   });
 
   it('propagates a readable compression failure', async () => {

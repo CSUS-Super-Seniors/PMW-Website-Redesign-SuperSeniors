@@ -1,24 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EstimateStep1Data } from '@pmw/validation';
-import EstimateStep1Form from '../components/estimate/EstimateStep1Form';
+import EstimateStep1Form, {
+  type EstimateSpamCheck,
+} from '../components/estimate/EstimateStep1Form';
 import EstimatePhotosStep from '../components/estimate/EstimatePhotosStep';
 import { Button } from '../components/ui';
 import { useEstimatePhotos } from '../lib/useEstimatePhotos';
 import type { EstimatePhotoHandoff } from '../lib/estimatePhotos';
 
+interface EstimateDetailsHandoff {
+  details: EstimateStep1Data;
+  spamCheck: EstimateSpamCheck;
+}
+
 export default function EstimateRequestPage() {
-  const [validatedDetails, setValidatedDetails] = useState<EstimateStep1Data | null>(null);
+  const [requestDetails, setRequestDetails] = useState<EstimateDetailsHandoff | null>(null);
   const [step, setStep] = useState<'details' | 'photos' | 'handoff'>('details');
-  const [handoff, setHandoff] = useState<EstimatePhotoHandoff | null>(null);
+  const [handoff, setHandoff] = useState<(EstimatePhotoHandoff & EstimateDetailsHandoff) | null>(
+    null,
+  );
   const { photos, addPhotos, removePhoto, uploadPhotos } = useEstimatePhotos();
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     headingRef.current?.focus();
   }, [step]);
 
-  function continueFromDetails(details: EstimateStep1Data) {
-    setValidatedDetails(details);
-    // SSPMW-24 will insert service-area approval here; field validation still runs first.
+  function continueFromDetails(details: EstimateStep1Data, spamCheck: EstimateSpamCheck) {
+    // The form only continues after field validation and service-area approval.
+    setRequestDetails({ details, spamCheck });
     setStep('photos');
   }
 
@@ -43,7 +52,9 @@ export default function EstimateRequestPage() {
             </p>
             <div className="mt-6 md:mt-8">
               <EstimateStep1Form
-                initialValues={validatedDetails ?? undefined}
+                initialValues={requestDetails?.details}
+                initialSpamCheck={requestDetails?.spamCheck}
+                onEdit={() => setHandoff(null)}
                 onContinue={continueFromDetails}
               />
             </div>
@@ -60,7 +71,8 @@ export default function EstimateRequestPage() {
               onRemove={removePhoto}
               onBack={() => setStep('details')}
               onContinue={async () => {
-                setHandoff(await uploadPhotos());
+                if (!requestDetails) throw new Error('Return to your details and try again.');
+                setHandoff({ ...requestDetails, ...(await uploadPhotos()) });
                 setStep('handoff');
               }}
             />
