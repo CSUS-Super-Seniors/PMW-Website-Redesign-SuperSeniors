@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { domainToASCII } from 'node:url';
 import { parse as parseHostname } from 'tldts';
 import { businessContact } from '@pmw/validation';
 import type { Config } from './config.js';
+import { isBareMailbox, sendResendEmail, type ResendCredentials } from './lib/resendEmail.js';
 
 /** The inquiry fields the decline email may use. Internal notes are never passed in. */
 export interface DeclinedInquiry {
@@ -13,44 +15,43 @@ export interface DeclinedInquiry {
   email: string | null;
 }
 
-export interface DeclineEmailConfig {
-  apiKey: string;
-  /** Bare address on the domain verified in Resend. */
-  from: string;
+export interface DeclineEmailConfig extends ResendCredentials {
   /** Owner addresses, so a customer's reply reaches Girlie and Todd. */
   replyTo?: string[];
 }
 
 export interface DeclineEmailSender {
-  /** `already_sent` means Resend had already sent this decline's email. */
+  /**
+   * `already_sent` means Resend had already sent this decline's email to the same
+   * address. Rejects when the email was not sent, including when another send for
+   * this decline is still running.
+   */
   send(inquiry: DeclinedInquiry): Promise<'sent' | 'already_sent'>;
 }
-
-/**
- * Resend's 409 replies for a reused idempotency key: the email for this decline was
- * already sent with different details, or is being sent by a request still running.
- * Either way the customer has (or is getting) the email, so it isn't a failure.
- */
-const ALREADY_SENT_ERRORS = new Set([
-  'invalid_idempotent_request',
-  'concurrent_idempotent_requests',
-]);
-
-const MAILBOX = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 /** Customer text goes in a plain-text email on one line, so it can't add headers or markup. */
 function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-// Things a mail app could turn into a link. Checked after NFKC normalization and
-// with invisible format characters removed, so full-width letters and dots, and
-// tricks like "spam\u00ad.com", count too.
+// Invisible characters: zero-width spaces, soft hyphens, variation selectors, the
+// combining grapheme joiner and other format or default-ignorable characters.
+const INVISIBLE = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/gu;
+
+/** What the customer sees: full-width letters folded (NFKC) and invisible characters dropped. */
+function cleanText(value: string): string {
+  return oneLine(value.normalize('NFKC').replace(INVISIBLE, ''));
+}
+
+// Things a mail app could turn into a link, checked against a copy of the text with
+// combining marks removed, every kind of dash (and "~") turned into "-", and digits
+// from any script turned into "0", so a combining mark after the dot, en dashes
+// between digits and Arabic digits count too.
 const LINK_PATTERNS = [
   /[a-z][a-z0-9+.-]*:\/\//i, // any scheme with "//", like http:// or ftp://
   /\b(?:tel|sms|smsto|mailto|callto|facetime|skype|whatsapp|javascript|vbscript|data|file):(?=\S)/i,
   /www\.|@/i, // "www." or an email address
-  /(?:\d[\s().+\-/_\u00b7\u2022|]*){7,}/, // a phone number (7+ digits), which phones make tappable
+  /(?:\d[\s().+\-/_\u00b7\u2022|*[\]]*){7,}/, // a phone number (7+ digits), which phones make tappable
 ];
 
 /** Dot-separated words in any script, including the ideographic dots "。" and "｡". */
@@ -76,26 +77,30 @@ function containsDomain(text: string): boolean {
   return false;
 }
 
-function looksLikeLink(text: string): boolean {
-  const normalized = text.normalize('NFKC').replace(/\p{Cf}/gu, '');
-  return LINK_PATTERNS.some((pattern) => pattern.test(normalized)) || containsDomain(normalized);
+function looksLikeLink(cleaned: string): boolean {
+  const forCheck = cleaned
+    .replace(/\p{M}/gu, '')
+    .replace(/[\p{Pd}\u2212\u223c~]/gu, '-')
+    .replace(/\p{Nd}/gu, '0');
+  return LINK_PATTERNS.some((pattern) => pattern.test(forCheck)) || containsDomain(forCheck);
 }
 
 /**
  * The public form doesn't verify the email address, so a spammer could put someone
  * else's address on a request and a link in the name or item. Declines go out from
  * the business's domain, so customer text that looks like a link (or runs long) is
- * replaced with a plain word instead of being repeated.
+ * replaced with a plain word instead of being repeated. The text that is sent is the
+ * same cleaned text that was checked.
  */
 function safeCustomerText(value: string, maxLength: number, fallback: string): string {
-  const text = oneLine(value);
+  const text = cleanText(value);
   if (!text || text.length > maxLength || looksLikeLink(text)) return fallback;
   return text;
 }
 
 export function customerAddress(inquiry: Pick<DeclinedInquiry, 'email'>): string | undefined {
   const email = inquiry.email?.trim();
-  return email && email.length <= 254 && MAILBOX.test(email) ? email : undefined;
+  return email && isBareMailbox(email) ? email : undefined;
 }
 
 /**
@@ -104,7 +109,8 @@ export function customerAddress(inquiry: Pick<DeclinedInquiry, 'email'>): string
  */
 export function buildDeclineEmail(inquiry: DeclinedInquiry): { subject: string; text: string } {
   const firstName = safeCustomerText(inquiry.first_name, 40, 'there');
-  const item = safeCustomerText(inquiry.item, 60, 'item');
+  // The sentence adds its own period, so "Sofa." doesn't print as "Sofa..".
+  const item = safeCustomerText(inquiry.item, 60, 'item').replace(/\.+$/, '') || 'item';
   const inquiryNumber = oneLine(inquiry.inquiry_number);
   return {
     subject: `Your estimate request ${inquiryNumber}`,
@@ -122,6 +128,15 @@ export function buildDeclineEmail(inquiry: DeclinedInquiry): { subject: string; 
   };
 }
 
+/**
+ * One key per inquiry and address: a retried decline never emails the customer twice,
+ * but a decline sent again after the address was corrected reaches the new address.
+ */
+export function declineIdempotencyKey(inquiryId: string, to: string): string {
+  const address = createHash('sha256').update(to.toLowerCase()).digest('hex').slice(0, 16);
+  return `inquiry-declined/${inquiryId}/${address}`;
+}
+
 export function createDeclineEmailSender(
   email: DeclineEmailConfig,
   fetchEmail: typeof fetch = fetch,
@@ -130,41 +145,17 @@ export function createDeclineEmailSender(
     async send(inquiry) {
       const to = customerAddress(inquiry);
       if (!to) throw new Error('The inquiry has no usable email address.');
-      const { subject, text } = buildDeclineEmail(inquiry);
-      const response = await fetchEmail('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${email.apiKey}`,
-          'Content-Type': 'application/json',
-          // Within 24 hours, a retried decline never sends the customer a second email.
-          'Idempotency-Key': `inquiry-declined/${inquiry.id}`,
-        },
-        signal: AbortSignal.timeout(10000),
-        body: JSON.stringify({
-          from: email.from,
+      return sendResendEmail(
+        email,
+        {
           to: [to],
-          subject,
-          text,
-          ...(email.replyTo?.length ? { reply_to: email.replyTo } : {}),
-        }),
-      });
-      if (response.status === 409) {
-        const error: unknown = await response.json().catch(() => undefined);
-        const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined;
-        if (typeof name === 'string' && ALREADY_SENT_ERRORS.has(name)) return 'already_sent';
-      }
-      if (!response.ok) throw new Error('Decline email could not be sent.');
-      const result: unknown = await response.json();
-      if (
-        !result ||
-        typeof result !== 'object' ||
-        !('id' in result) ||
-        typeof result.id !== 'string' ||
-        !result.id.trim()
-      ) {
-        throw new Error('Decline email was not acknowledged.');
-      }
-      return 'sent';
+          ...buildDeclineEmail(inquiry),
+          replyTo: email.replyTo,
+          idempotencyKey: declineIdempotencyKey(inquiry.id, to),
+        },
+        'Decline email',
+        fetchEmail,
+      );
     },
   };
 }
@@ -189,9 +180,10 @@ export function createDeclineEmailFromConfig(
 export type DeclineEmailResult = 'sent' | 'already_sent' | 'no_email' | 'unavailable' | 'failed';
 
 /**
- * Call after the decline is saved (SSPMW-172 sets the inquiry's status to `closed`).
- * It never throws, so a failed email can't undo or fail the decline. The result
- * lets the screen tell the owner when the customer was not emailed.
+ * For the decline action (SSPMW-172) to call after it saves the decline (status
+ * `closed`). It never throws, so a failed email can't undo or fail the decline. The
+ * result lets the screen tell the owner when the customer was not emailed.
+ * `no_email` covers an inquiry with no address or one that isn't a usable address.
  */
 export async function notifyCustomerOfDecline(
   sender: DeclineEmailSender | undefined,

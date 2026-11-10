@@ -6,6 +6,7 @@ import {
   buildDeclineEmail,
   createDeclineEmailFromConfig,
   createDeclineEmailSender,
+  declineIdempotencyKey,
   notifyCustomerOfDecline,
   type DeclineEmailSender,
   type DeclinedInquiry,
@@ -107,6 +108,41 @@ describe('buildDeclineEmail', () => {
     expect(text).toContain('(INQ-1048)');
   });
 
+  it.each([
+    ['en dash', 'call 888\u2013555\u20130199'],
+    ['em dash', 'call 888\u2014555\u20140199'],
+    ['hyphen', 'call 888\u2010555\u20100199'],
+    ['non-breaking hyphen', 'call 888\u2011555\u20110199'],
+    ['figure dash', 'call 888\u2012555\u20120199'],
+    ['minus sign', 'call 888\u2212555\u22120199'],
+    ['tilde', 'call 888~555~0199'],
+    ['asterisk', 'call 888*555*0199'],
+    ['brackets', 'call [888][555][0199]'],
+    ['Arabic-Indic digits', 'call \u0668\u0668\u0668\u0665\u0665\u0665\u0660\u0661\u0669\u0669'],
+    ['variation selector in a number', 'call 888\ufe0f555\ufe0f0199'],
+    ['variation selector before the dot', 'spam\ufe0f.com refund'],
+    ['grapheme joiner after the dot', 'spam.\u034fcom refund'],
+    ['combining mark after the dot', 'spam.\u0301com refund'],
+  ])('replaces a phone number or domain hidden with an unusual character (%s)', (_, item) => {
+    const { text } = buildDeclineEmail({ ...inquiry, item });
+    expect(text).toContain('your item.');
+  });
+
+  it('sends the cleaned text it checked, without invisible characters', () => {
+    const { text } = buildDeclineEmail({
+      ...inquiry,
+      first_name: 'Ana\u200b\ufe0f',
+      item: 'Oak\u00ad table',
+    });
+    expect(text).toContain('Hi Ana,');
+    expect(text).toContain('your Oak table.');
+  });
+
+  it('does not print a double period after an item that ends in one', () => {
+    expect(buildDeclineEmail({ ...inquiry, item: 'Sofa.' }).text).toContain('your Sofa.\n');
+    expect(buildDeclineEmail({ ...inquiry, item: '...' }).text).toContain('your item.');
+  });
+
   it('replaces a long name or item with a plain word', () => {
     const { text } = buildDeclineEmail({
       ...inquiry,
@@ -116,6 +152,9 @@ describe('buildDeclineEmail', () => {
     expect(text).toContain('Hi there,');
     expect(text).toContain('your item.');
     expect(buildDeclineEmail({ ...inquiry, item: 'B'.repeat(60) }).text).toContain('B'.repeat(60));
+    expect(buildDeclineEmail({ ...inquiry, first_name: 'A'.repeat(40) }).text).toContain(
+      `Hi ${'A'.repeat(40)},`,
+    );
   });
 
   it.each([
@@ -171,7 +210,7 @@ describe('createDeclineEmailSender', () => {
     expect(init?.headers).toEqual({
       Authorization: 'Bearer test-email-key',
       'Content-Type': 'application/json',
-      'Idempotency-Key': `inquiry-declined/${inquiry.id}`,
+      'Idempotency-Key': declineIdempotencyKey(inquiry.id, 'Margaret@Example.com'),
     });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
     const body = JSON.parse(String(init?.body));
@@ -189,22 +228,33 @@ describe('createDeclineEmailSender', () => {
     await expect(sender.send(inquiry)).resolves.toBe('sent');
   });
 
-  it.each(['invalid_idempotent_request', 'concurrent_idempotent_requests'])(
-    'treats a 409 %s as already sent, not a failure',
-    async (name) => {
-      const sender = createDeclineEmailSender(emailConfig, async () =>
-        Response.json({ name, message: 'duplicate' }, { status: 409 }),
-      );
-      await expect(sender.send(inquiry)).resolves.toBe('already_sent');
-    },
-  );
+  it('treats a 409 invalid_idempotent_request as already sent, not a failure', async () => {
+    const sender = createDeclineEmailSender(emailConfig, async () =>
+      Response.json({ name: 'invalid_idempotent_request', message: 'duplicate' }, { status: 409 }),
+    );
+    await expect(sender.send(inquiry)).resolves.toBe('already_sent');
+  });
 
   it.each([
+    () => Response.json({ name: 'concurrent_idempotent_requests' }, { status: 409 }),
     () => Response.json({ name: 'validation_error' }, { status: 409 }),
     () => new Response('not json', { status: 409 }),
   ])('still fails on any other 409', async (response) => {
     const sender = createDeclineEmailSender(emailConfig, async () => response());
     await expect(sender.send(inquiry)).rejects.toThrow('could not be sent');
+  });
+
+  it('uses one idempotency key per inquiry and address', () => {
+    const key = declineIdempotencyKey(inquiry.id, 'margaret@example.com');
+    expect(key).toMatch(new RegExp(`^inquiry-declined/${inquiry.id}/[0-9a-f]{16}$`));
+    expect(declineIdempotencyKey(inquiry.id, 'Margaret@Example.com')).toBe(key);
+    expect(declineIdempotencyKey(inquiry.id, 'margaret@example.org')).not.toBe(key);
+    expect(declineIdempotencyKey('other-id', 'margaret@example.com')).not.toBe(key);
+  });
+
+  it('rejects a malformed JSON success response', async () => {
+    const sender = createDeclineEmailSender(emailConfig, async () => new Response('{'));
+    await expect(sender.send(inquiry)).rejects.toBeInstanceOf(SyntaxError);
   });
 
   it('leaves reply_to out when no owner addresses are set', async () => {
@@ -224,7 +274,7 @@ describe('createDeclineEmailSender', () => {
     await expect(sender.send(inquiry)).rejects.toThrow();
   });
 
-  it.each([null, '', 'not-an-email', 'a@b'])(
+  it.each([null, '', 'not-an-email', 'a@b', `${'a'.repeat(243)}@example.com`])(
     'never calls Resend without a usable address (%j)',
     async (email) => {
       const fetchEmail = vi.fn<typeof fetch>();
@@ -253,6 +303,31 @@ describe('notifyCustomerOfDecline', () => {
     await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('failed');
     expect(errorLog).toHaveBeenCalledWith('Decline email failed', { inquiryId: inquiry.id });
     expect(JSON.stringify(errorLog.mock.calls)).not.toContain('margaret');
+  });
+
+  it('reports failed when Resend times out or the network is down', async () => {
+    const fetchEmail = vi.fn<typeof fetch>();
+    fetchEmail.mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError'));
+    fetchEmail.mockRejectedValueOnce(new TypeError('fetch failed'));
+    const sender = createDeclineEmailSender(emailConfig, fetchEmail);
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('failed');
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('failed');
+  });
+
+  it('reports failed while another send for the same decline is still running', async () => {
+    const sender = createDeclineEmailSender(emailConfig, async () =>
+      Response.json({ name: 'concurrent_idempotent_requests' }, { status: 409 }),
+    );
+    await expect(notifyCustomerOfDecline(sender, inquiry)).resolves.toBe('failed');
+  });
+
+  it('treats an address that is not usable like no address', async () => {
+    const sender = { send: vi.fn() };
+    for (const email of ['not-an-email', 'a@b', `${'a'.repeat(243)}@example.com`])
+      await expect(notifyCustomerOfDecline(sender, { ...inquiry, email })).resolves.toBe(
+        'no_email',
+      );
+    expect(sender.send).not.toHaveBeenCalled();
   });
 
   it('skips inquiries without an email address and an unconfigured sender', async () => {
