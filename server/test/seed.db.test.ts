@@ -134,6 +134,24 @@ describe.skipIf(!databaseUrl)('supabase/seed.sql on a real database', { timeout:
     expect(numbers.inquiries).toEqual(['INQ-1044', 'INQ-1045', 'INQ-1046', 'INQ-1047', 'INQ-1048']);
   });
 
+  it('seeds the placeholder service cities as active, and turns them back on', async () => {
+    const cities = ['Carmichael', 'Citrus Heights', 'Fair Oaks', 'Orangevale', 'Sacramento'];
+    const activeCities = async () =>
+      (
+        await query(
+          `select name from public.service_cities where is_active and name = any($1) order by name`,
+          [cities],
+        )
+      ).map((row) => row.name);
+
+    await seed();
+    expect(await activeCities()).toEqual(cities);
+
+    await query(`update public.service_cities set is_active = false where name = 'Carmichael'`);
+    await seed();
+    expect(await activeCities()).toEqual(cities);
+  });
+
   it('puts edited sample rows back to their sample values', async () => {
     await seed();
     await query(

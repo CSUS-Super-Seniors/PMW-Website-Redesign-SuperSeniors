@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 /**
  * Shared layout for the in-page message banners. Not exported from the UI kit:
  * use ErrorBanner or SuccessBanner, which pick the tone.
@@ -8,6 +10,8 @@ export interface BannerContentProps {
   title?: string;
   onDismiss?: () => void;
   className?: string;
+  /** Optional extra content under the message, such as a call link. */
+  children?: ReactNode;
 }
 
 const tones = {
@@ -33,6 +37,7 @@ export function Banner({
   title,
   onDismiss,
   className = '',
+  children,
 }: BannerContentProps & { tone: keyof typeof tones }) {
   const style = tones[tone];
 
@@ -57,6 +62,7 @@ export function Banner({
       <div className="min-w-0 flex-1 break-words">
         {title && <p className="type-label">{title}</p>}
         <p className="type-body">{message}</p>
+        {children}
       </div>
 
       {onDismiss && (

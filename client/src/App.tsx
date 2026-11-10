@@ -14,6 +14,11 @@ import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 import SessionExpiredPage from './components/layout/SessionExpiredPage';
+import { lazy, Suspense } from 'react';
+
+const EstimatePhotosPreviewPage = import.meta.env.DEV
+  ? lazy(() => import('./pages/EstimatePhotosPreviewPage'))
+  : null;
 
 function Home() {
   return (
@@ -69,6 +74,16 @@ export default function App() {
       </Route>
 
       {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
+      {EstimatePhotosPreviewPage && (
+        <Route
+          path="/dev/estimate-photos"
+          element={
+            <Suspense fallback={<p role="status">Loading preview…</p>}>
+              <EstimatePhotosPreviewPage />
+            </Suspense>
+          }
+        />
+      )}
     </Routes>
   );
 }

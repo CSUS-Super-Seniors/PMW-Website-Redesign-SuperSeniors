@@ -12,6 +12,7 @@ const validInput: EstimateStep1Input = {
   email: 'Zoe+repairs@example.com',
   phone: '(916) 555-0142',
   address: '123 Main St, Apt 2',
+  city: 'Carmichael',
   item: 'Dining chair',
   issue_type: 'loose_joints',
   description: 'The back leg wobbles.',
@@ -60,6 +61,7 @@ describe('Step 1 shared schema', () => {
     'email',
     'phone',
     'address',
+    'city',
     'item',
     'issue_type',
     'description',
@@ -165,13 +167,10 @@ describe('Step 1 shared schema', () => {
     },
   );
 
-  it('allows city to be omitted without deriving it from the address', () => {
-    const parsed = estimateStep1Schema.parse({ ...validInput, address: '123 Main St, Sacramento' });
-    expect(parsed).not.toHaveProperty('city');
-  });
-
-  it.each(['', ' \t ', 'Sacramento'])('accepts optional city %j unchanged', (city) => {
-    expect(estimateStep1Schema.parse({ ...validInput, city }).city).toBe(city);
+  it('keeps the city as typed so the service-area check can compare it', () => {
+    expect(estimateStep1Schema.parse({ ...validInput, city: '  Fair Oaks, CA ' }).city).toBe(
+      '  Fair Oaks, CA ',
+    );
   });
 
   it.each([null, 123, false, [], {}])('rejects incorrect city type %j', (city) => {
