@@ -17,6 +17,21 @@ describe('ErrorBanner', () => {
     expect(screen.getByText('This reset link has expired')).toHaveClass('type-label');
   });
 
+  it('renders optional extra content under the message', () => {
+    render(
+      <ErrorBanner message="Outside our area.">
+        <a href="tel:+19165550100">(916) 555-0100</a>
+      </ErrorBanner>,
+    );
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Outside our area.(916) 555-0100');
+    expect(screen.getByRole('link', { name: '(916) 555-0100' })).toHaveAttribute(
+      'href',
+      'tel:+19165550100',
+    );
+  });
+
   it('renders without a dismiss button when onDismiss is omitted', () => {
     render(<ErrorBanner message="Something went wrong." />);
 

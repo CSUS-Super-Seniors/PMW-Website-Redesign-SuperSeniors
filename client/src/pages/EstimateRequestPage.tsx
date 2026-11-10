@@ -4,7 +4,7 @@ import EstimateStep1Form from '../components/estimate/EstimateStep1Form';
 import { business } from '../config/site';
 
 export default function EstimateRequestPage() {
-  // Keep the validated handoff in memory; service-area and Step 2 wiring are pending.
+  // Keep the validated, in-service-area handoff in memory; Step 2 wiring is pending.
   const [validatedDetails, setValidatedDetails] = useState<EstimateStep1Data | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
 
@@ -35,8 +35,8 @@ export default function EstimateRequestPage() {
             className="type-body mx-auto mt-6 max-w-190 rounded-lg border border-neutral-300 bg-white p-4 focus-visible:outline-2 focus-visible:outline-amber"
           >
             <p>
-              We checked your details, but continuing to photos is not available yet. Your request
-              has not been sent, and service availability has not been confirmed.
+              Good news: we serve your city. Continuing to photos is not available yet, so your
+              request has not been sent.
             </p>
             <p className="mt-2">
               For an estimate, call{' '}

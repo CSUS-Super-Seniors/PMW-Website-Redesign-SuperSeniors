@@ -93,16 +93,36 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 
 ### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
 
-Step 1 validation and the responsive layout are implemented. Valid input
-currently shows an unavailable notice instead of advancing to Step 2.
+Step 1 validation, the responsive layout and the service-area check (SSPMW-24) are implemented.
+Valid input in a city we serve currently shows a notice instead of advancing to Step 2.
 
-Remaining integration: connect successful validation to the service-area
-check (SSPMW-24), then the photo screen (SSPMW-31). Preserve values when
-returning to Step 1 and allow continuation with zero photos.
+Remaining integration: the photo screen (SSPMW-31). Preserve values when returning to Step 1 and
+allow continuation with zero photos.
 
 The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
-Update `client/src/App.test.tsx` to cover advancement, service-area
-outcomes, retries, and Back navigation.
+Update `client/src/App.test.tsx` to cover advancement, retries, and Back navigation.
+
+### Service area check (SSPMW-24)
+
+Step 1 has a required City field. After the details pass validation, the form asks the server
+whether that city is in the `service_cities` table (active rows only). Capitalization, extra spaces
+and a trailing state, ZIP code or country do not matter. A city outside the area shows an "Outside our service area"
+error with a tap-to-call link, and the customer cannot continue. If the check can't run, the
+customer also can't continue and is asked to try again.
+
+- Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
+  `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
+  active cities aren't secret; the Service Area page will show them). Bad input returns 400; an
+  unreadable city list returns 503.
+- The submit route (SSPMW-70) must mount `requireServiceArea(serviceArea)` from
+  `server/src/serviceArea.ts` after its body is parsed. It checks only the city: a missing or
+  invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets 422
+  (`code: "outside_service_area"`) even when the browser check was skipped. It sets
+  `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's `in_service_area`
+  column, and the handler still validates the rest of the body.
+- The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
+  Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
+  for local, dev and staging. Production cities come from the client's Q7 answer.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 

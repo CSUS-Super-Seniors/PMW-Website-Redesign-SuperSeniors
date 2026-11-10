@@ -6,12 +6,24 @@ import {
   mapContactMessageErrors,
   estimateStep1Schema,
   mapEstimateStep1Errors,
+  serviceAreaCheckSchema,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-export function createApp(config: Config, backend: AuthBackend, contact?: ContactBackend) {
+import { SERVICE_AREA_UNAVAILABLE_MESSAGE, type ServiceAreaBackend } from './serviceArea.js';
+/** Optional backends. Each route answers 503 or 501 when its backend is missing. */
+export interface AppOptions {
+  serviceArea?: ServiceAreaBackend;
+}
+
+export function createApp(
+  config: Config,
+  backend: AuthBackend,
+  contact?: ContactBackend,
+  { serviceArea }: AppOptions = {},
+) {
   const app = express();
   app.disable('x-powered-by');
   app.use(helmet());
@@ -42,6 +54,29 @@ export function createApp(config: Config, backend: AuthBackend, contact?: Contac
         return;
       }
       res.json({ valid: true });
+    },
+  );
+  // Step 1 asks this before the customer can continue. It only answers yes or no,
+  // so the city list itself is never sent to the browser.
+  app.post(
+    '/api/estimates/service-area',
+    express.json({ limit: '1kb', strict: false }),
+    async (req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const parsed = serviceAreaCheckSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'City is required.' });
+        return;
+      }
+      if (!serviceArea) {
+        res.status(503).json({ error: SERVICE_AREA_UNAVAILABLE_MESSAGE });
+        return;
+      }
+      try {
+        res.json({ inServiceArea: await serviceArea.isInServiceArea(parsed.data.city) });
+      } catch {
+        res.status(503).json({ error: SERVICE_AREA_UNAVAILABLE_MESSAGE });
+      }
     },
   );
   app.post(

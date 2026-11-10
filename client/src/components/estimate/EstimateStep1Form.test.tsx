@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { issueOptions, type EstimateStep1Input } from '@pmw/validation';
 import EstimateStep1Form, { type EstimateStep1Continuation } from './EstimateStep1Form';
+import type { CheckServiceArea } from '../../lib/checkEstimateServiceArea';
 
 const details: EstimateStep1Input = {
   first_name: 'Zoë-Marie',
@@ -11,12 +12,14 @@ const details: EstimateStep1Input = {
   email: 'Zoe+chair@Example.com',
   phone: '+1 (916) 555-0142',
   address: '123 Main St',
+  city: 'Carmichael',
   item: 'Dining chair',
   issue_type: 'loose_joints',
   description: 'The back leg wobbles.',
 };
 
 const fetchMock = vi.fn<typeof fetch>();
+const checkServiceArea = vi.fn<CheckServiceArea>();
 const reply = (body: unknown, status = 200) => Response.json(body, { status });
 const continueButton = () => screen.getByRole('button', { name: 'Continue to photos' });
 
@@ -28,7 +31,12 @@ function renderForm(
   const onEdit = vi.fn();
   const view = render(
     <MemoryRouter>
-      <EstimateStep1Form initialValues={initialValues} onContinue={onContinue} onEdit={onEdit} />
+      <EstimateStep1Form
+        initialValues={initialValues}
+        onContinue={onContinue}
+        onEdit={onEdit}
+        checkServiceArea={checkServiceArea}
+      />
     </MemoryRouter>,
   );
   return { user, onContinue, onEdit, ...view };
@@ -36,6 +44,7 @@ function renderForm(
 
 beforeEach(() => {
   fetchMock.mockReset();
+  checkServiceArea.mockReset().mockResolvedValue(true);
   vi.stubGlobal('fetch', fetchMock);
 });
 
@@ -63,7 +72,7 @@ describe('EstimateStep1Form', () => {
     const { user, onContinue } = renderForm();
     await user.click(continueButton());
 
-    expect(screen.getAllByRole('alert')).toHaveLength(8);
+    expect(screen.getAllByRole('alert')).toHaveLength(9);
     const firstName = screen.getByLabelText('First name');
     expect(firstName).toHaveAttribute('aria-invalid', 'true');
     expect(firstName).toHaveAccessibleDescription('First name is required.');
@@ -74,7 +83,9 @@ describe('EstimateStep1Form', () => {
     expect(screen.getByLabelText('What happened?')).toHaveAccessibleDescription(
       'Select a problem from the list.',
     );
+    expect(screen.getByLabelText('City')).toHaveAccessibleDescription('City is required.');
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(checkServiceArea).not.toHaveBeenCalled();
     expect(onContinue).not.toHaveBeenCalled();
   });
 
@@ -169,6 +180,7 @@ describe('EstimateStep1Form', () => {
       'Phone number',
       'Contact me by text message',
       'Service address',
+      'City',
       'Item',
       'What happened?',
       'Describe the problem',
@@ -243,25 +255,106 @@ describe('EstimateStep1Form', () => {
     expect(onContinue).not.toHaveBeenCalled();
   });
 
-  it('focuses form-level server errors, including city errors without a hidden city control', async () => {
+  it('focuses form-level server errors and associates a server city error with the City field', async () => {
     fetchMock.mockResolvedValue(
       reply(
         {
           valid: false,
-          fieldErrors: { city: 'Please check the service address.' },
+          fieldErrors: { city: 'Please check the city.' },
           formErrors: ['Please review the form.'],
         },
         400,
       ),
     );
-    const { user, container, onContinue } = renderForm(details);
+    const { user, onContinue } = renderForm(details);
     await user.click(continueButton());
 
-    const message = await screen.findByText('Please review the form.');
-    await waitFor(() => expect(message.closest('[tabindex="-1"]')).toHaveFocus());
-    expect(screen.getByText('Please check the service address.')).toBeInTheDocument();
-    expect(container.querySelector('[name="city"]')).toBeNull();
+    expect(await screen.findByText('Please review the form.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('City')).toHaveFocus());
+    expect(screen.getByLabelText('City')).toHaveAccessibleDescription('Please check the city.');
+    expect(checkServiceArea).not.toHaveBeenCalled();
     expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it('checks the city after the details pass and continues for an address in the service area', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    const { user, onContinue } = renderForm(details);
+    await user.click(continueButton());
+
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+    expect(checkServiceArea).toHaveBeenCalledExactlyOnceWith('Carmichael', expect.any(AbortSignal));
+    expect(screen.queryByText('Outside our service area')).not.toBeInTheDocument();
+  });
+
+  it('stops a Davis address with a call link and does not continue', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    checkServiceArea.mockResolvedValue(false);
+    const { user, onContinue } = renderForm({ ...details, city: 'Davis' });
+    await user.click(continueButton());
+
+    const alert = await screen.findByText('Outside our service area');
+    expect(checkServiceArea).toHaveBeenCalledWith('Davis', expect.any(AbortSignal));
+    expect(onContinue).not.toHaveBeenCalled();
+    const call = screen.getByRole('link', { name: '(916) 643-5686' });
+    expect(call).toHaveAttribute('href', 'tel:+19166435686');
+    await waitFor(() => expect(alert.closest('[tabindex="-1"]')).toHaveFocus());
+    expect(continueButton()).toBeEnabled();
+    expect(screen.getByLabelText('City')).toHaveValue('Davis');
+
+    // Trying again with the same city is still blocked.
+    await user.click(continueButton());
+    await waitFor(() => expect(checkServiceArea).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Outside our service area')).toBeInTheDocument();
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it('clears the outside-area error when the customer edits and continues with a city we serve', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    checkServiceArea.mockImplementation(async (city) => city !== 'Davis');
+    const { user, onContinue } = renderForm({ ...details, city: 'Davis' });
+    await user.click(continueButton());
+    expect(await screen.findByText('Outside our service area')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('City'));
+    expect(screen.queryByText('Outside our service area')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('City'), 'Carmichael');
+    await user.click(continueButton());
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenCalledWith({ ...details, city: 'Carmichael', text_ok: false }),
+    );
+  });
+
+  it('does not continue when the service-area check is unavailable and lets the customer retry', async () => {
+    fetchMock.mockImplementation(async () => reply({ valid: true }));
+    checkServiceArea.mockRejectedValueOnce(new Error('Service-area checking is unavailable.'));
+    const { user, onContinue } = renderForm(details);
+    await user.click(continueButton());
+
+    const message = await screen.findByText(/We could not check whether we serve your city/);
+    await waitFor(() => expect(message.closest('[tabindex="-1"]')).toHaveFocus());
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(continueButton()).toBeEnabled();
+
+    await user.click(continueButton());
+    await waitFor(() => expect(onContinue).toHaveBeenCalledTimes(1));
+  });
+
+  it('aborts a pending service-area check when the form unmounts', async () => {
+    fetchMock.mockResolvedValue(reply({ valid: true }));
+    let resolve!: (inside: boolean) => void;
+    checkServiceArea.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const { user, unmount, onContinue } = renderForm(details);
+    await user.click(continueButton());
+    await waitFor(() => expect(checkServiceArea).toHaveBeenCalledTimes(1));
+    const signal = checkServiceArea.mock.calls[0][1];
+    unmount();
+    expect(signal.aborted).toBe(true);
+    resolve(true);
+    await waitFor(() => expect(onContinue).not.toHaveBeenCalled());
   });
 
   it('preserves input on network failure and lets the customer retry successfully', async () => {
