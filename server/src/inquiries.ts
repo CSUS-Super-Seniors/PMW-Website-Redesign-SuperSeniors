@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { escapeLike, normalizeEmail, phoneLookupTail, phonesMatch } from './customerMatch.js';
 
-type InquiryClient = Pick<SupabaseClient, 'from'>;
+type InquiryClient = Pick<SupabaseClient, 'from' | 'storage'>;
 
 export interface AcceptedJob {
   id: string;
@@ -43,6 +43,20 @@ interface ExistingJobRow {
 // The schema stores Accepted as "converted" (see supabase/seed.sql). Only these can be accepted.
 const ACCEPTABLE_STATUSES = ['new', 'contacted'];
 const ACCEPTED_STATUS = 'converted';
+const INQUIRY_PHOTOS_BUCKET = 'inquiry photos';
+const JOB_MEDIA_BUCKET = 'job media';
+
+interface InquiryPhotoRow {
+  id: string;
+  storage_path: string;
+}
+
+// Where a copied photo lives in the job media bucket. It depends only on the job and the
+// inquiry photo, so a retry lands on the same path and finds the work already done.
+export function jobMediaPath(jobId: string, photo: InquiryPhotoRow) {
+  const extension = /\.[A-Za-z0-9]{1,10}$/.exec(photo.storage_path)?.[0] ?? '';
+  return `${jobId}/before/inquiry-${photo.id}${extension.toLowerCase()}`;
+}
 
 async function loadInquiry(client: InquiryClient, inquiryId: string) {
   const { data, error } = await client
@@ -159,6 +173,45 @@ async function markAccepted(client: InquiryClient, inquiryId: string, customerId
   if (error) throw new Error('Inquiry could not be marked accepted');
 }
 
+// Copies each inquiry photo into the job's media. Photos copied by an earlier attempt are skipped.
+async function copyInquiryPhotos(client: InquiryClient, inquiryId: string, jobId: string) {
+  const { data: photos, error } = await client
+    .from('inquiry_photos')
+    .select('id,storage_path')
+    .eq('inquiry_id', inquiryId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error('Inquiry photo lookup failed');
+  if (!photos || photos.length === 0) return;
+
+  const { data: existing, error: existingError } = await client
+    .from('job_media')
+    .select('storage_path')
+    .eq('job_id', jobId);
+  if (existingError) throw new Error('Job media lookup failed');
+  const done = new Set((existing ?? []).map((row) => row.storage_path as string));
+
+  for (const photo of photos as InquiryPhotoRow[]) {
+    const destination = jobMediaPath(jobId, photo);
+    if (done.has(destination)) continue;
+
+    const { error: copyError } = await client.storage
+      .from(INQUIRY_PHOTOS_BUCKET)
+      .copy(photo.storage_path, destination, { destinationBucket: JOB_MEDIA_BUCKET });
+    // A file left behind by an earlier attempt is fine. The row below is what was missing.
+    if (copyError && !/already exists/i.test(copyError.message)) {
+      throw new Error('Inquiry photo could not be copied');
+    }
+
+    const { error: insertError } = await client.from('job_media').insert({
+      job_id: jobId,
+      kind: 'photo',
+      stage: 'before',
+      storage_path: destination,
+    });
+    if (insertError) throw new Error('Job media could not be saved');
+  }
+}
+
 export function createInquiryBackend(client: InquiryClient): InquiryBackend {
   return {
     async acceptInquiry(inquiryId) {
@@ -186,7 +239,8 @@ export function createInquiryBackend(client: InquiryClient): InquiryBackend {
         customerId = customer.id;
       }
 
-      // SSPMW-171 copies the inquiry photos into job media here, before the status changes.
+      // Photos are copied before the status changes, so a failure leaves the inquiry open.
+      await copyInquiryPhotos(client, inquiry.id, job.id);
 
       await markAccepted(client, inquiry.id, customerId);
       return { outcome: 'accepted', job };

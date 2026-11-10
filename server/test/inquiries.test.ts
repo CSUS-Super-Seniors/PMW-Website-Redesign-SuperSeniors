@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createInquiryBackend } from '../src/inquiries.js';
+import { createInquiryBackend, jobMediaPath } from '../src/inquiries.js';
 
 type Row = Record<string, unknown>;
 type Action = 'select' | 'insert' | 'update' | 'delete';
@@ -34,13 +34,22 @@ function likeToRegExp(pattern: string) {
 // A stand-in for the Supabase client that keeps three tables in memory.
 // `failing` lists calls that should return an error, such as "jobs:insert".
 function fakeDatabase(
-  seed: { inquiries?: Row[]; customers?: Row[]; jobs?: Row[] },
+  seed: {
+    inquiries?: Row[];
+    customers?: Row[];
+    jobs?: Row[];
+    inquiry_photos?: Row[];
+    job_media?: Row[];
+    files?: string[];
+  },
   failing: string[] = [],
 ) {
   const tables: Record<string, Row[]> = {
     inquiries: seed.inquiries ?? [],
     customers: seed.customers ?? [],
     jobs: seed.jobs ?? [],
+    inquiry_photos: seed.inquiry_photos ?? [],
+    job_media: seed.job_media ?? [],
   };
   let counter = 0;
   let jobNumber = 1000;
@@ -148,7 +157,34 @@ function fakeDatabase(
     return builder;
   }
 
-  return { client: { from } as unknown as Pick<SupabaseClient, 'from'>, tables };
+  // Files are tracked as "bucket/path" strings.
+  const files = new Set(seed.files ?? []);
+  const storage = {
+    from(bucket: string) {
+      return {
+        async copy(source: string, destination: string, options?: { destinationBucket?: string }) {
+          if (failing.includes('storage:copy')) {
+            return { data: null, error: new Error('storage down') };
+          }
+          if (!files.has(`${bucket}/${source}`)) {
+            return { data: null, error: new Error('Object not found') };
+          }
+          const target = `${options?.destinationBucket ?? bucket}/${destination}`;
+          if (files.has(target)) {
+            return { data: null, error: new Error('The resource already exists') };
+          }
+          files.add(target);
+          return { data: { path: destination }, error: null };
+        },
+      };
+    },
+  };
+
+  return {
+    client: { from, storage } as unknown as Pick<SupabaseClient, 'from' | 'storage'>,
+    tables,
+    files,
+  };
 }
 
 const INQUIRY_ID = '5eed0003-0000-4000-8000-000000001048';
@@ -360,4 +396,114 @@ test('a failed customer lookup stops the accept before anything is created', asy
   );
 
   assert.equal(db.tables.jobs.length, 0);
+});
+
+const PHOTO_ID = '5eed0004-0000-4000-8000-000000000001';
+const SECOND_PHOTO_ID = '5eed0004-0000-4000-8000-000000000002';
+const FRONT_PHOTO = { id: PHOTO_ID, storage_path: 'abc/front.jpg' };
+const SIDE_PHOTO = { id: SECOND_PHOTO_ID, storage_path: 'abc/side.PNG' };
+
+function inquiryPhoto(photo: { id: string; storage_path: string }, second: number): Row {
+  return {
+    ...photo,
+    inquiry_id: INQUIRY_ID,
+    created_at: `2026-10-01T10:00:0${second}.000Z`,
+  };
+}
+
+function withPhotos(failing: string[] = []) {
+  return fakeDatabase(
+    {
+      inquiries: [inquiry()],
+      inquiry_photos: [inquiryPhoto(FRONT_PHOTO, 1), inquiryPhoto(SIDE_PHOTO, 2)],
+      files: ['inquiry photos/abc/front.jpg', 'inquiry photos/abc/side.PNG'],
+    },
+    failing,
+  );
+}
+
+test('the inquiry photos are copied into the job media', async () => {
+  const db = withPhotos();
+
+  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  const job = db.tables.jobs[0];
+  const jobId = job.id as string;
+  const front = jobMediaPath(jobId, FRONT_PHOTO);
+  const side = jobMediaPath(jobId, SIDE_PHOTO);
+  assert.deepEqual(result, { outcome: 'accepted', job: { id: jobId, jobNumber: 'J-1001' } });
+  assert.deepEqual(
+    db.tables.job_media.map((row) => pick(row, ['job_id', 'kind', 'stage', 'storage_path'])),
+    [
+      { job_id: jobId, kind: 'photo', stage: 'before', storage_path: front },
+      { job_id: jobId, kind: 'photo', stage: 'before', storage_path: side },
+    ],
+  );
+  assert.ok(db.files.has(`job media/${front}`));
+  assert.ok(db.files.has(`job media/${side}`));
+  // The originals stay where they were.
+  assert.ok(db.files.has('inquiry photos/abc/front.jpg'));
+  assert.ok(db.files.has('inquiry photos/abc/side.PNG'));
+  assert.equal(db.tables.inquiries[0].status, 'converted');
+});
+
+test('an inquiry with no photos is accepted without any job media', async () => {
+  const db = fakeDatabase({ inquiries: [inquiry()] });
+
+  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+
+  assert.equal(result.outcome, 'accepted');
+  assert.equal(db.tables.job_media.length, 0);
+});
+
+test('accepting twice does not copy the photos twice', async () => {
+  const db = withPhotos();
+  const backend = createInquiryBackend(db.client);
+
+  await backend.acceptInquiry(INQUIRY_ID);
+  await backend.acceptInquiry(INQUIRY_ID);
+
+  assert.equal(db.tables.job_media.length, 2);
+  assert.equal(db.tables.jobs.length, 1);
+});
+
+test('a failed copy leaves the inquiry open, and a retry finishes the job', async () => {
+  const failing = ['storage:copy'];
+  const db = withPhotos(failing);
+  const backend = createInquiryBackend(db.client);
+
+  await assert.rejects(backend.acceptInquiry(INQUIRY_ID), /could not be copied/);
+  assert.equal(db.tables.inquiries[0].status, 'new');
+  assert.equal(db.tables.job_media.length, 0);
+
+  failing.length = 0;
+  const result = await backend.acceptInquiry(INQUIRY_ID);
+
+  assert.equal(result.outcome, 'accepted');
+  assert.equal(db.tables.jobs.length, 1);
+  assert.equal(db.tables.job_media.length, 2);
+  assert.equal(db.tables.inquiries[0].status, 'converted');
+});
+
+test('a file copied before a failed save is reused when the retry saves its row', async () => {
+  const failing = ['job_media:insert'];
+  const db = withPhotos(failing);
+  const backend = createInquiryBackend(db.client);
+
+  await assert.rejects(backend.acceptInquiry(INQUIRY_ID), /Job media could not be saved/);
+  assert.equal(db.tables.job_media.length, 0);
+
+  failing.length = 0;
+  await backend.acceptInquiry(INQUIRY_ID);
+
+  assert.equal(db.tables.job_media.length, 2);
+  assert.equal(db.tables.inquiries[0].status, 'converted');
+});
+
+test('jobMediaPath keeps the file extension in lower case and tolerates none', () => {
+  assert.equal(jobMediaPath('job-1', SIDE_PHOTO), `job-1/before/inquiry-${SECOND_PHOTO_ID}.png`);
+  assert.equal(
+    jobMediaPath('job-1', { id: PHOTO_ID, storage_path: 'abc/noextension' }),
+    `job-1/before/inquiry-${PHOTO_ID}`,
+  );
 });
