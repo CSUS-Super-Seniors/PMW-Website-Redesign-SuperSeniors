@@ -1,5 +1,9 @@
-/** One @, no spaces or angle brackets, and a dot in the domain. */
-const MAILBOX = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+/**
+ * One @, no spaces or angle brackets, and a domain with at least one dot. Dots
+ * separate non-empty parts on both sides, so "a@b..co", ".a@b.co" and "a@b.co."
+ * are refused.
+ */
+const MAILBOX = /^[^\s@<>.]+(?:\.[^\s@<>.]+)*@[^\s@<>.]+(?:\.[^\s@<>.]+)+$/;
 
 /** A bare email address (no display name), at most 254 characters. */
 export function isBareMailbox(value: string): boolean {

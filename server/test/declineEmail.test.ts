@@ -274,16 +274,36 @@ describe('createDeclineEmailSender', () => {
     await expect(sender.send(inquiry)).rejects.toThrow();
   });
 
-  it.each([null, '', 'not-an-email', 'a@b', `${'a'.repeat(243)}@example.com`])(
-    'never calls Resend without a usable address (%j)',
-    async (email) => {
-      const fetchEmail = vi.fn<typeof fetch>();
-      await expect(
-        createDeclineEmailSender(emailConfig, fetchEmail).send({ ...inquiry, email }),
-      ).rejects.toThrow('no usable email address');
-      expect(fetchEmail).not.toHaveBeenCalled();
-    },
-  );
+  it.each([
+    null,
+    '',
+    'not-an-email',
+    'a@b',
+    'a@b..co',
+    '.a@b.co',
+    'a..b@c.co',
+    'a@b.co.',
+    `${'a'.repeat(243)}@example.com`,
+  ])('never calls Resend without a usable address (%j)', async (email) => {
+    const fetchEmail = vi.fn<typeof fetch>();
+    await expect(
+      createDeclineEmailSender(emailConfig, fetchEmail).send({ ...inquiry, email }),
+    ).rejects.toThrow('no usable email address');
+    expect(fetchEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('customer address', () => {
+  it.each([
+    'margaret@example.com',
+    'm.j+estimates@mail.example.co.uk',
+    'a@b.co',
+    'José@exämple.com',
+  ])('accepts an ordinary address (%j)', async (email) => {
+    const fetchEmail = vi.fn<typeof fetch>(async () => accepted());
+    await createDeclineEmailSender(emailConfig, fetchEmail).send({ ...inquiry, email });
+    expect(JSON.parse(String(fetchEmail.mock.calls[0]![1]?.body)).to).toEqual([email]);
+  });
 });
 
 describe('notifyCustomerOfDecline', () => {
@@ -323,7 +343,7 @@ describe('notifyCustomerOfDecline', () => {
 
   it('treats an address that is not usable like no address', async () => {
     const sender = { send: vi.fn() };
-    for (const email of ['not-an-email', 'a@b', `${'a'.repeat(243)}@example.com`])
+    for (const email of ['not-an-email', 'a@b', 'a@b..co', `${'a'.repeat(243)}@example.com`])
       await expect(notifyCustomerOfDecline(sender, { ...inquiry, email })).resolves.toBe(
         'no_email',
       );
