@@ -42,7 +42,9 @@ const accepted: AcceptInquiryResult = {
 
 test('owner accepts an inquiry and gets the new job back', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  const response = await request(createApp(config, authBackend('owner'), undefined, backend))
+  const response = await request(
+    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+  )
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(200);
@@ -54,7 +56,7 @@ test('owner accepts an inquiry and gets the new job back', async () => {
 
 test('an employee is refused and nothing is accepted', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  await request(createApp(config, authBackend('employee'), undefined, backend))
+  await request(createApp(config, authBackend('employee'), undefined, { inquiries: backend }))
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(403);
@@ -63,7 +65,7 @@ test('an employee is refused and nothing is accepted', async () => {
 
 test('a request without a valid token gets 401 and nothing is accepted', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  const app = createApp(config, authBackend('owner'), undefined, backend);
+  const app = createApp(config, authBackend('owner'), undefined, { inquiries: backend });
   await request(app).post(acceptPath).expect(401);
   await request(app).post(acceptPath).set('Authorization', 'Bearer invalid').expect(401);
   assert.deepEqual(calls, []);
@@ -71,7 +73,7 @@ test('a request without a valid token gets 401 and nothing is accepted', async (
 
 test('an id that is not a UUID is a 404 and never reaches the backend', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  await request(createApp(config, authBackend('owner'), undefined, backend))
+  await request(createApp(config, authBackend('owner'), undefined, { inquiries: backend }))
     .post('/api/inquiries/INQ-1048/accept')
     .set('Authorization', 'Bearer valid')
     .expect(404);
@@ -80,7 +82,7 @@ test('an id that is not a UUID is a 404 and never reaches the backend', async ()
 
 test('an inquiry that does not exist is a 404', async () => {
   const { backend } = fakeInquiries({ outcome: 'not-found' });
-  await request(createApp(config, authBackend('owner'), undefined, backend))
+  await request(createApp(config, authBackend('owner'), undefined, { inquiries: backend }))
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(404);
@@ -88,7 +90,9 @@ test('an inquiry that does not exist is a 404', async () => {
 
 test('an inquiry that was already declined is a 409', async () => {
   const { backend } = fakeInquiries({ outcome: 'not-acceptable', status: 'closed' });
-  const response = await request(createApp(config, authBackend('owner'), undefined, backend))
+  const response = await request(
+    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+  )
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(409);
@@ -97,7 +101,9 @@ test('an inquiry that was already declined is a 409', async () => {
 
 test('a backend failure is a 503 that does not leak the cause', async () => {
   const { backend } = fakeInquiries(new Error('password authentication failed for user postgres'));
-  const response = await request(createApp(config, authBackend('owner'), undefined, backend))
+  const response = await request(
+    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+  )
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(503);

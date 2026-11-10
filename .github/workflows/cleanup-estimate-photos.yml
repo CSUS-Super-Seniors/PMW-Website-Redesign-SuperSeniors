@@ -1,0 +1,41 @@
+name: Clean up abandoned estimate photos
+
+on:
+  schedule:
+    - cron: '23 10 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Delete expired, unattached photos (otherwise dry run)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cleanup-estimate-photos
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: estimate-photo-cleanup
+    env:
+      CLIENT_ORIGINS: ${{ vars.CLIENT_ORIGINS }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build -w @pmw/validation
+      - name: Preview abandoned uploads
+        if: github.event_name == 'workflow_dispatch' && !inputs.apply
+        run: npm run cleanup:estimate-photos -w server
+      - name: Remove abandoned uploads
+        if: github.event_name == 'schedule' || inputs.apply
+        run: npm run cleanup:estimate-photos -w server -- --apply

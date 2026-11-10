@@ -4,6 +4,8 @@ import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createInquiryBackend } from './inquiries.js';
+import { createServiceAreaBackend } from './serviceArea.js';
+import { createEstimatePhotosBackend } from './estimatePhotos.js';
 try {
   const config = loadConfig();
   const supabase = createSupabaseAdmin(config);
@@ -15,12 +17,11 @@ try {
       'Contact messaging is unavailable: configure the contact email environment variables.',
     );
   }
-  const server = createApp(
-    config,
-    createAuthBackend(config, supabase),
-    contact,
-    createInquiryBackend(supabase),
-  ).listen(config.port, '0.0.0.0', () => {
+  const server = createApp(config, createAuthBackend(config, supabase), contact, {
+    serviceArea: createServiceAreaBackend(supabase),
+    photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
+    inquiries: createInquiryBackend(supabase),
+  }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });
   server.on('error', () => {
