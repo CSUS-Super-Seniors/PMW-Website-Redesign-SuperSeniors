@@ -1,3 +1,4 @@
+import { createEstimatePhotosBackend } from '../server/src/estimatePhotos.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
@@ -17,6 +18,7 @@ const contact = config.contactEmail
 
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
+  photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
 });
 
 export default app;

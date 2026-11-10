@@ -9,7 +9,7 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 - `client/`: React + Vite + TypeScript + React Router + Tailwind CSS
 - `server/`: Node.js + Express + TypeScript (all routes under `/api`)
 - `shared/`: browser-compatible `@pmw/validation` workspace (Zod schemas and form configuration)
-- Tests: Vitest (unit). Playwright is added later (SSPMW-232).
+- Tests: Vitest (unit) and Playwright (browser).
 - CI: GitHub Actions runs lint, format check, type check, and tests on every PR to `main`.
 
 ## Getting started
@@ -56,21 +56,18 @@ npm run dev:client   # site on http://localhost:5173 (proxies /api to the server
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 
-| Variable                             | Purpose                                                                                     |
-| ------------------------------------ | ------------------------------------------------------------------------------------------- |
-| `PORT`                               | API port (default 3001)                                                                     |
-| `NODE_ENV`                           | `development` locally                                                                       |
-| `CLIENT_ORIGINS`                     | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
-| `SUPABASE_URL`                       | Supabase API URL. For local development, use the URL from `npx supabase status`             |
-| `SUPABASE_PUBLISHABLE_KEY`           | Supabase publishable (anon) key                                                             |
-| `SUPABASE_SERVICE_ROLE_KEY`          | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
-| `ESTIMATE_RATE_LIMIT_MAX`            | Estimate submissions allowed per visitor IP in one window (default 5)                       |
-| `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` | Length of that window in minutes (default 60)                                               |
-| `TRUST_PROXY_HOPS`                   | Proxies in front of the API whose client IP header is trusted. 0 locally; Vercel uses 1     |
-| `SEED_DATABASE_URL`                  | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
-| `SEED_ALLOWED_PROJECT_REFS`          | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
-| `SEED_BLOCKED_PROJECT_REFS`          | Production project refs. The seed always refuses these, even if they are also allowed       |
-| `SEED_TEST_DATABASE_URL`             | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
+| Variable                    | Purpose                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `PORT`                      | API port (default 3001)                                                                     |
+| `NODE_ENV`                  | `development` locally                                                                       |
+| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
+| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
+| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
+| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
+| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
+| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
+| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
 
 ### Client (`client/.env`)
 
@@ -97,13 +94,11 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 ### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
 
 Step 1 validation, the responsive layout and the service-area check (SSPMW-24) are implemented.
-Valid input in a city we serve currently shows a notice instead of advancing to Step 2.
-
-Remaining integration: the photo screen (SSPMW-31). Preserve values when returning to Step 1 and
-allow continuation with zero photos.
+Valid input in an active service city advances to optional photos. Back preserves the details,
+City, honeypot value, and selected photos.
 
 The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
-Update `client/src/App.test.tsx` to cover advancement, retries, and Back navigation.
+`client/src/App.test.tsx` and the photo e2e tests cover advancement, retries, and Back navigation.
 
 ### Service area check (SSPMW-24)
 
@@ -157,10 +152,72 @@ Until the handler is passed in, the route answers 501.
   input, not scripts that post straight to the API (the rate limit covers those).
 - **Photo checks:** `checkEstimatePhoto(bytes, contentType, maxBytes)` in
   `server/src/lib/photoChecks.ts` reads the file's first bytes, so a renamed non-image is refused
-  (415) even when the browser checks are bypassed. Files over 10 MB are refused (413). The photo
-  upload route (SSPMW-31) should call it on each upload's bytes and can pass a smaller limit. It
+  (415) even when the browser checks are bypassed. Files over 10 MB are refused (413). The SSPMW-31
+  photo backend calls it before storage with a 1 MiB limit for compressed files. It
   checks the file signature, not every byte, so photos must stay private and only be served back
   as images. Only JPG and PNG pass, matching the SSPMW-31 and SSPMW-95 stories.
+
+### Estimate flow and photos (SSPMW-31 / SSPMW-39 / SSPMW-41)
+
+Step 1 validates the details and checks the active service cities before opening optional photos.
+Both server entry points provide service-area and photo backends through `createApp`'s fourth-argument options.
+JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
+Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
+Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
+The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
+SSPMW-31 is partial for inquiry attachment: `attachPhotos` currently has no application caller,
+so this flow does not create `inquiry_photos` rows. Removal from previews and the handoff is
+implemented; attachment and exclusion of removed photos on the saved inquiry remain deferred
+to SSPMW-70 and are not verified end to end here.
+
+`useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
+After applying both photo reconciliation/confirmation migrations, trusted submission code verifies inquiry ownership and calls:
+
+```ts
+const backend = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+await backend.attachPhotos(inquiryId, photoSession?.token ?? '', photos, { finalize: true });
+```
+
+Keep tokens/receipts private, including the session when removing all photos. Draft links are replaced atomically; finalized sets cannot change.
+After a lost submit response, retry the same inquiry ID and **original handoff before renewing/reuploading**; exact finalized retries work after expiry, but expired credentials cannot finalize drafts.
+SSPMW-70 must retain stable request/results, deduplicate inquiry creation/emails, and wait for attachment success before notification; photo confirmation is not proof of email delivery.
+Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
+Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; SSPMW-95 protects the submit route, and its file checks are connected to the photo backend.
+The page retains `{ details, spamCheck, photoSession, photos }` for the later review/submission flow.
+SSPMW-70 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`,
+provide `estimateSubmit` in the app options, and persist the server-approved service-area result.
+
+- Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
+- Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
+- Cleanup: `.github/workflows/cleanup-estimate-photos.yml` runs daily at 10:23 UTC with `--apply`, deleting only unattached uploads expired for over 24 hours. The command `npm run cleanup:estimate-photos -w server` remains a dry run by default.
+- Before completion: `npm run verify:storage -w server` against local Supabase, normal migration deployment, and PR review/merge remain required.
+
+#### Photo rate limiting behind Vercel
+
+The Vercel entry point (`api/index.ts`) defaults `TRUST_PROXY_HOPS` to one so the
+photo limiter uses each visitor's IP. Vercel overwrites `X-Forwarded-For` with the
+connecting client's address ([Vercel request headers](https://vercel.com/docs/headers/request-headers));
+Express reads the nearest forwarded address with this setting
+([Express proxy configuration](https://expressjs.com/en/guide/behind-proxies/)).
+The direct local server defaults `TRUST_PROXY_HOPS` to zero. Revisit this setting if the
+hosting topology changes. Upload and submit limits remain instance-local; distributed limits are outside the current implementation.
+
+#### Daily photo cleanup setup
+
+Create a GitHub Actions environment named `estimate-photo-cleanup` for the Supabase
+project whose uploads should be cleaned. Set its secrets `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`, and its variable `CLIENT_ORIGINS` to that deployment's
+allowed website origin(s). The existing script validates these server settings;
+it does not send HTTP requests to the website. Keep staging and production credentials separate.
+
+The schedule starts only after the workflow reaches the repository's default branch
+and these settings exist. Local changes alone do not activate it. From the Actions
+tab, manually run **Clean up abandoned estimate photos** with `apply` unchecked to
+inspect the eligible count; check `apply` to delete eligible objects. Scheduled runs
+always apply cleanup. The job has read-only repository permissions, prevents
+overlapping cleanup runs, and reports failures through its Actions run status.
+The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
+attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
@@ -352,8 +409,6 @@ Configure the following in the Vercel project settings:
 For contact submissions, also configure `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `CONTACT_OWNER_EMAILS` in the intended Vercel environment, as described in the contact setup above. The serverless entry initializes the contact backend when these settings are present. Without them, the contact endpoint returns 503 while other routes remain available.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` through a `VITE_` variable or commit it to Git.
-
-The serverless entry sets `TRUST_PROXY_HOPS` to 1 when it is not configured, because Vercel's proxy sets the visitor's IP. Leave it unset on Vercel: setting it to 0 there would make every visitor share one rate limit. If another proxy or CDN is ever put in front of Vercel, this number has to change. `ESTIMATE_RATE_LIMIT_MAX` and `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` are optional there too.
 
 The serverless API automatically adds exact HTTPS origins for `VERCEL_URL` (unique deployment), `VERCEL_BRANCH_URL` (stable branch alias), and `VERCEL_PROJECT_PRODUCTION_URL` (production address) when set. These system variables contain hostnames without a scheme. Enable Vercel system environment variables for this behavior. Other origins remain blocked.
 

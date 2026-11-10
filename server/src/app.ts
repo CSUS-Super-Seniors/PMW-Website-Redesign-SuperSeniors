@@ -21,6 +21,7 @@ import {
   type ServiceAreaBackend,
   type ServiceAreaLocals,
 } from './serviceArea.js';
+import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
@@ -30,6 +31,7 @@ export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */
 export interface AppOptions {
   serviceArea?: ServiceAreaBackend;
+  photos?: EstimatePhotosBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
   estimateSubmit?: EstimateSubmitHandler;
 }
@@ -51,7 +53,7 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit }: AppOptions = {},
+  { serviceArea, estimateSubmit, photos }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -73,6 +75,63 @@ export function createApp(
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
+  );
+  // Share SSPMW-95's bounded, proxy-aware limiter with the photo endpoints.
+  app.use(
+    '/api/estimates/photos',
+    createRateLimiter({
+      max: 60,
+      windowMs: 60_000,
+      maxVisitors: 10_000,
+      message: 'Too many photo requests. Please wait a minute and retry.',
+    }),
+    (_req, res, next) => {
+      res.set('Cache-Control', 'no-store');
+      if (!photos) {
+        res.status(503).json({ error: 'Photo uploads are temporarily unavailable.' });
+        return;
+      }
+      next();
+    },
+  );
+  app.post('/api/estimates/photos/session', (_req, res) => {
+    res.status(201).json(photos!.startSession());
+  });
+  app.post('/api/estimates/photos/session/renew', (req, res) => {
+    const token = /^Photo ([^\s]+)$/.exec(req.get('authorization') ?? '')?.[1] ?? '';
+    try {
+      res.json(photos!.renewSession(token));
+    } catch (error) {
+      res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+        error:
+          error instanceof PhotoRequestError
+            ? error.message
+            : 'Could not renew photo session. Please retry.',
+      });
+    }
+  });
+  app.put(
+    '/api/estimates/photos/:photoId',
+    express.raw({ type: () => true, limit: '1mb' }),
+    async (req, res) => {
+      const token = /^Photo ([^\s]+)$/.exec(req.get('authorization') ?? '')?.[1] ?? '';
+      try {
+        const result = await photos!.upload(
+          token,
+          String(req.params.photoId),
+          req.body,
+          req.get('content-type') ?? '',
+        );
+        res.status(201).json(result);
+      } catch (error) {
+        res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+          error:
+            error instanceof PhotoRequestError
+              ? error.message
+              : 'Photo upload failed. Please retry or remove the photo.',
+        });
+      }
+    },
   );
   // Estimate submit route. In order: the rate limit counts every attempt (SSPMW-95),
   // a filled honeypot is dropped (SSPMW-95), an outside-area city is refused
@@ -194,6 +253,20 @@ export function createApp(
     res.status(501).json({ error: 'Not implemented' });
   });
   api.use(requireOwner);
+  api.get('/inquiry-photos/:photoId/view-url', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!photos) {
+      res.status(503).json({ error: 'Photo viewing is temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json(await photos.viewPhoto(String(req.params.photoId)));
+    } catch (error) {
+      res.status(error instanceof PhotoRequestError ? error.status : 503).json({
+        error: error instanceof PhotoRequestError ? error.message : 'Could not load photo.',
+      });
+    }
+  });
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
   });

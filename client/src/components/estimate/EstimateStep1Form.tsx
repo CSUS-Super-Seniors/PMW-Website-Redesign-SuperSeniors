@@ -32,6 +32,7 @@ export type EstimateStep1Continuation = (
 export interface EstimateStep1FormProps {
   onContinue: EstimateStep1Continuation;
   initialValues?: EstimateStep1Input;
+  initialSpamCheck?: EstimateSpamCheck;
   onEdit?: () => void;
   /** Replaced in tests. Defaults to the server check against `service_cities`. */
   checkServiceArea?: CheckServiceArea;
@@ -59,6 +60,7 @@ const fieldOrder = [
 export default function EstimateStep1Form({
   onContinue,
   initialValues,
+  initialSpamCheck,
   onEdit,
   checkServiceArea = checkEstimateServiceArea,
 }: EstimateStep1FormProps) {
@@ -246,7 +248,7 @@ export default function EstimateStep1Form({
               name={ESTIMATE_HONEYPOT_FIELD}
               tabIndex={-1}
               autoComplete="off"
-              defaultValue=""
+              defaultValue={initialSpamCheck?.[ESTIMATE_HONEYPOT_FIELD] ?? ''}
             />
           </label>
         </div>
