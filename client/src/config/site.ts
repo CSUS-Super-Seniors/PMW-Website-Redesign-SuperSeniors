@@ -33,7 +33,13 @@ export const routes = {
   staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
+  portalInquiries: '/portal/inquiries',
 } as const;
+
+/** Inquiry detail page (SSPMW-144). The list rows link here. */
+export function inquiryDetailPath(id: string): string {
+  return `${routes.portalInquiries}/${encodeURIComponent(id)}`;
+}
 
 export type NavLinkItem = { label: string; to: string };
 
