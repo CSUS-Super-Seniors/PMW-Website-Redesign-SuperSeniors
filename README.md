@@ -31,6 +31,16 @@ npm run dev:server   # API on http://localhost:3001 (check /api/health)
 npm run dev:client   # site on http://localhost:5173 (proxies /api to the server)
 ```
 
+### Playwright in CI
+
+The Playwright smoke-test job uses the official
+`mcr.microsoft.com/playwright:v1.64.1-noble` container, which includes the browsers
+and Linux browser dependencies. This avoids installing Ubuntu packages during
+each run. The job still runs `npm ci` and the full `npm run test:e2e` suite, and
+uploads failure reports. When updating Playwright, update the image tag in
+`.github/workflows/ci.yml` to match the locked Playwright version. The other CI
+jobs and local development commands are unchanged.
+
 ## Scripts (run from the repo root)
 
 | Script                           | What it does                                                                                        |
