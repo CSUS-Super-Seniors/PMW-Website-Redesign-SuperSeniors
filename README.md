@@ -239,6 +239,32 @@ of prompting duplicate submissions. Validation failures return 400 with inline
 field errors; configuration or save failures return 503. Notification acceptance
 does not prove inbox delivery. N9 branding will be adopted when available.
 
+## Decline email (SSPMW-215)
+
+`server/src/declineEmail.ts` builds and sends the email a customer gets when an owner declines their
+estimate request: a short plain-text message with their first name, inquiry number, item and the
+business phone number. Internal notes are never included. Nothing sends it yet: the decline action
+(SSPMW-172) will call it, and until that ships no decline emails go out.
+
+Because the form doesn't verify email addresses, a name or item that looks like a link, an email
+address, a domain or a phone number (or runs long) is replaced with a plain word, so spam text isn't
+resent from the business's domain. Words joined by a dot only count as a domain when the ending is a
+real top-level domain, so names like "Mr.Smith" are kept. The check also catches phone numbers written with other dashes,
+`~` or non-ASCII digits, and links hidden with invisible characters, which are dropped from the text
+that is sent. SSPMW-172 should also offer declining spam without emailing. The email uses the same
+Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and replies go to
+`CONTACT_OWNER_EMAILS`. Both emails send through `server/src/lib/resendEmail.ts`. The wording is a
+draft until Girlie and Todd approve it.
+
+For SSPMW-172: save the inquiry's status as `closed` first, then call
+`notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws, so
+a failed email can't undo the decline. It returns `sent`, `already_sent`, `no_email` (no address, or
+not a usable one), `unavailable` (email not configured) or `failed`, so the screen can tell the owner
+whether the customer was emailed. Each send uses a Resend idempotency key made from the inquiry and
+the address, so within 24 hours a retried decline doesn't email the customer twice (`sent` or
+`already_sent`), while a decline sent again after the address was corrected reaches the new address.
+If another send for the same decline is still running, the result is `failed`, and retrying is safe.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
