@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { leadSourceSchema } from './leadSource.js';
+import { cityField } from './serviceArea.js';
 
 // Approved provisional options, pending Todd's Q9 response.
 export const issueOptions = [
@@ -42,10 +43,7 @@ export const estimateStep1Schema = z.strictObject(
     }),
     text_ok: z.boolean({ error: 'Text message permission must be true or false.' }).default(false),
     address: requiredText('Service address', 300),
-    city: z
-      .string({ error: 'City must be text.' })
-      .max(100, { error: 'City must be 100 characters or fewer.' })
-      .optional(),
+    city: cityField,
     item: requiredText('Item', 200),
     issue_type: z.enum(
       issueOptions.map((option) => option.value),

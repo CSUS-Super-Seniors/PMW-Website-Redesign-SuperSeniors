@@ -10,6 +10,7 @@ const validInput: EstimateStep1Input = {
   email: 'Zoe+repairs@example.com',
   phone: '+1 916 555 0142',
   address: '123 Main St',
+  city: 'Carmichael',
   item: 'Dining chair',
   issue_type: 'loose_joints',
   description: 'The back leg wobbles.',

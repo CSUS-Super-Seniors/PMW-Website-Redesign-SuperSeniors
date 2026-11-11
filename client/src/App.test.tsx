@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter } from 'react-router';
@@ -61,8 +61,12 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Staff login' })).not.toBeInTheDocument();
   });
 
-  it('keeps the live form and validated details visible while the service-area and photo flow are unavailable', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ valid: true }));
+  it('opens photos only after service-area approval and preserves details on Back', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (url) =>
+      url === '/api/estimates/service-area'
+        ? Response.json({ inServiceArea: true })
+        : Response.json({ valid: true }),
+    );
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     renderApp('/estimate');
@@ -73,6 +77,7 @@ describe('App', () => {
       ['Email address', 'ana+chair@example.com'],
       ['Phone number', '(916) 555-0142'],
       ['Service address', '123 Main St'],
+      ['City', 'Carmichael'],
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
@@ -80,22 +85,114 @@ describe('App', () => {
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');
+    const honeypot = () => document.querySelector<HTMLInputElement>('[name="pmw_extra"]')!;
+    fireEvent.change(honeypot(), { target: { value: 'bot-filled-value' } });
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
 
-    const notice = await screen.findByText(/continuing to photos is not available yet/);
-    expect(notice).toHaveTextContent('Your request has not been sent');
-    expect(notice).toHaveTextContent('service availability has not been confirmed');
-    await waitFor(() => expect(notice.closest('[role="status"]')).toHaveFocus());
+    await screen.findByRole('heading', { name: 'Add photos of your furniture' });
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Request an estimate' })).toHaveFocus(),
+    );
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/estimates/validate-step-1',
+      '/api/estimates/service-area',
+    ]);
+    await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
-    expect(screen.getByRole('heading', { name: 'Request an estimate' })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
       lead_source: 'referral',
     });
     expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('referral');
-
+    expect(screen.getByLabelText('City')).toHaveValue('Carmichael');
+    expect(honeypot()).toHaveValue('bot-filled-value');
+    await user.type(screen.getByLabelText('Item'), ' repair');
     await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'yelp');
-    expect(screen.queryByText(/continuing to photos is not available yet/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    await screen.findByLabelText('Choose photos');
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('heading', { name: 'Your photos are ready' });
+    expect(screen.getByRole('status')).toHaveTextContent('0 photo(s)');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/estimates/validate-step-1',
+      '/api/estimates/service-area',
+      '/api/estimates/validate-step-1',
+      '/api/estimates/service-area',
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2][1]!.body as string)).toMatchObject({
+      item: 'Chair repair',
+      lead_source: 'yelp',
+    });
+    await user.click(screen.getByRole('button', { name: 'Back to photos' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByLabelText('Item')).toHaveValue('Chair repair');
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('yelp');
+    expect(honeypot()).toHaveValue('bot-filled-value');
+  });
+  it('blocks outside-area and unavailable checks before photos, then allows retry', async () => {
+    const area = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ inServiceArea: false }))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(Response.json({ inServiceArea: true }))
+      .mockResolvedValueOnce(Response.json({ inServiceArea: false }));
+    const fetchMock = vi.fn<typeof fetch>(async (url) =>
+      url === '/api/estimates/service-area' ? area() : Response.json({ valid: true }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    for (const [label, value] of [
+      ['First name', 'Ana'],
+      ['Last name', 'Smith'],
+      ['Email address', 'ana@example.com'],
+      ['Phone number', '9165550123'],
+      ['Service address', '123 Main St'],
+      ['City', 'Davis'],
+      ['Item', 'Chair'],
+      ['Describe the problem', 'Loose leg'],
+    ])
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('How did you hear about us?'), {
+      target: { value: 'referral' },
+    });
+    const advance = () => user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    await advance();
+    await screen.findByText('Outside our service area');
+    expect(within(screen.getByRole('alert')).getByRole('link')).toHaveAttribute(
+      'href',
+      'tel:+19166435686',
+    );
+    expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Carmichael' } });
+    await advance();
+    await screen.findByText(/We could not check whether we serve your city/);
+    expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Email address')).toHaveValue('ana@example.com');
+    await advance();
+    await screen.findByLabelText('Choose photos');
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Davis' } });
+    await advance();
+    await screen.findByText('Outside our service area');
+    expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
+    expect(area).toHaveBeenCalledTimes(4);
+    expect(
+      fetchMock.mock.calls.every(
+        ([url]) =>
+          url === '/api/estimates/validate-step-1' || url === '/api/estimates/service-area',
+      ),
+    ).toBe(true);
+  });
+  it('keeps invalid details on Step 1 without requesting approval or opening photos', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    expect(screen.getByLabelText('City')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
   it('shows the business tagline on the home page, not developer notes', () => {
     renderApp('/');

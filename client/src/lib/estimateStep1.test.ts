@@ -13,6 +13,7 @@ it('can consume the shared Step 1 schema, dropdown options and field errors in t
     email: 'ana+chair@example.com',
     phone: '(916) 555-0142',
     address: '123 Main St',
+    city: 'Carmichael',
     item: 'Chair',
     issue_type: issueOptions[0].value,
     description: 'One leg is loose.',

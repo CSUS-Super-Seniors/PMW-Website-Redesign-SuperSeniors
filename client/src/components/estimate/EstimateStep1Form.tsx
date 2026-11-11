@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import {
+  CITY_MAX_LENGTH,
+  OUTSIDE_SERVICE_AREA_MESSAGE,
+  ESTIMATE_HONEYPOT_FIELD,
   estimateStep1Schema,
   issueOptions,
   leadSourceOptions,
@@ -11,15 +14,29 @@ import {
   type EstimateStep1Input,
 } from '@pmw/validation';
 import { Button, Checkbox, ErrorBanner, InlineFieldError, Input, Select, Textarea } from '../ui';
-import { routes } from '../../config/site';
+import { business, routes } from '../../config/site';
 import { validateEstimateStep1 } from '../../lib/validateEstimateStep1';
+import {
+  ServiceAreaRateLimitedError,
+  checkEstimateServiceArea,
+  type CheckServiceArea,
+} from '../../lib/checkEstimateServiceArea';
 
-export type EstimateStep1Continuation = (details: EstimateStep1Data) => void | Promise<void>;
+/** Sent with the final submit (SSPMW-70) so the server can drop bot requests. */
+export type EstimateSpamCheck = { [ESTIMATE_HONEYPOT_FIELD]: string };
+
+export type EstimateStep1Continuation = (
+  details: EstimateStep1Data,
+  spamCheck: EstimateSpamCheck,
+) => void | Promise<void>;
 
 export interface EstimateStep1FormProps {
   onContinue: EstimateStep1Continuation;
   initialValues?: EstimateStep1Input;
+  initialSpamCheck?: EstimateSpamCheck;
   onEdit?: () => void;
+  /** Replaced in tests. Defaults to the server check against `service_cities`. */
+  checkServiceArea?: CheckServiceArea;
 }
 
 // Empty select placeholders are draft values, never validated option values.
@@ -36,6 +53,7 @@ const fieldOrder = [
   'phone',
   'text_ok',
   'address',
+  'city',
   'item',
   'issue_type',
   'description',
@@ -45,7 +63,9 @@ const fieldOrder = [
 export default function EstimateStep1Form({
   onContinue,
   initialValues,
+  initialSpamCheck,
   onEdit,
+  checkServiceArea = checkEstimateServiceArea,
 }: EstimateStep1FormProps) {
   const [draft, setDraft] = useState<Draft>(() => ({
     first_name: '',
@@ -53,6 +73,7 @@ export default function EstimateStep1Form({
     email: '',
     phone: '',
     address: '',
+    city: '',
     item: '',
     issue_type: '',
     description: '',
@@ -62,10 +83,12 @@ export default function EstimateStep1Form({
   }));
   const [fieldErrors, setFieldErrors] = useState<EstimateStep1FieldErrors>({});
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [outsideArea, setOutsideArea] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [pending, setPending] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ field?: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   const inFlight = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
@@ -84,6 +107,7 @@ export default function EstimateStep1Form({
     const next = { ...draft, [field]: value };
     setDraft(next);
     setFormErrors([]);
+    setOutsideArea(false);
     onEdit?.();
     if (!attempted) return;
 
@@ -94,11 +118,7 @@ export default function EstimateStep1Form({
 
   function showErrors(errors: EstimateStep1Errors) {
     setFieldErrors(errors.fieldErrors);
-    // City has no control in Step 1, so a server error for it belongs in the summary.
-    setFormErrors([
-      ...errors.formErrors,
-      ...(errors.fieldErrors.city ? [errors.fieldErrors.city] : []),
-    ]);
+    setFormErrors(errors.formErrors);
     setFocusRequest({ field: fieldOrder.find((field) => errors.fieldErrors[field]) });
   }
 
@@ -108,6 +128,7 @@ export default function EstimateStep1Form({
     setAttempted(true);
     setFocusRequest(null);
     setFormErrors([]);
+    setOutsideArea(false);
     onEdit?.();
 
     const local = estimateStep1Schema.safeParse(draft);
@@ -141,8 +162,34 @@ export default function EstimateStep1Form({
         return;
       }
 
+      // Field checks pass first, then the city. Unavailable never means approved.
+      let inServiceArea: boolean;
       try {
-        await onContinue(local.data);
+        inServiceArea = await checkServiceArea(local.data.city, controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          showErrors({
+            fieldErrors: {},
+            formErrors: [
+              error instanceof ServiceAreaRateLimitedError
+                ? error.message
+                : 'We could not check whether we serve your city. Check your connection and try again.',
+            ],
+          });
+        }
+        return;
+      }
+      if (controller.signal.aborted) return;
+      if (!inServiceArea) {
+        setOutsideArea(true);
+        setFocusRequest({});
+        return;
+      }
+
+      try {
+        await onContinue(local.data, {
+          [ESTIMATE_HONEYPOT_FIELD]: honeypotRef.current?.value ?? '',
+        });
       } catch {
         if (!controller.signal.aborted) {
           showErrors({
@@ -183,7 +230,7 @@ export default function EstimateStep1Form({
         aria-busy={pending}
         className="mt-6"
       >
-        {formErrors.length > 0 && (
+        {(formErrors.length > 0 || outsideArea) && (
           <div
             ref={errorRef}
             tabIndex={-1}
@@ -192,8 +239,24 @@ export default function EstimateStep1Form({
             {formErrors.map((message, index) => (
               <ErrorBanner key={index} message={message} />
             ))}
+            {outsideArea && <OutsideServiceAreaError />}
           </div>
         )}
+        {/* Honeypot (SSPMW-95): off screen and skipped by keyboard and screen readers, so
+            only bots fill it in. Not display:none, which many bots know to skip. */}
+        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+          <label>
+            Leave this empty
+            <input
+              ref={honeypotRef}
+              type="text"
+              name={ESTIMATE_HONEYPOT_FIELD}
+              tabIndex={-1}
+              autoComplete="off"
+              defaultValue={initialSpamCheck?.[ESTIMATE_HONEYPOT_FIELD] ?? ''}
+            />
+          </label>
+        </div>
         <fieldset disabled={pending} className="grid min-w-0 grid-cols-1 gap-6 sm:grid-cols-2">
           <legend className="sr-only">Contact and repair details</legend>
           <Input
@@ -272,6 +335,17 @@ export default function EstimateStep1Form({
             error={fieldErrors.address}
           />
           <Input
+            label="City"
+            name="city"
+            value={draft.city}
+            onChange={(event) => updateField('city', event.target.value)}
+            autoComplete="address-level2"
+            placeholder="Carmichael"
+            required
+            maxLength={CITY_MAX_LENGTH}
+            error={fieldErrors.city}
+          />
+          <Input
             label="Item"
             name="item"
             value={draft.item}
@@ -328,7 +402,7 @@ export default function EstimateStep1Form({
           </div>
         </fieldset>
         <p className="type-body-sm mt-6 text-neutral-600">
-          We’ll confirm whether the address is within our service area before you submit.
+          We’ll check that we serve your city before you continue.
         </p>
         <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Link
@@ -346,5 +420,23 @@ export default function EstimateStep1Form({
         </p>
       </form>
     </section>
+  );
+}
+
+/** The shared error banner, with a call link the customer can tap on a phone. */
+function OutsideServiceAreaError() {
+  return (
+    <ErrorBanner title="Outside our service area" message={OUTSIDE_SERVICE_AREA_MESSAGE}>
+      <p className="type-body mt-2">
+        Call us at{' '}
+        <a
+          href={business.phoneHref}
+          className="inline-flex min-h-11 items-center rounded-sm text-walnut underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+        >
+          {business.phoneDisplay}
+        </a>{' '}
+        and we’ll let you know if we can help.
+      </p>
+    </ErrorBanner>
   );
 }
