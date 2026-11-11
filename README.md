@@ -219,6 +219,38 @@ overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
+### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
+
+The estimate page uses the existing shared `ConfirmationDialog` when a customer
+tries to leave through site links, Cancel, or browser Back/Forward with entered
+details or selected photos. Incomplete and invalid entries count as data; the
+hidden honeypot does not. Clearing all entered values and removing photos turns
+the guard off. Moving between estimate steps or same-page anchors does not prompt.
+
+**Cancel**, Escape, and closing the dialog keep the current step and all data.
+**Discard** resumes the intended navigation. Leaving unmounts the request page,
+clearing its in-memory details, photos, upload session, and handoff. Uploaded,
+unattached files remain subject to the existing abandoned-upload cleanup.
+
+Refresh, tab closing, and full document navigation use the browser's native
+`beforeunload` warning while data exists. Its wording and availability are
+browser-controlled, especially on mobile. No draft is persisted across a confirmed reload.
+
+`client/src/main.tsx` uses `createBrowserRouter` / `RouterProvider` so the existing
+App route tree supports `useBlocker`. Tests mounting the estimate page must likewise
+use a data router, such as `createMemoryRouter`.
+
+`useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
+SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
+before navigating to Thanks. It permits immediate navigation and disables both
+warnings. A new request must clear the old draft/photos and call `startNewRequest()`
+if reusing the same mounted page. The current photo handoff is not submission and
+remains protected. The success/reset contract is covered in hook tests; wiring it
+into the real submission flow remains pending SSPMW-53/70.
+
+Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
+The spec captures desktop and phone versions of the dialog in `test-results/`.
+
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
 Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),
