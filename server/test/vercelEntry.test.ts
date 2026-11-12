@@ -6,10 +6,11 @@ const db = vi.hoisted(() => ({
   insert: vi.fn(),
   select: vi.fn(),
   single: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock('../src/supabase.js', () => ({
-  createSupabaseAdmin: () => ({ from: db.from }),
+  createSupabaseAdmin: () => ({ from: db.from, rpc: db.rpc }),
   createAuthBackend: () => ({
     verifyToken: vi.fn(),
     loadProfile: vi.fn(),
@@ -46,6 +47,53 @@ afterEach(() => {
 });
 
 describe('Vercel startup contact wiring', () => {
+  it('wires final estimate saving and both emails through the exported app', async () => {
+    db.from.mockImplementation((table: string) => ({
+      select: () => ({
+        eq: () =>
+          table === 'service_cities'
+            ? Promise.resolve({ data: [{ name: 'Carmichael' }], error: null })
+            : { maybeSingle: async () => ({ data: null, error: null }) },
+      }),
+    }));
+    db.rpc.mockResolvedValue({
+      data: {
+        id: '60000000-0000-4000-8000-000000000002',
+        inquiry_number: 'INQ-1049',
+        created_at: '2026-11-11T12:00:00Z',
+        created: true,
+      },
+      error: null,
+    });
+    const email = vi.fn<typeof fetch>(async () => Response.json({ id: 'email-id' }));
+    vi.stubGlobal('fetch', email);
+    const { default: app } = await import('../../api/index.js');
+    await request(app)
+      .post('/api/estimates')
+      .send({
+        submission_id: '60000000-0000-4000-8000-000000000001',
+        first_name: 'Test',
+        last_name: 'Visitor',
+        email: 'visitor@example.com',
+        phone: '9165550142',
+        address: '123 Main St',
+        city: 'Carmichael',
+        item: 'Chair',
+        issue_type: 'loose_joints',
+        description: 'Loose leg',
+        lead_source: 'google',
+        pmw_extra: '',
+      })
+      .expect(201, { success: true, inquiry_number: 'INQ-1049' });
+    expect(db.rpc).toHaveBeenCalledWith(
+      'submit_estimate_request',
+      expect.objectContaining({
+        p_details: expect.objectContaining({ lead_source: 'google' }),
+        p_storage_paths: [],
+      }),
+    );
+    expect(email).toHaveBeenCalledTimes(2);
+  });
   it('saves and emails a valid submission through the exported app', async () => {
     const email = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'email-1' })));
     vi.stubGlobal('fetch', email);
@@ -111,9 +159,9 @@ describe('Vercel startup contact wiring', () => {
     const from = (ip: string) =>
       request(app).post('/api/estimates').set('X-Forwarded-For', ip).send({ item: 'Chair' });
 
-    await from('203.0.113.1').expect(501);
+    await from('203.0.113.1').expect(400);
     await from('203.0.113.1').expect(429);
-    await from('203.0.113.2').expect(501);
+    await from('203.0.113.2').expect(400);
   });
 });
 

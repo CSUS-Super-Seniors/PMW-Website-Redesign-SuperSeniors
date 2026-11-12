@@ -1,0 +1,343 @@
+import { randomUUID } from 'node:crypto';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import request from 'supertest';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { estimateSubmissionSchema } from '@pmw/validation';
+import { createApp } from '../src/app.js';
+import { loadConfig } from '../src/config.js';
+import { PhotoRequestError } from '../src/estimatePhotos.js';
+import {
+  createEstimateSubmissionBackend,
+  createEstimateSubmitHandler,
+  SubmissionConflictError,
+  type EstimateSubmissionBackend,
+} from '../src/estimateSubmission.js';
+
+const input = {
+  submission_id: '60000000-0000-4000-8000-000000000001',
+  first_name: '  Zoë 李  ',
+  last_name: 'O’Connor',
+  email: ' Zoe+repairs@Example.com ',
+  phone: '(916) 555-0142',
+  text_ok: true,
+  address: ' 123 Main St, Apt 2 ',
+  city: 'Carmichael',
+  item: 'Dining chair',
+  issue_type: 'loose_joints',
+  description: 'A wobbly leg.\n<script>visitor content</script>',
+  lead_source: 'referral',
+  photoSession: null,
+  photos: [],
+};
+const saved = {
+  id: '60000000-0000-4000-8000-000000000002',
+  inquiry_number: 'INQ-1049',
+  created_at: '2026-11-11T12:00:00Z',
+};
+const config = loadConfig({
+  CLIENT_ORIGINS: 'http://localhost:5173',
+  SUPABASE_URL: 'https://example.supabase.co',
+  SUPABASE_SERVICE_ROLE_KEY: 'test-secret',
+});
+const auth = { verifyToken: vi.fn(), loadProfile: vi.fn() };
+
+function fixture(inArea = true) {
+  const backend = {
+    findSaved: vi.fn<EstimateSubmissionBackend['findSaved']>().mockResolvedValue(null),
+    save: vi.fn<EstimateSubmissionBackend['save']>().mockResolvedValue({ ...saved, created: true }),
+    sendReceipt: vi.fn<EstimateSubmissionBackend['sendReceipt']>().mockResolvedValue(undefined),
+    sendOwnerNotice: vi
+      .fn<EstimateSubmissionBackend['sendOwnerNotice']>()
+      .mockResolvedValue(undefined),
+  };
+  const photos = {
+    prepareSubmission: vi.fn(async () => ({ sessionId: null, storagePaths: [] as string[] })),
+  };
+  const area = { isInServiceArea: vi.fn(async () => inArea) };
+  const app = createApp(config, auth, undefined, {
+    serviceArea: area,
+    estimateSubmit: createEstimateSubmitHandler(backend, photos),
+  });
+  return { app, backend, photos, area };
+}
+
+afterEach(() => vi.restoreAllMocks());
+
+describe('final estimate submission', () => {
+  it('saves unchanged customer fields, then requests both emails and returns the INQ number', async () => {
+    const f = fixture();
+    const response = await request(f.app)
+      .post('/api/estimates')
+      .send({ ...input, pmw_extra: '' })
+      .expect(201);
+    expect(response.body).toEqual({ success: true, inquiry_number: saved.inquiry_number });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(f.backend.save).toHaveBeenCalledWith(input, expect.stringMatching(/^[a-f0-9]{64}$/), {
+      sessionId: null,
+      storagePaths: [],
+    });
+    expect(f.backend.sendReceipt).toHaveBeenCalledWith({ ...saved, created: true }, input);
+    expect(f.backend.sendOwnerNotice).toHaveBeenCalledWith({ ...saved, created: true }, input);
+    expect(f.backend.save.mock.invocationCallOrder[0]).toBeLessThan(
+      f.backend.sendReceipt.mock.invocationCallOrder[0],
+    );
+    expect(f.backend.save.mock.invocationCallOrder[0]).toBeLessThan(
+      f.backend.sendOwnerNotice.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(['receipt', 'owner', 'both'])(
+    'keeps the saved result and success response when %s email fails',
+    async (failure) => {
+      const f = fixture();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      if (failure !== 'owner')
+        f.backend.sendReceipt.mockRejectedValue(new Error('private Resend details'));
+      if (failure !== 'receipt')
+        f.backend.sendOwnerNotice.mockRejectedValue(new Error('private API key'));
+      const response = await request(f.app).post('/api/estimates').send(input).expect(201);
+      expect(response.body).toEqual({ success: true, inquiry_number: saved.inquiry_number });
+      expect(f.backend.save).toHaveBeenCalledTimes(1);
+      expect(f.backend.sendReceipt).toHaveBeenCalledTimes(1);
+      expect(f.backend.sendOwnerNotice).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledTimes(failure === 'both' ? 2 : 1);
+      const logs = JSON.stringify(log.mock.calls);
+      expect(logs).toContain(saved.inquiry_number);
+      expect(logs).not.toContain('private');
+      expect(logs).not.toContain(input.email);
+    },
+  );
+
+  it.each([
+    { ...input, lead_source: 'tampered' },
+    { ...input, lead_source: undefined },
+    { ...input, email: 'bad' },
+    { ...input, submission_id: 'bad' },
+    { ...input, status: 'converted' },
+    { ...input, in_service_area: true },
+    { ...input, customer_id: randomUUID() },
+    { ...input, photos: [{ id: randomUUID(), storagePath: 'path', receipt: 'proof' }] },
+  ])('refuses invalid input without saving or emailing: %j', async (body) => {
+    const f = fixture();
+    await request(f.app).post('/api/estimates').send(body).expect(400);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+    expect(f.photos.prepareSubmission).not.toHaveBeenCalled();
+  });
+
+  it('refuses outside-area and unavailable-area submissions without database writes', async () => {
+    const f = fixture(false);
+    await request(f.app).post('/api/estimates').send(input).expect(422);
+    f.area.isInServiceArea.mockRejectedValue(new Error('private database error'));
+    await request(f.app).post('/api/estimates').send(input).expect(503);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendOwnerNotice).not.toHaveBeenCalled();
+  });
+
+  it('drops spam and rate-limits repeated attempts before saving', async () => {
+    const f = fixture();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 5; i++)
+      await request(f.app)
+        .post('/api/estimates')
+        .send({ ...input, pmw_extra: 'bot' })
+        .expect(201);
+    await request(f.app).post('/api/estimates').send(input).expect(429);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+  });
+
+  it('verifies photos before the transaction and never saves on invalid receipts', async () => {
+    const f = fixture();
+    f.photos.prepareSubmission.mockRejectedValueOnce(
+      new PhotoRequestError('Invalid photo authorization.', 401),
+    );
+    await request(f.app).post('/api/estimates').send(input).expect(401);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendOwnerNotice).not.toHaveBeenCalled();
+  });
+
+  it('returns a sanitized retryable error when lookup or atomic save fails, without email', async () => {
+    const f = fixture();
+    f.backend.findSaved.mockRejectedValueOnce(new Error('private DB details'));
+    const first = await request(f.app).post('/api/estimates').send(input).expect(503);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    f.backend.save.mockRejectedValueOnce(new Error('private constraint details'));
+    const second = await request(f.app).post('/api/estimates').send(input).expect(503);
+    expect(first.text + second.text).not.toContain('private');
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+  });
+
+  it('returns the original result on exact retry without revalidating expired photos or re-emailing', async () => {
+    const f = fixture();
+    f.backend.findSaved.mockResolvedValue(saved);
+    await request(f.app).post('/api/estimates').send(input).expect(201, {
+      success: true,
+      inquiry_number: saved.inquiry_number,
+    });
+    expect(f.photos.prepareSubmission).not.toHaveBeenCalled();
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+    expect(f.backend.sendOwnerNotice).not.toHaveBeenCalled();
+  });
+
+  it('does not re-email a concurrent submission already committed by another server', async () => {
+    const f = fixture();
+    f.backend.save.mockResolvedValue({ ...saved, created: false });
+    await request(f.app).post('/api/estimates').send(input).expect(201);
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+    expect(f.backend.sendOwnerNotice).not.toHaveBeenCalled();
+  });
+
+  it('refuses reuse of a submission ID with edited details', async () => {
+    const f = fixture();
+    f.backend.findSaved.mockRejectedValue(new SubmissionConflictError());
+    await request(f.app).post('/api/estimates').send(input).expect(409);
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+  });
+});
+
+function backendFixture(emailEnabled = true) {
+  const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+  const eq = vi.fn(() => ({ maybeSingle }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+  const rpc = vi.fn().mockResolvedValue({ data: { ...saved, created: true }, error: null });
+  const fetchEmail = vi.fn<typeof fetch>(async () => Response.json({ id: 'email-id' }));
+  const backend = createEstimateSubmissionBackend(
+    { from, rpc } as unknown as Pick<SupabaseClient, 'from' | 'rpc'>,
+    emailEnabled
+      ? {
+          apiKey: 'test-key',
+          from: 'contact@pmw.example',
+          to: ['todd@example.com', 'girlie@example.com'],
+        }
+      : undefined,
+    fetchEmail,
+  );
+  return { backend, maybeSingle, rpc, fetchEmail };
+}
+
+describe('submission persistence and Resend adapter', () => {
+  it('uses one RPC for inquiry and photo links, with no browser-supplied status or customer', async () => {
+    const f = backendFixture();
+    const data = estimateSubmissionSchema.parse(input);
+    const uploads = { sessionId: randomUUID(), storagePaths: ['retained/photo.jpg'] };
+    await f.backend.save(data, 'a'.repeat(64), uploads);
+    const { submission_id, photoSession, photos, ...details } = data;
+    void photoSession;
+    void photos;
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith('submit_estimate_request', {
+      p_submission_id: submission_id,
+      p_submission_hash: 'a'.repeat(64),
+      p_details: details,
+      p_session_id: uploads.sessionId,
+      p_storage_paths: uploads.storagePaths,
+    });
+  });
+
+  it('checks the exact saved payload before returning an existing inquiry', async () => {
+    const f = backendFixture();
+    f.maybeSingle.mockResolvedValue({
+      data: { ...saved, submission_hash: 'original' },
+      error: null,
+    });
+    expect(await f.backend.findSaved(input.submission_id, 'original')).toEqual(saved);
+    await expect(f.backend.findSaved(input.submission_id, 'edited')).rejects.toBeInstanceOf(
+      SubmissionConflictError,
+    );
+  });
+
+  it('turns database photo conflicts into a safe error without exposing constraint details', async () => {
+    const f = backendFixture();
+    f.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'P7501', message: 'private storage path' },
+    });
+    await expect(
+      f.backend.save(estimateSubmissionSchema.parse(input), 'a'.repeat(64), {
+        sessionId: null,
+        storagePaths: [],
+      }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'Could not attach these photos. Return to photos and try again.',
+    });
+  });
+
+  it.each([
+    { data: null, error: { code: 'private' } },
+    { data: { created: true }, error: null },
+    { data: { ...saved, created: null }, error: null },
+  ])('does not report success on a failed or incomplete RPC: %j', async (result) => {
+    const f = backendFixture();
+    f.rpc.mockResolvedValueOnce(result);
+    await expect(
+      f.backend.save(estimateSubmissionSchema.parse(input), 'a'.repeat(64), {
+        sessionId: null,
+        storagePaths: [],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('sends separate plain-text emails with INQ numbers, fixed From and distinct idempotency keys', async () => {
+    const f = backendFixture();
+    const details = estimateSubmissionSchema.parse(input);
+    await Promise.all([
+      f.backend.sendReceipt(saved, details),
+      f.backend.sendOwnerNotice(saved, details),
+    ]);
+    const bodies = f.fetchEmail.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+    expect(bodies[0]).toMatchObject({
+      to: ['Zoe+repairs@Example.com'],
+      subject: 'Estimate request received',
+    });
+    expect(bodies[1]).toMatchObject({
+      to: ['todd@example.com', 'girlie@example.com'],
+      subject: `New estimate request: ${saved.inquiry_number}`,
+      reply_to: 'Zoe+repairs@Example.com',
+    });
+    for (const [index, [, options]] of f.fetchEmail.mock.calls.entries()) {
+      expect(options?.signal).toBeInstanceOf(AbortSignal);
+      expect(options?.headers).toMatchObject({
+        'Idempotency-Key': `estimate/${saved.id}/${index === 0 ? 'receipt' : 'owner'}`,
+      });
+      expect(bodies[index].from).toBe('contact@pmw.example');
+      expect(bodies[index].html).toBeUndefined();
+      expect(bodies[index].text).toContain(saved.inquiry_number);
+      expect(bodies[index].text).toContain(input.description);
+      expect(bodies[index].text).not.toContain('receipt:');
+    }
+  });
+
+  it.each(['http', 'network', 'malformed', 'missing-id'])(
+    'rejects %s email failure so the handler can log it',
+    async (failure) => {
+      const f = backendFixture();
+      if (failure === 'http')
+        f.fetchEmail.mockResolvedValueOnce(Response.json({}, { status: 503 }));
+      if (failure === 'network')
+        f.fetchEmail.mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError'));
+      if (failure === 'malformed') f.fetchEmail.mockResolvedValueOnce(new Response('{'));
+      if (failure === 'missing-id') f.fetchEmail.mockResolvedValueOnce(Response.json({}));
+      await expect(
+        f.backend.sendReceipt(saved, estimateSubmissionSchema.parse(input)),
+      ).rejects.toThrow();
+    },
+  );
+
+  it('still saves and returns success with missing email configuration', async () => {
+    const f = backendFixture(false);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const app = createApp(config, auth, undefined, {
+      serviceArea: { isInServiceArea: async () => true },
+      estimateSubmit: createEstimateSubmitHandler(f.backend, {
+        prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
+      }),
+    });
+    await request(app).post('/api/estimates').send(input).expect(201);
+    expect(f.rpc).toHaveBeenCalledTimes(1);
+    expect(f.fetchEmail).not.toHaveBeenCalled();
+  });
+});

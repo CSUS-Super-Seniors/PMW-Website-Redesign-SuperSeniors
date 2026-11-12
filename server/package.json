@@ -17,7 +17,8 @@
     "cleanup:estimate-photos": "tsx scripts/cleanup-estimate-photos.ts",
     "verify:password-reset": "tsx scripts/verify-password-reset.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "test:seed": "vitest run test/seed.db.test.ts"
+    "test:seed": "vitest run test/seed.db.test.ts",
+    "test:submission-db": "vitest run test/estimateSubmission.db.test.ts"
   },
   "dependencies": {
     "@pmw/validation": "0.1.0",

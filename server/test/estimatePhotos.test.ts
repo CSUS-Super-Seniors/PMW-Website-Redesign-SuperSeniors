@@ -114,6 +114,58 @@ function storageFixture() {
 }
 
 describe('private photo storage backend', () => {
+  it('prepares only verified retained uploads before creating an inquiry, without database mutations', async () => {
+    const f = storageFixture();
+    const session = f.backend.startSession();
+    const retained = await f.backend.upload(session.token, id, jpeg, 'image/jpeg');
+    const removed = await f.backend.upload(session.token, inquiry, jpeg, 'image/jpeg');
+    expect(await f.backend.prepareSubmission(session.token, [retained])).toEqual({
+      sessionId: expect.any(String),
+      storagePaths: [retained.storagePath],
+    });
+    expect(f.rpc).not.toHaveBeenCalled();
+    expect(f.from).not.toHaveBeenCalled();
+    expect(f.rows.size).toBe(0);
+    expect(f.objects.has(removed.storagePath)).toBe(true);
+  });
+  it('rejects foreign, expired, duplicate, changed, missing and tampered photos before inquiry creation', async () => {
+    const f = storageFixture();
+    const session = f.backend.startSession();
+    const photo = await f.backend.upload(session.token, id, jpeg, 'image/jpeg');
+    await expect(f.backend.prepareSubmission('', [photo])).rejects.toThrow('required');
+    await expect(
+      f.backend.prepareSubmission(f.backend.startSession().token, [photo]),
+    ).rejects.toThrow('does not belong');
+    await expect(f.backend.prepareSubmission(session.token, [photo, photo])).rejects.toThrow(
+      'Duplicate',
+    );
+    await expect(
+      f.backend.prepareSubmission(session.token, [{ ...photo, receipt: `${photo.receipt}x` }]),
+    ).rejects.toThrow('authorization');
+    f.objects.set(photo.storagePath, Buffer.from('changed'));
+    await expect(f.backend.prepareSubmission(session.token, [photo])).rejects.toThrow(
+      'missing or changed',
+    );
+    f.objects.delete(photo.storagePath);
+    await expect(f.backend.prepareSubmission(session.token, [photo])).rejects.toThrow(
+      'missing or changed',
+    );
+    f.expire();
+    await expect(f.backend.prepareSubmission(session.token, [])).rejects.toThrow('expired');
+    expect(f.rpc).not.toHaveBeenCalled();
+    expect(f.from).not.toHaveBeenCalled();
+  });
+  it('prepares a no-photo submission with or without an existing live session', async () => {
+    const f = storageFixture();
+    expect(await f.backend.prepareSubmission('', [])).toEqual({
+      sessionId: null,
+      storagePaths: [],
+    });
+    expect(await f.backend.prepareSubmission(f.backend.startSession().token, [])).toEqual({
+      sessionId: expect.any(String),
+      storagePaths: [],
+    });
+  });
   it('confirms the original finalized handoff after expiration without uploads or mutations', async () => {
     const f = storageFixture();
     const original = f.backend.startSession();
@@ -362,6 +414,7 @@ function appFixture(role = 'owner') {
   const backend = {
     startSession: vi.fn(() => ({ token: 'session', expiresAt: 1900000000 })),
     renewSession: vi.fn(() => ({ token: 'renewed-session', expiresAt: 1900086400 })),
+    prepareSubmission: vi.fn(async () => ({ sessionId: null, storagePaths: [] })),
     upload: vi.fn(async () => ({ id, storagePath: 'server/path.jpg', receipt: 'proof' })),
     attachPhotos: vi.fn(),
     viewPhoto: vi.fn(async () => ({ signedUrl: 'https://storage.example/signed', expiresIn: 300 })),
