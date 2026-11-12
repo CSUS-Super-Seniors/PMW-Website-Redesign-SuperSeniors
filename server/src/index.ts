@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
+import { createInquiryBackend } from './inquiries.js';
 import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
@@ -24,6 +25,7 @@ try {
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
     serviceArea: createServiceAreaBackend(supabase),
     photos,
+    inquiries: createInquiryBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
       createEstimateSubmissionBackend(supabase, config.contactEmail),
       photos,

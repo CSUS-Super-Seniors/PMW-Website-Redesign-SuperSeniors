@@ -1,4 +1,5 @@
 import { createEstimatePhotosBackend } from '../server/src/estimatePhotos.js';
+import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
@@ -24,6 +25,7 @@ const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleK
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
   photos,
+  inquiries: createInquiryBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
     createEstimateSubmissionBackend(supabase, config.contactEmail),
     photos,
