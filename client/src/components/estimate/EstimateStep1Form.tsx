@@ -34,6 +34,8 @@ export interface EstimateStep1FormProps {
   initialValues?: EstimateStep1Input;
   initialSpamCheck?: EstimateSpamCheck;
   onEdit?: () => void;
+  /** Reports current visible form data, including incomplete or invalid entries. */
+  onHasDataChange?: (hasData: boolean) => void;
   /** Replaced in tests. Defaults to the server check against `service_cities`. */
   checkServiceArea?: CheckServiceArea;
 }
@@ -62,6 +64,7 @@ export default function EstimateStep1Form({
   initialValues,
   initialSpamCheck,
   onEdit,
+  onHasDataChange,
   checkServiceArea = checkEstimateServiceArea,
 }: EstimateStep1FormProps) {
   const [draft, setDraft] = useState<Draft>(() => ({
@@ -88,6 +91,13 @@ export default function EstimateStep1Form({
   const errorRef = useRef<HTMLDivElement>(null);
   const inFlight = useRef(false);
   const requestRef = useRef<AbortController | null>(null);
+  const hasData = Object.values(draft).some((value) =>
+    typeof value === 'string' ? value.length > 0 : value === true,
+  );
+
+  useEffect(() => {
+    onHasDataChange?.(hasData);
+  }, [hasData, onHasDataChange]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
