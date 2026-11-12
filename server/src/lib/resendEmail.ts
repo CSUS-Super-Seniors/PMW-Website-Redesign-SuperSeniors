@@ -19,8 +19,10 @@ export interface ResendCredentials {
 export interface ResendMessage {
   to: string[];
   subject: string;
-  /** Plain text only, so customer text never becomes email HTML. */
+  /** Plain-text body, also used as the fallback when HTML is supplied. */
   text: string;
+  /** Optional template HTML; the caller must escape all customer text. */
+  html?: string;
   replyTo?: string | string[];
   /** Within 24 hours, a request with the same key never sends a second email. */
   idempotencyKey: string;
@@ -52,6 +54,7 @@ export async function sendResendEmail(
       to: message.to,
       subject: message.subject,
       text: message.text,
+      ...(message.html ? { html: message.html } : {}),
       ...(message.replyTo?.length ? { reply_to: message.replyTo } : {}),
     }),
   });

@@ -281,7 +281,7 @@ describe('submission persistence and Resend adapter', () => {
     ).rejects.toThrow();
   });
 
-  it('sends separate plain-text emails with INQ numbers, fixed From and distinct idempotency keys', async () => {
+  it('sends a readable receipt and owner email with distinct idempotency keys', async () => {
     const f = backendFixture();
     const details = estimateSubmissionSchema.parse(input);
     await Promise.all([
@@ -292,6 +292,8 @@ describe('submission persistence and Resend adapter', () => {
     expect(bodies[0]).toMatchObject({
       to: ['Zoe+repairs@Example.com'],
       subject: 'Estimate request received',
+      reply_to: ['todd@example.com', 'girlie@example.com'],
+      html: expect.stringContaining('Hi Zoë 李,'),
     });
     expect(bodies[1]).toMatchObject({
       to: ['todd@example.com', 'girlie@example.com'],
@@ -304,12 +306,70 @@ describe('submission persistence and Resend adapter', () => {
         'Idempotency-Key': `estimate/${saved.id}/${index === 0 ? 'receipt' : 'owner'}`,
       });
       expect(bodies[index].from).toBe('contact@pmw.example');
-      expect(bodies[index].html).toBeUndefined();
       expect(bodies[index].text).toContain(saved.inquiry_number);
-      expect(bodies[index].text).toContain(input.description);
       expect(bodies[index].text).not.toContain('receipt:');
+      expect(bodies[index].attachments).toBeUndefined();
     }
+    expect(bodies[0].text).toContain('Hi Zoë 李,');
+    expect(bodies[0].text).toContain('Item: Dining chair');
+    expect(bodies[0].text).toContain('(916) 643-5686');
+    expect(bodies[0].text).not.toContain(input.description);
+    expect(bodies[0].text).not.toContain(input.address);
+    expect(bodies[1].html).toBeUndefined();
+    expect(bodies[1].text).toContain(input.description);
   });
+
+  it.each([false, true])(
+    'submits through the real email adapter, keeps the save, and skips emails on retry (receipt failure: %s)',
+    async (receiptFails) => {
+      const f = backendFixture();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      f.fetchEmail.mockImplementation(async (_url, options) => {
+        const message = JSON.parse(String(options?.body));
+        return receiptFails && message.to[0] === input.email.trim()
+          ? Response.json({ message: 'private provider details' }, { status: 503 })
+          : Response.json({ id: 'email-id' });
+      });
+      const app = createApp(config, auth, undefined, {
+        serviceArea: { isInServiceArea: async () => true },
+        estimateSubmit: createEstimateSubmitHandler(f.backend, {
+          prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
+        }),
+      });
+      await request(app).post('/api/estimates').send(input).expect(201, {
+        success: true,
+        inquiry_number: saved.inquiry_number,
+      });
+      expect(f.rpc).toHaveBeenCalledTimes(1);
+      expect(f.fetchEmail).toHaveBeenCalledTimes(2);
+      expect(f.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+        f.fetchEmail.mock.invocationCallOrder[0],
+      );
+      const receipt = JSON.parse(String(f.fetchEmail.mock.calls[0][1]?.body));
+      expect(receipt.to).toEqual([input.email.trim()]);
+      expect(receipt.html).toContain(saved.inquiry_number);
+      expect(receipt.text).toContain('(916) 643-5686');
+      expect(log).toHaveBeenCalledTimes(receiptFails ? 1 : 0);
+      if (receiptFails)
+        expect(log).toHaveBeenCalledWith('Estimate email failed', {
+          inquiryId: saved.id,
+          inquiryNumber: saved.inquiry_number,
+          notification: 'receipt',
+        });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private provider details');
+      const hash = f.rpc.mock.calls[0][1].p_submission_hash;
+      f.maybeSingle.mockResolvedValueOnce({
+        data: { ...saved, submission_hash: hash },
+        error: null,
+      });
+      await request(app).post('/api/estimates').send(input).expect(201, {
+        success: true,
+        inquiry_number: saved.inquiry_number,
+      });
+      expect(f.rpc).toHaveBeenCalledTimes(1);
+      expect(f.fetchEmail).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it.each(['http', 'network', 'malformed', 'missing-id'])(
     'rejects %s email failure so the handler can log it',
