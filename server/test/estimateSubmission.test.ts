@@ -198,7 +198,7 @@ describe('final estimate submission', () => {
   });
 });
 
-function backendFixture(emailEnabled = true) {
+function backendFixture(emailEnabled = true, portalOrigin = 'https://portal.example') {
   const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
   const eq = vi.fn(() => ({ maybeSingle }));
   const select = vi.fn(() => ({ eq }));
@@ -215,6 +215,7 @@ function backendFixture(emailEnabled = true) {
         }
       : undefined,
     fetchEmail,
+    portalOrigin,
   );
   return { backend, maybeSingle, rpc, fetchEmail };
 }
@@ -281,7 +282,7 @@ describe('submission persistence and Resend adapter', () => {
     ).rejects.toThrow();
   });
 
-  it('sends separate plain-text emails with INQ numbers, fixed From and distinct idempotency keys', async () => {
+  it('sends the owner summary and customer email with distinct recipients and idempotency keys', async () => {
     const f = backendFixture();
     const details = estimateSubmissionSchema.parse(input);
     await Promise.all([
@@ -306,10 +307,96 @@ describe('submission persistence and Resend adapter', () => {
       expect(bodies[index].from).toBe('contact@pmw.example');
       expect(bodies[index].html).toBeUndefined();
       expect(bodies[index].text).toContain(saved.inquiry_number);
-      expect(bodies[index].text).toContain(input.description);
+      expect(bodies[index].attachments).toBeUndefined();
       expect(bodies[index].text).not.toContain('receipt:');
     }
+    expect(bodies[0].text).toContain(input.description);
+    expect(bodies[1].text).not.toContain(input.description);
+    expect(bodies[1].text).not.toContain(input.address);
+    expect(bodies[1].text).toContain('Customer: Zoë 李 O’Connor');
+    expect(bodies[1].text).toContain('What happened: Loose joints / wobbling');
+    expect(bodies[1].text).toContain(`https://portal.example/portal/inquiries/${saved.id}`);
   });
+
+  it.each([false, true])(
+    'sends the owner notice after saving and skips both emails on exact retry (owner failure: %s)',
+    async (ownerFails) => {
+      const f = backendFixture();
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      f.fetchEmail.mockImplementation(async (_url, options) => {
+        const message = JSON.parse(String(options?.body));
+        return ownerFails && message.to[0] === 'todd@example.com'
+          ? Response.json({ message: 'private provider error' }, { status: 503 })
+          : Response.json({ id: 'email-id' });
+      });
+      const app = createApp(config, auth, undefined, {
+        serviceArea: { isInServiceArea: async () => true },
+        estimateSubmit: createEstimateSubmitHandler(f.backend, {
+          prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
+        }),
+      });
+      await request(app).post('/api/estimates').send(input).expect(201, {
+        success: true,
+        inquiry_number: saved.inquiry_number,
+      });
+      expect(f.rpc).toHaveBeenCalledTimes(1);
+      expect(f.fetchEmail).toHaveBeenCalledTimes(2);
+      expect(f.rpc.mock.invocationCallOrder[0]).toBeLessThan(
+        f.fetchEmail.mock.invocationCallOrder[0],
+      );
+      const owner = JSON.parse(String(f.fetchEmail.mock.calls[1][1]?.body));
+      expect(owner.to).toEqual(['todd@example.com', 'girlie@example.com']);
+      expect(owner.text).toContain(`https://portal.example/portal/inquiries/${saved.id}`);
+      expect(owner.attachments).toBeUndefined();
+      expect(log).toHaveBeenCalledTimes(ownerFails ? 1 : 0);
+      if (ownerFails)
+        expect(log).toHaveBeenCalledWith('Estimate email failed', {
+          inquiryId: saved.id,
+          inquiryNumber: saved.inquiry_number,
+          notification: 'owner',
+        });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private provider error');
+      const hash = f.rpc.mock.calls[0][1].p_submission_hash;
+      f.maybeSingle.mockResolvedValueOnce({
+        data: { ...saved, submission_hash: hash },
+        error: null,
+      });
+      await request(app).post('/api/estimates').send(input).expect(201, {
+        success: true,
+        inquiry_number: saved.inquiry_number,
+      });
+      expect(f.rpc).toHaveBeenCalledTimes(1);
+      expect(f.fetchEmail).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(['', 'not-a-url', 'https://portal.example/path'])(
+    'keeps the saved result and customer receipt when the portal setting is unusable: %s',
+    async (portalOrigin) => {
+      const f = backendFixture(true, portalOrigin);
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const app = createApp(config, auth, undefined, {
+        serviceArea: { isInServiceArea: async () => true },
+        estimateSubmit: createEstimateSubmitHandler(f.backend, {
+          prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
+        }),
+      });
+      await request(app).post('/api/estimates').send(input).expect(201, {
+        success: true,
+        inquiry_number: saved.inquiry_number,
+      });
+      expect(f.rpc).toHaveBeenCalledTimes(1);
+      expect(f.fetchEmail).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(String(f.fetchEmail.mock.calls[0][1]?.body)).to).toEqual([
+        input.email.trim(),
+      ]);
+      expect(log).toHaveBeenCalledWith('Estimate email failed', {
+        inquiryId: saved.id,
+        inquiryNumber: saved.inquiry_number,
+        notification: 'owner',
+      });
+    },
+  );
 
   it.each(['http', 'network', 'malformed', 'missing-id'])(
     'rejects %s email failure so the handler can log it',

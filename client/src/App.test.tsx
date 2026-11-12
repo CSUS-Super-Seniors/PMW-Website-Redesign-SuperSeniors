@@ -72,6 +72,7 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp('/estimate');
 
+    // Form tests cover typing; seed this draft without per-key input events.
     for (const [label, value] of [
       ['First name', 'Ana'],
       ['Last name', 'García'],
@@ -82,7 +83,7 @@ describe('App', () => {
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
-      await user.type(screen.getByLabelText(label), value);
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');

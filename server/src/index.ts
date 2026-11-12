@@ -27,7 +27,12 @@ try {
     photos,
     inquiries: createInquiryBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
-      createEstimateSubmissionBackend(supabase, config.contactEmail),
+      createEstimateSubmissionBackend(
+        supabase,
+        config.contactEmail,
+        fetch,
+        config.ownerPortalOrigin,
+      ),
       photos,
     ),
   }).listen(config.port, '0.0.0.0', () => {

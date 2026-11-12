@@ -27,7 +27,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   photos,
   inquiries: createInquiryBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
-    createEstimateSubmissionBackend(supabase, config.contactEmail),
+    createEstimateSubmissionBackend(supabase, config.contactEmail, fetch, config.ownerPortalOrigin),
     photos,
   ),
 });

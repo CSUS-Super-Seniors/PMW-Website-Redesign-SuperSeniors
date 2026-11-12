@@ -66,18 +66,19 @@ jobs and local development commands are unchanged.
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 
-| Variable                    | Purpose                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| `PORT`                      | API port (default 3001)                                                                     |
-| `NODE_ENV`                  | `development` locally                                                                       |
-| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
-| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
-| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
-| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
-| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
-| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
-| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
+| Variable                    | Purpose                                                                                                         |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `PORT`                      | API port (default 3001)                                                                                         |
+| `NODE_ENV`                  | `development` locally                                                                                           |
+| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)                           |
+| `OWNER_PORTAL_ORIGIN`       | Exact HTTP(S) origin hosting owner inquiry details; `http://localhost:5173` locally. Required for owner notices |
+| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`                                 |
+| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                                                 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser                     |
+| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`                        |
+| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)                                |
+| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed                           |
+| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it                     |
 
 ### Client (`client/.env`)
 
@@ -327,7 +328,8 @@ email error cannot fail or undo the save. Logs include only inquiry ID/number an
 failed notification kind. Exact submission retries never resend mail, including after
 the provider's idempotency window. Delivery is best effort: a crash after commit or an
 email failure has no automatic retry worker in this story. Resend acknowledgement is
-not proof of inbox delivery. N1/N2's separate stories may refine message content.
+not proof of inbox delivery. SSPMW-206 supplies the owner summary and detail link below;
+SSPMW-197 refines the customer receipt on its separate branch.
 
 Run the ordinary checks plus database tests against local Supabase with all migrations:
 
@@ -353,6 +355,55 @@ with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized 
 Retry the original request and confirm the same INQ number with no duplicate inquiry or
 emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
 and its success/error presentation, including desktop/phone screenshots.
+
+### Owner estimate notice (SSPMW-206 / SSPMW-211)
+
+`server/src/ownerNoticeEmail.ts` builds the plain-text summary sent to
+`CONTACT_OWNER_EMAILS` after a new estimate is committed. It includes the saved INQ
+number, customer name, item, city, a readable label for what happened, and a direct
+link to `/portal/inquiries/<saved inquiry UUID>`. The summary omits contact fields,
+service addresses, free-form descriptions, internal notes and photo credentials.
+Photos are never attached. Full details and private photo viewing stay in the
+owner-only portal. N9 (SSPMW-173) will provide the shared branded layout once available.
+
+Set `OWNER_PORTAL_ORIGIN` in `server/.env` and in the intended Vercel environment.
+Use the exact HTTP(S) origin that hosts the SSPMW-144 detail page, with no path,
+trailing slash, query, fragment or credentials. For local testing, use
+`http://localhost:5173`. A preview needs its actual preview-site origin while the
+detail page is still unmerged; a production or staging origin must host the same
+integrated detail route. Restart the server after changing this setting.
+
+The origin comes only from server configuration, never a request header or submitted
+field. The portal and sender share `shared/src/inquiryLinks.ts` so both use the same
+encoded inquiry path. The link contains the inquiry ID, with no login token or signed
+photo URL. A signed-out owner goes through staff login and returns to that inquiry;
+an employee remains blocked by the owner-role check.
+
+The notice uses the shared Resend sender, the existing verified From address, and a
+per-inquiry `estimate/<UUID>/owner` idempotency key. Missing or invalid portal settings
+fail only the owner send after saving; they do not stop startup, undo the inquiry,
+block the independent customer receipt, or change the successful HTTP 201 response.
+The server logs only the inquiry identifiers and failed notification kind. The existing
+exact-payload retry path never sends either email again, including after a send failure.
+
+Focused server checks:
+`npm run test -w server -- test/ownerNoticeEmail.test.ts test/estimateSubmission.test.ts test/vercelEntry.test.ts test/inquiries.test.ts test/inquiryDetailBackend.test.ts`.
+The client check is `npm run test -w client -- src/pages/InquiryEmailLink.test.tsx`.
+Also run the ordinary repository checks and Playwright smoke tests. The inherited
+leave-guard test selects SSPMW-92's required lead source before advancing to photos.
+
+For manual acceptance, submit to the integrated API using test recipients, confirm
+one New inquiry and the owner summary, and open its link both signed in and signed out.
+Verify the exact INQ number and item after login, and verify an employee cannot view
+it. Opening a New inquiry can mark it Reviewed (`contacted`) through SSPMW-144's
+existing behavior; check initial `new` status before visiting the detail page.
+Repeat the exact payload and confirm the original INQ number and no extra emails.
+With only the portal setting absent in an isolated development run, submit a new ID
+and confirm HTTP 201, the saved inquiry, an owner-failure log, and the independent
+customer receipt. Restore the setting and restart afterward. Staging delivery and
+link navigation require the integrated SSPMW-144 branch plus the intended Resend
+configuration; local tests do not establish staging acceptance.
+
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 
 The estimate page uses the existing shared `ConfirmationDialog` when a customer

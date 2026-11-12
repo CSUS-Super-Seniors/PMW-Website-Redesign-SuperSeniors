@@ -160,6 +160,17 @@ describe('InquiryDetailPage', () => {
     expect(within(address).getByText('Within service area')).toBeInTheDocument();
   });
 
+  it('shows the readable issue label for a newly submitted request', async () => {
+    fakeServer({
+      inquiry: margaret({ issueType: 'loose_joints', status: 'contacted', photos: [] }),
+    });
+    renderPage();
+    await screen.findByRole('heading', { name: 'INQ-1048' });
+    const request = within(section('Request'));
+    expect(request.getByText('Loose joints / wobbling')).toBeInTheDocument();
+    expect(request.queryByText('loose_joints')).not.toBeInTheDocument();
+  });
+
   it('marks a New request Reviewed when it is opened', async () => {
     const fakeFetch = fakeServer();
     renderPage();

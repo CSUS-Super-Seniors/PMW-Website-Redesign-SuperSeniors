@@ -1,3 +1,4 @@
+import { issueOptions } from '@pmw/validation';
 import type { InquiryStatus } from '../api/inquiries';
 import type { BadgeVariant } from '../components/ui';
 
@@ -16,6 +17,13 @@ export const inquiryStatusBadgeVariants: Record<InquiryStatus, BadgeVariant> = {
   converted: 'success',
   closed: 'default',
 };
+
+/** Saved requests may contain a current issue code or an older free-text label. */
+export function inquiryIssueLabel(issueType: string | null): string | null {
+  const value = issueType?.trim();
+  if (!value) return null;
+  return issueOptions.find((option) => option.value === value)?.label ?? value;
+}
 
 function formatTime(date: Date): string {
   const hours = date.getHours();

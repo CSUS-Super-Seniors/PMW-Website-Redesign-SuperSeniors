@@ -6,3 +6,4 @@ export * from './estimateSpam.js';
 export * from './estimatePhotos.js';
 export * from './estimateSubmission.js';
 export * from './business.js';
+export * from './inquiryLinks.js';

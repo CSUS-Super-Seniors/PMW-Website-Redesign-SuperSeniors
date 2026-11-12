@@ -32,6 +32,7 @@ beforeEach(() => {
   vi.stubEnv('RESEND_API_KEY', 'test-email-key');
   vi.stubEnv('RESEND_FROM_EMAIL', 'contact@example.com');
   vi.stubEnv('CONTACT_OWNER_EMAILS', 'owner@example.com');
+  vi.stubEnv('OWNER_PORTAL_ORIGIN', 'https://owner-preview.example');
   db.from.mockReturnValue({ insert: db.insert });
   db.insert.mockReturnValue({ select: db.select });
   db.select.mockReturnValue({ single: db.single });
@@ -70,6 +71,7 @@ describe('Vercel startup contact wiring', () => {
     const { default: app } = await import('../../api/index.js');
     await request(app)
       .post('/api/estimates')
+      .set('Host', 'untrusted.example')
       .send({
         submission_id: '60000000-0000-4000-8000-000000000001',
         first_name: 'Test',
@@ -93,6 +95,13 @@ describe('Vercel startup contact wiring', () => {
       }),
     );
     expect(email).toHaveBeenCalledTimes(2);
+    const owner = JSON.parse(String(email.mock.calls[1][1]?.body));
+    expect(owner.to).toEqual(['owner@example.com']);
+    expect(owner.text).toContain(
+      'https://owner-preview.example/portal/inquiries/60000000-0000-4000-8000-000000000002',
+    );
+    expect(owner.text).not.toContain('untrusted.example');
+    expect(owner.attachments).toBeUndefined();
   });
   it('saves and emails a valid submission through the exported app', async () => {
     const email = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'email-1' })));
