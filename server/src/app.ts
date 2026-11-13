@@ -15,6 +15,7 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
+import type { StaffBackend } from './staff.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
@@ -37,6 +38,8 @@ export interface AppOptions {
   estimateSubmit?: EstimateSubmitHandler;
   /** Reads the owner's estimate request list (SSPMW-130). */
   inquiries?: InquiryBackend;
+  /** Reads the owner's staff accounts list (SSPMW-121). */
+  staff?: StaffBackend;
 }
 
 /**
@@ -56,7 +59,7 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, inquiries }: AppOptions = {},
+  { serviceArea, estimateSubmit, photos, inquiries, staff }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -290,6 +293,18 @@ export function createApp(
       res.json({ ...result, page, pageSize });
     } catch {
       res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  api.get('/staff', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!staff) {
+      res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json({ staff: await staff.listStaff() });
+    } catch {
+      res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
     }
   });
   app.use('/api', api);

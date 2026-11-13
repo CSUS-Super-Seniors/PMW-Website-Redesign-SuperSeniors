@@ -6,6 +6,7 @@ import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
+import { createStaffBackend } from '../server/src/staff.js';
 
 // Vercel puts one proxy in front of the function and sets X-Forwarded-For itself.
 const config = withVercelOrigins(
@@ -21,6 +22,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
   photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
   inquiries: createInquiryBackend(supabase),
+  staff: createStaffBackend(supabase),
 });
 
 export default app;
