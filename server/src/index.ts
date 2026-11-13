@@ -6,6 +6,7 @@ import { createContactBackend } from './contact.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
+import { createDeclineEmailFromConfig } from './declineEmail.js';
 try {
   const config = loadConfig();
   const supabase = createSupabaseAdmin(config);
@@ -21,6 +22,7 @@ try {
     serviceArea: createServiceAreaBackend(supabase),
     photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
     inquiries: createInquiryBackend(supabase),
+    declineEmail: createDeclineEmailFromConfig(config),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });

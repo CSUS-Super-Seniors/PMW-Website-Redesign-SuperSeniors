@@ -11,12 +11,17 @@ type Tables = { inquiries: Row[]; inquiry_photos: Row[] };
 function fakeDatabase(tables: Tables, fail: Partial<Record<'select' | 'update', boolean>> = {}) {
   const from = (table: keyof Tables) => {
     const filters: [string, unknown][] = [];
+    const within: [string, unknown[]][] = [];
     const orders: [string, boolean][] = [];
     let columns: string[] | null = null;
     let changes: Row | null = null;
 
     const matching = () =>
-      tables[table].filter((row) => filters.every(([column, value]) => row[column] === value));
+      tables[table].filter(
+        (row) =>
+          filters.every(([column, value]) => row[column] === value) &&
+          within.every(([column, values]) => values.includes(row[column])),
+      );
     const pick = (row: Row) =>
       columns ? Object.fromEntries(columns.map((column) => [column, row[column]])) : row;
     const sorted = (rows: Row[]) =>
@@ -52,6 +57,10 @@ function fakeDatabase(tables: Tables, fail: Partial<Record<'select' | 'update', 
       },
       eq(column: string, value: unknown) {
         filters.push([column, value]);
+        return builder;
+      },
+      in(column: string, values: unknown[]) {
+        within.push([column, values]);
         return builder;
       },
       order(column: string, options: { ascending: boolean }) {
@@ -241,5 +250,62 @@ describe('marking an inquiry Reviewed', () => {
   it('throws without leaking the database error when the update fails', async () => {
     const backend = fakeDatabase({ inquiries: [inquiry()], inquiry_photos: [] }, { update: true });
     await expect(backend.markReviewed(ID)).rejects.toThrow('Inquiry review update failed');
+  });
+});
+
+describe('declining an inquiry', () => {
+  const declined = {
+    id: ID,
+    inquiry_number: 'INQ-1048',
+    first_name: 'Margaret',
+    item: 'Dining chair',
+    email: 'margaret@example.com',
+  };
+
+  it.each(['new', 'contacted'])(
+    'moves a %s inquiry to Declined (closed) and returns only the email fields',
+    async (status) => {
+      const row = inquiry({ status });
+      const backend = fakeDatabase({ inquiries: [row], inquiry_photos: [] });
+
+      expect(await backend.decline(ID)).toEqual({ result: 'declined', inquiry: declined });
+      expect(row.status).toBe('closed');
+      expect(row.updated_at).not.toBe('2026-10-01T17:18:00+00:00');
+    },
+  );
+
+  it('reports an already declined inquiry without changing it again', async () => {
+    const row = inquiry({ status: 'closed' });
+    const backend = fakeDatabase({ inquiries: [row], inquiry_photos: [] });
+
+    expect(await backend.decline(ID)).toEqual({ result: 'already_declined', inquiry: declined });
+    expect(row.updated_at).toBe('2026-10-01T17:18:00+00:00');
+  });
+
+  it('never declines an accepted inquiry', async () => {
+    const row = inquiry({ status: 'converted' });
+    const backend = fakeDatabase({ inquiries: [row], inquiry_photos: [] });
+
+    expect(await backend.decline(ID)).toEqual({ result: 'not_declinable', status: 'converted' });
+    expect(row.status).toBe('converted');
+    expect(row.updated_at).toBe('2026-10-01T17:18:00+00:00');
+  });
+
+  it('changes only the requested inquiry', async () => {
+    const other = inquiry({ id: OTHER_ID });
+    const backend = fakeDatabase({ inquiries: [inquiry(), other], inquiry_photos: [] });
+
+    await backend.decline(ID);
+    expect(other.status).toBe('new');
+  });
+
+  it('returns not_found for an unknown id', async () => {
+    const backend = fakeDatabase({ inquiries: [inquiry()], inquiry_photos: [] });
+    expect(await backend.decline(OTHER_ID)).toEqual({ result: 'not_found' });
+  });
+
+  it('throws without leaking the database error when the update fails', async () => {
+    const backend = fakeDatabase({ inquiries: [inquiry()], inquiry_photos: [] }, { update: true });
+    await expect(backend.decline(ID)).rejects.toThrow('Inquiry decline update failed');
   });
 });
