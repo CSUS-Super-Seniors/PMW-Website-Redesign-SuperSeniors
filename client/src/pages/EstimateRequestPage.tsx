@@ -4,8 +4,9 @@ import EstimateStep1Form, {
   type EstimateSpamCheck,
 } from '../components/estimate/EstimateStep1Form';
 import EstimatePhotosStep from '../components/estimate/EstimatePhotosStep';
-import { Button } from '../components/ui';
+import { Button, ConfirmationDialog } from '../components/ui';
 import { useEstimatePhotos } from '../lib/useEstimatePhotos';
+import { useEstimateLeaveGuard } from '../lib/useEstimateLeaveGuard';
 import type { EstimatePhotoHandoff } from '../lib/estimatePhotos';
 
 interface EstimateDetailsHandoff {
@@ -14,12 +15,14 @@ interface EstimateDetailsHandoff {
 }
 
 export default function EstimateRequestPage() {
+  const [hasDetails, setHasDetails] = useState(false);
   const [requestDetails, setRequestDetails] = useState<EstimateDetailsHandoff | null>(null);
   const [step, setStep] = useState<'details' | 'photos' | 'handoff'>('details');
   const [handoff, setHandoff] = useState<(EstimatePhotoHandoff & EstimateDetailsHandoff) | null>(
     null,
   );
   const { photos, addPhotos, removePhoto, uploadPhotos } = useEstimatePhotos();
+  const { blocker } = useEstimateLeaveGuard(hasDetails || photos.length > 0);
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     headingRef.current?.focus();
@@ -55,6 +58,7 @@ export default function EstimateRequestPage() {
                 initialValues={requestDetails?.details}
                 initialSpamCheck={requestDetails?.spamCheck}
                 onEdit={() => setHandoff(null)}
+                onHasDataChange={setHasDetails}
                 onContinue={continueFromDetails}
               />
             </div>
@@ -91,6 +95,22 @@ export default function EstimateRequestPage() {
           </section>
         )}
       </div>
+      <ConfirmationDialog
+        isOpen={blocker.state === 'blocked'}
+        title="Discard request?"
+        message="If you leave now, your entered details and selected photos will be lost."
+        confirmLabel="Discard"
+        cancelLabel="Cancel"
+        destructive
+        onCancel={() => {
+          if (blocker.state === 'blocked') blocker.reset();
+        }}
+        onConfirm={() => {
+          // Leaving unmounts this page and clears its draft, photos and session.
+          // Uploaded, unattached objects follow the existing cleanup policy.
+          if (blocker.state === 'blocked') blocker.proceed();
+        }}
+      />
     </main>
   );
 }
