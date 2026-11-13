@@ -9,7 +9,9 @@ import {
 import type { EstimateSubmitHandler } from './app.js';
 import type { ContactEmailConfig } from './config.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
+import { buildEstimateReceiptEmail } from './estimateReceiptEmail.js';
 import { buildOwnerNoticeEmail } from './ownerNoticeEmail.js';
+import { EmailDeliveryError, emailFailureLogContext } from './lib/emailDeliveryError.js';
 import { sendResendEmail } from './lib/resendEmail.js';
 
 export interface SavedEstimate {
@@ -56,38 +58,16 @@ export function createEstimateSubmissionBackend(
   ownerPortalOrigin?: string,
 ): EstimateSubmissionBackend {
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
-    if (!email) throw new Error('Estimate email is not configured.');
+    if (!email) throw new EmailDeliveryError('not_configured');
     const receipt = kind === 'receipt';
     await sendResendEmail(
       email,
       {
         to: receipt ? [details.email.trim()] : email.to,
-        ...(!receipt ? { replyTo: details.email.trim() } : {}),
+        replyTo: receipt ? email.to : details.email.trim(),
         idempotencyKey: `estimate/${saved.id}/${kind}`,
         ...(receipt
-          ? {
-              subject: 'Estimate request received',
-              // SSPMW-197 owns the customer receipt refinements on its separate branch.
-              text: [
-                `Hi ${details.first_name},`,
-                '',
-                'We received your estimate request. We will review it and contact you.',
-                '',
-                `Inquiry: ${saved.inquiry_number}`,
-                `Received: ${saved.created_at}`,
-                `Name: ${details.first_name} ${details.last_name}`,
-                `Email: ${details.email}`,
-                `Phone: ${details.phone}`,
-                `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
-                `Address: ${details.address}`,
-                `City: ${details.city}`,
-                `Item: ${details.item}`,
-                `Issue: ${details.issue_type}`,
-                `Lead source: ${details.lead_source}`,
-                '',
-                details.description,
-              ].join('\n'),
-            }
+          ? buildEstimateReceiptEmail(saved, details)
           : buildOwnerNoticeEmail(saved, details, ownerPortalOrigin)),
       },
       'Estimate email',
@@ -185,6 +165,7 @@ export function createEstimateSubmitHandler(
             inquiryId: saved.id,
             inquiryNumber: saved.inquiry_number,
             notification: index === 0 ? 'receipt' : 'owner',
+            ...emailFailureLogContext(result.reason),
           });
       });
     }

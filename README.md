@@ -66,19 +66,18 @@ jobs and local development commands are unchanged.
 
 Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 
-| Variable                    | Purpose                                                                                                         |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `PORT`                      | API port (default 3001)                                                                                         |
-| `NODE_ENV`                  | `development` locally                                                                                           |
-| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)                           |
-| `OWNER_PORTAL_ORIGIN`       | Exact HTTP(S) origin hosting owner inquiry details; `http://localhost:5173` locally. Required for owner notices |
-| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`                                 |
-| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                                                 |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser                     |
-| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`                        |
-| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)                                |
-| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed                           |
-| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it                     |
+| Variable                    | Purpose                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `PORT`                      | API port (default 3001)                                                                     |
+| `NODE_ENV`                  | `development` locally                                                                       |
+| `CLIENT_ORIGINS`            | Comma-separated origins allowed by CORS (the client, `http://localhost:5173` locally)       |
+| `SUPABASE_URL`              | Supabase API URL. For local development, use the URL from `npx supabase status`             |
+| `SUPABASE_PUBLISHABLE_KEY`  | Supabase publishable (anon) key                                                             |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key. Server only: never use it in `client/` or send it to the browser |
+| `SEED_DATABASE_URL`         | Database `npm run db:seed` writes to. Holds a password, so keep it only in `server/.env`    |
+| `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
+| `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
+| `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
 
 ### Client (`client/.env`)
 
@@ -295,6 +294,14 @@ Create a new ID only for a new request or edited details, never automatically on
 Do not log the payload, session token or receipts. `photoSession` defaults to `null` and
 `photos` to `[]`; keep any existing session even if every photo was removed.
 
+A final request accepts at most **10 photos**, using shared `MAX_ESTIMATE_PHOTOS`.
+`estimateSubmissionSchema` refuses an oversized array with HTTP 400 before inquiry
+lookup, photo verification, saving, or emails. `prepareSubmission` also checks the
+count before session verification or any storage call; the older `attachPhotos`
+entry point enforces the same bound. For accepted 1 MiB uploads, normal verification reads
+at most 10 MiB for a submission. The future review UI should use the shared constant
+for immediate selection feedback; the server remains authoritative.
+
 The server runs the IP limiter, honeypot, current service-area check, shared final schema,
 and signed photo/byte checks. It stores all validated customer strings as submitted,
 `lead_source`, `in_service_area = true`, and `status = 'new'` (displayed as New).
@@ -315,7 +322,7 @@ serialized in Postgres across server instances, not held in an in-memory map.
 A filled honeypot retains SSPMW-95's fake `{ success: true }` response, with no save/email.
 No browser-provided status, customer ID, INQ number or service-area flag is accepted.
 
-After a newly committed inquiry, Resend receives separate plain-text messages:
+After a newly committed inquiry, Resend receives separate messages:
 **Estimate request received** to the customer and **New estimate request: INQ-…** to
 `CONTACT_OWNER_EMAILS`. Both reuse `RESEND_API_KEY` and `RESEND_FROM_EMAIL` from the
 existing contact setup. Keep all three valid settings together, or leave all three blank.
@@ -324,12 +331,28 @@ the contact endpoint retains its existing 503 behavior.
 
 Each email has an inquiry-specific idempotency key and a ten-second timeout. Both sends
 are awaited together so serverless execution can finish them; "non-blocking" means an
-email error cannot fail or undo the save. Logs include only inquiry ID/number and the
-failed notification kind. Exact submission retries never resend mail, including after
+email error cannot fail or undo the save. Failure logs include inquiry ID/number,
+notification kind, a fixed `reason`, and a numeric `httpStatus` when available.
+Reasons are `http_error`, `not_configured`, `invalid_response`, `timeout`,
+`request_error`, or `unknown_error`. Request errors can include network failures;
+provider bodies, exception messages/stacks, arbitrary error names, customer fields,
+credentials, and tokens are never logged. Exact submission retries never resend mail, including after
 the provider's idempotency window. Delivery is best effort: a crash after commit or an
 email failure has no automatic retry worker in this story. Resend acknowledgement is
-not proof of inbox delivery. SSPMW-206 supplies the owner summary and detail link below;
-SSPMW-197 refines the customer receipt on its separate branch.
+not proof of inbox delivery. SSPMW-197 supplies the filtered customer receipt below;
+SSPMW-206 supplies the owner summary and its inquiry detail link.
+
+The customer receipt includes only the filtered first name and item, saved INQ number,
+fixed confirmation/next-step wording, and business contact information. It omits other
+submitted fields and photo credentials. Keep the photo cap and bounded failure-log
+context when integrating dependencies; the shared Resend sender preserves HTTP status
+in `EmailDeliveryError`.
+
+The merge hold remains: merge PR #56 into main first, integrate main into #66 and
+retarget #66 to main, then rerun CI before merging #66, #68, and #69 in that order. PR #65 must also be
+merged before #69 so the owner link reaches the integrated inquiry detail page.
+Preserve main's `inquiries:` application option and `business.js` validation export
+alongside estimate submission wiring when resolving integration conflicts.
 
 Run the ordinary checks plus database tests against local Supabase with all migrations:
 
@@ -355,6 +378,40 @@ with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized 
 Retry the original request and confirm the same INQ number with no duplicate inquiry or
 emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
 and its success/error presentation, including desktop/phone screenshots.
+
+### Customer receipt (SSPMW-197 / SSPMW-201)
+
+`server/src/estimateReceiptEmail.ts` builds the receipt sent to the trimmed email
+address on the submitted form. It confirms the first name, saved INQ number and
+item, explains that the request will be reviewed, and includes the shared business
+phone number. The HTML version uses 18px body text, a fluid single-column layout
+and a tappable phone link. A complete plain-text fallback is included. The footer
+shows Carmichael, CA, with no business street address.
+
+The receipt reuses `server/src/lib/resendEmail.ts` and the same server-only Resend
+settings as contact messages. Replies go to `CONTACT_OWNER_EMAILS`. Customer text
+is HTML-escaped, and link-like names/items use neutral fallback wording through
+the same filter as decline emails. The receipt omits service addresses, contact
+details, descriptions, internal notes and photo credentials. N9 (SSPMW-173) will
+supply the shared branded layout once available; the receipt layout is provisional.
+
+No new environment settings or database migrations are required. The existing
+submission handler sends only after a newly committed inquiry, isolates receipt
+failure from the owner notice, and returns the saved INQ number with HTTP 201 even
+when sending fails. Exact submission retries never send a second receipt.
+
+Focused checks: `npm run test -w server -- test/estimateReceiptEmail.test.ts test/estimateSubmission.test.ts test/declineEmail.test.ts test/contactBackend.test.ts`.
+Run the repository lint, format, typecheck and unit-test checks as well.
+
+For staging acceptance, submit a new estimate through `POST /api/estimates`
+(SSPMW-44 still owns the review-screen connection). Verify one saved inquiry and
+the customer's receipt, including the actual name, INQ number, item and business
+phone. Inspect the email at phone and desktop widths and retain screenshots for
+review. Force the receipt send to fail in an isolated test environment: confirm
+HTTP 201, the saved inquiry, the independent owner notice attempt and a sanitized
+receipt-failure log. Retry the exact submission and confirm no duplicate inquiry
+or emails. Tests cover these paths with a mocked provider; they do not establish
+staging delivery.
 
 ### Owner estimate notice (SSPMW-206 / SSPMW-211)
 
@@ -383,8 +440,9 @@ The notice uses the shared Resend sender, the existing verified From address, an
 per-inquiry `estimate/<UUID>/owner` idempotency key. Missing or invalid portal settings
 fail only the owner send after saving; they do not stop startup, undo the inquiry,
 block the independent customer receipt, or change the successful HTTP 201 response.
-The server logs only the inquiry identifiers and failed notification kind. The existing
-exact-payload retry path never sends either email again, including after a send failure.
+The server logs inquiry identifiers, the failed notification kind, a fixed reason and
+an HTTP status when available, without provider response bodies or customer fields.
+The existing exact-payload retry path never sends either email again, including after a send failure.
 
 Focused server checks:
 `npm run test -w server -- test/ownerNoticeEmail.test.ts test/estimateSubmission.test.ts test/vercelEntry.test.ts test/inquiries.test.ts test/inquiryDetailBackend.test.ts`.

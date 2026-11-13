@@ -2,6 +2,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   MAX_ESTIMATE_PHOTO_BYTES,
+  MAX_ESTIMATE_PHOTOS,
+  ESTIMATE_PHOTO_LIMIT_MESSAGE,
   PHOTO_BUCKET,
   uploadedEstimatePhotoSchema,
   type PhotoSession,
@@ -115,6 +117,8 @@ export function createEstimatePhotosBackend(
       return { token: sign({ kind: 'session', id: owner.id, expiresAt }), expiresAt };
     },
     async prepareSubmission(token, photos) {
+      if (photos.length > MAX_ESTIMATE_PHOTOS)
+        throw new PhotoRequestError(ESTIMATE_PHOTO_LIMIT_MESSAGE);
       const owner = token ? session(token) : null;
       if (photos.length && !owner)
         throw new PhotoRequestError('Photo authorization is required.', 401);
@@ -192,6 +196,8 @@ export function createEstimatePhotosBackend(
     async attachPhotos(inquiryId, token, photos, options = {}) {
       if (!UUID.test(inquiryId) || !Array.isArray(photos))
         throw new PhotoRequestError('Invalid photo attachment request.');
+      if (photos.length > MAX_ESTIMATE_PHOTOS)
+        throw new PhotoRequestError(ESTIMATE_PHOTO_LIMIT_MESSAGE);
       // No-session requests may only reconcile inquiries that never had uploads.
       // An empty retry after removal must retain its original session capability.
       // Expired signatures may only confirm an exact, already-finalized result.
