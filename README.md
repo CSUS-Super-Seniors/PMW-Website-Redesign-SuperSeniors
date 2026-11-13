@@ -424,9 +424,10 @@ Photos are never attached. Full details and private photo viewing stay in the
 owner-only portal. N9 (SSPMW-173) will provide the shared branded layout once available.
 
 Set `OWNER_PORTAL_ORIGIN` in `server/.env` and in the intended Vercel environment.
-Use the exact HTTP(S) origin that hosts the SSPMW-144 detail page, with no path,
+Use the exact HTTPS origin that hosts the SSPMW-144 detail page, with no path,
 trailing slash, query, fragment or credentials. For local testing, use
-`http://localhost:5173`. A preview needs its actual preview-site origin while the
+`http://localhost:5173`; HTTP is restricted to `localhost`, `127.0.0.1` and `[::1]`.
+A preview needs its actual preview-site origin while the
 detail page is still unmerged; a production or staging origin must host the same
 integrated detail route. Restart the server after changing this setting.
 
@@ -438,8 +439,10 @@ an employee remains blocked by the owner-role check.
 
 The notice uses the shared Resend sender, the existing verified From address, and a
 per-inquiry `estimate/<UUID>/owner` idempotency key. Missing or invalid portal settings
-fail only the owner send after saving; they do not stop startup, undo the inquiry,
-block the independent customer receipt, or change the successful HTTP 201 response.
+produce a fixed warning at startup in both the local and Vercel entry points, without
+echoing the configured value. They fail only the owner send after saving, with reason
+`not_configured`; they do not stop startup, undo the inquiry, block the independent
+customer receipt, or change the successful HTTP 201 response.
 The server logs inquiry identifiers, the failed notification kind, a fixed reason and
 an HTTP status when available, without provider response bodies or customer fields.
 The existing exact-payload retry path never sends either email again, including after a send failure.

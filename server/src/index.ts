@@ -6,12 +6,14 @@ import { createContactBackend } from './contact.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
+import { warnIfOwnerNoticeUnavailable } from './ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
 } from './estimateSubmission.js';
 try {
   const config = loadConfig();
+  warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
   const supabase = createSupabaseAdmin(config);
   const contact = config.contactEmail
     ? createContactBackend(supabase, config.contactEmail)
@@ -27,12 +29,9 @@ try {
     photos,
     inquiries: createInquiryBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
-      createEstimateSubmissionBackend(
-        supabase,
-        config.contactEmail,
-        fetch,
-        config.ownerPortalOrigin,
-      ),
+      createEstimateSubmissionBackend(supabase, config.contactEmail, {
+        ownerPortalOrigin: config.ownerPortalOrigin,
+      }),
       photos,
     ),
   }).listen(config.port, '0.0.0.0', () => {

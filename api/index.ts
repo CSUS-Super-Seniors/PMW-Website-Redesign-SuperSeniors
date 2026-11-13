@@ -6,6 +6,7 @@ import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
+import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
@@ -16,6 +17,7 @@ const config = withVercelOrigins(
   loadConfig({ ...process.env, TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS?.trim() || '1' }),
   process.env,
 );
+warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
 const supabase = createSupabaseAdmin(config);
 const contact = config.contactEmail
   ? createContactBackend(supabase, config.contactEmail)
@@ -27,7 +29,9 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   photos,
   inquiries: createInquiryBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
-    createEstimateSubmissionBackend(supabase, config.contactEmail, fetch, config.ownerPortalOrigin),
+    createEstimateSubmissionBackend(supabase, config.contactEmail, {
+      ownerPortalOrigin: config.ownerPortalOrigin,
+    }),
     photos,
   ),
 });

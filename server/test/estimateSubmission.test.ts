@@ -272,8 +272,7 @@ function backendFixture(emailEnabled = true, portalOrigin = 'https://portal.exam
           to: ['todd@example.com', 'girlie@example.com'],
         }
       : undefined,
-    fetchEmail,
-    portalOrigin,
+    { fetchEmail, ownerPortalOrigin: portalOrigin },
   );
   return { backend, maybeSingle, rpc, fetchEmail };
 }
@@ -527,7 +526,13 @@ describe('submission persistence and Resend adapter', () => {
     },
   );
 
-  it.each(['', 'not-a-url', 'https://portal.example/path'])(
+  it.each([
+    '',
+    'not-a-url',
+    'https://portal.example/path',
+    'http://portal.example',
+    'http://localhost.attacker.example',
+  ])(
     'keeps the saved result and customer receipt when the portal setting is unusable: %s',
     async (portalOrigin) => {
       const f = backendFixture(true, portalOrigin);
@@ -551,7 +556,7 @@ describe('submission persistence and Resend adapter', () => {
         inquiryId: saved.id,
         inquiryNumber: saved.inquiry_number,
         notification: 'owner',
-        reason: 'unknown_error',
+        reason: 'not_configured',
       });
     },
   );

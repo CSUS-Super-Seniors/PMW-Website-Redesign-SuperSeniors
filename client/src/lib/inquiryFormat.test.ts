@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatSubmittedAt, inquiryIssueLabel, inquiryStatusLabels } from './inquiryFormat';
+import { issueOptions } from '@pmw/validation';
+import { formatIssueType, formatSubmittedAt, inquiryStatusLabels } from './inquiryFormat';
 
 // Built from local-time parts so the text is the same in any time zone.
 const now = new Date(2026, 9, 1, 15, 0);
@@ -13,6 +14,19 @@ describe('inquiryStatusLabels', () => {
       converted: 'Accepted',
       closed: 'Declined',
     });
+  });
+});
+
+describe('formatIssueType', () => {
+  it('shows the label for each value the estimate form can store', () => {
+    for (const { value, label } of issueOptions) {
+      expect(formatIssueType(value)).toBe(label);
+    }
+    expect(formatIssueType('water_heat_fire_damage')).toBe('Water, heat, or fire damage');
+  });
+
+  it('shows text that is not a known value as it was stored', () => {
+    expect(formatIssueType('Loose joint / wobbling')).toBe('Loose joint / wobbling');
   });
 });
 
@@ -37,27 +51,5 @@ describe('formatSubmittedAt', () => {
 
   it('shows Unknown for a value that is not a date', () => {
     expect(formatSubmittedAt('not a date', now)).toBe('Unknown');
-  });
-});
-
-describe('inquiryIssueLabel', () => {
-  it.each([
-    ['loose_joints', 'Loose joints / wobbling'],
-    ['broken_wood', 'Broken or cracked wood'],
-    ['other', 'Other / not sure'],
-  ])('displays the form label for stored issue %s', (value, label) => {
-    expect(inquiryIssueLabel(value)).toBe(label);
-  });
-
-  it('preserves older readable issue text', () => {
-    expect(inquiryIssueLabel('Loose joint / wobbling')).toBe('Loose joint / wobbling');
-  });
-
-  it('preserves an unknown saved issue instead of hiding it', () => {
-    expect(inquiryIssueLabel('Custom repair request')).toBe('Custom repair request');
-  });
-
-  it.each([null, '', '   '])('treats missing or empty issue text as absent: %s', (value) => {
-    expect(inquiryIssueLabel(value)).toBeNull();
   });
 });

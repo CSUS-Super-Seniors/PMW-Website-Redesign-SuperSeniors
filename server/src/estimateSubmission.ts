@@ -51,11 +51,15 @@ function savedEstimate(value: unknown): SavedEstimate {
   return { id: value.id, inquiry_number: value.inquiry_number, created_at: value.created_at };
 }
 
+export interface EstimateSubmissionOptions {
+  fetchEmail?: typeof fetch;
+  ownerPortalOrigin?: string;
+}
+
 export function createEstimateSubmissionBackend(
   client: Pick<SupabaseClient, 'from' | 'rpc'>,
   email?: ContactEmailConfig,
-  fetchEmail: typeof fetch = fetch,
-  ownerPortalOrigin?: string,
+  { fetchEmail = fetch, ownerPortalOrigin }: EstimateSubmissionOptions = {},
 ): EstimateSubmissionBackend {
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
     if (!email) throw new EmailDeliveryError('not_configured');

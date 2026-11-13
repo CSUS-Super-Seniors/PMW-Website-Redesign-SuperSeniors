@@ -45,9 +45,32 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Vercel startup contact wiring', () => {
+  it.each(['', 'http://portal.example', 'https://user:PRIVATE_PASSWORD@portal.example'])(
+    'warns at production startup for an unusable owner portal setting and keeps health available: %s',
+    async (origin) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('OWNER_PORTAL_ORIGIN', origin);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { default: app } = await import('../../api/index.js');
+      await request(app).get('/api/health').expect(200);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        'Owner estimate notices are unavailable: OWNER_PORTAL_ORIGIN must be an exact HTTPS origin; HTTP is allowed only for localhost, 127.0.0.1 or [::1].',
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PASSWORD');
+    },
+  );
+
+  it('starts without an owner notice warning when its portal origin is valid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { default: app } = await import('../../api/index.js');
+    await request(app).get('/api/health').expect(200);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('wires final estimate saving and both emails through the exported app', async () => {
     db.from.mockImplementation((table: string) => ({
       select: () => ({

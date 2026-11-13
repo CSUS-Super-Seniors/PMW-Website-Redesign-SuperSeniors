@@ -18,11 +18,17 @@ export const inquiryStatusBadgeVariants: Record<InquiryStatus, BadgeVariant> = {
   closed: 'default',
 };
 
-/** Saved requests may contain a current issue code or an older free-text label. */
-export function inquiryIssueLabel(issueType: string | null): string | null {
-  const value = issueType?.trim();
-  if (!value) return null;
-  return issueOptions.find((option) => option.value === value)?.label ?? value;
+const issueLabels: ReadonlyMap<string, string> = new Map(
+  issueOptions.map(({ value, label }) => [value, label]),
+);
+
+/**
+ * The estimate form stores the issue option's value, such as `loose_joints`.
+ * Shows its label instead. Text that is not a known value, such as older rows
+ * or seed data, is shown as it was stored.
+ */
+export function formatIssueType(issueType: string): string {
+  return issueLabels.get(issueType) ?? issueType;
 }
 
 function formatTime(date: Date): string {

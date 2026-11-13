@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { issueOptions } from '@pmw/validation';
 import { loadConfig } from '../src/config.js';
-import { buildOwnerNoticeEmail, ownerInquiryUrl } from '../src/ownerNoticeEmail.js';
+import {
+  buildOwnerNoticeEmail,
+  ownerInquiryUrl,
+  warnIfOwnerNoticeUnavailable,
+} from '../src/ownerNoticeEmail.js';
+
+afterEach(() => vi.restoreAllMocks());
 
 const saved = {
   id: '60000000-0000-4000-8000-000000000002',
@@ -80,17 +86,23 @@ describe('owner estimate notice', () => {
 });
 
 describe('owner inquiry URL configuration', () => {
-  it.each(['http://localhost:5173', 'https://preview.example', 'https://portal.example:8443'])(
-    'uses the explicitly configured origin %s',
-    (origin) => {
-      expect(ownerInquiryUrl(origin, saved.id)).toBe(`${origin}/portal/inquiries/${saved.id}`);
-    },
-  );
+  it.each([
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://[::1]:5173',
+    'https://preview.example',
+    'https://portal.example:8443',
+  ])('uses the explicitly configured origin %s', (origin) => {
+    expect(ownerInquiryUrl(origin, saved.id)).toBe(`${origin}/portal/inquiries/${saved.id}`);
+  });
 
   it.each([
     undefined,
     '',
     'not-a-url',
+    'http://portal.example',
+    'http://localhost.attacker.example',
+    'http://192.168.1.2:5173',
     '//portal.example',
     'javascript:alert(1)',
     'https://portal.example/',
@@ -120,5 +132,25 @@ describe('owner inquiry URL configuration', () => {
     expect(
       loadConfig({ ...env, OWNER_PORTAL_ORIGIN: ' https://portal.example ' }).ownerPortalOrigin,
     ).toBe('https://portal.example');
+  });
+});
+
+describe('owner notice startup warning', () => {
+  it.each([undefined, 'https://user:PRIVATE_PASSWORD@portal.example'])(
+    'warns for an unusable origin without leaking its value: %s',
+    (origin) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      warnIfOwnerNoticeUnavailable(origin);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        'Owner estimate notices are unavailable: OWNER_PORTAL_ORIGIN must be an exact HTTPS origin; HTTP is allowed only for localhost, 127.0.0.1 or [::1].',
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PASSWORD');
+    },
+  );
+
+  it('does not warn for a valid portal origin', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warnIfOwnerNoticeUnavailable('https://portal.example');
+    expect(warn).not.toHaveBeenCalled();
   });
 });

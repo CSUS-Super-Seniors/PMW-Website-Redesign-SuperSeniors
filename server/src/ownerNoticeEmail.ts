@@ -1,5 +1,6 @@
 import { inquiryDetailPath, issueOptions, type EstimateStep1Data } from '@pmw/validation';
 import type { SavedEstimate } from './estimateSubmission.js';
+import { EmailDeliveryError } from './lib/emailDeliveryError.js';
 
 type OwnerSummary = Pick<
   EstimateStep1Data,
@@ -10,15 +11,36 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
-/** Use only server configuration, never the request's Host or Origin headers. */
-export function ownerInquiryUrl(origin: string | undefined, inquiryId: string): string {
+const OWNER_ORIGIN_REQUIREMENT =
+  'OWNER_PORTAL_ORIGIN must be an exact HTTPS origin; HTTP is allowed only for localhost, 127.0.0.1 or [::1].';
+
+function ownerPortalUrl(origin: string | undefined): URL {
   try {
     if (!origin) throw new Error();
     const url = new URL(origin);
-    if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin) throw new Error();
-    return `${url.origin}${inquiryDetailPath(inquiryId)}`;
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if (
+      url.origin !== origin ||
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback))
+    )
+      throw new Error();
+    return url;
   } catch {
-    throw new Error('OWNER_PORTAL_ORIGIN must be an exact HTTP(S) origin.');
+    throw new EmailDeliveryError('not_configured', undefined, OWNER_ORIGIN_REQUIREMENT);
+  }
+}
+
+/** Use only server configuration, never the request's Host or Origin headers. */
+export function ownerInquiryUrl(origin: string | undefined, inquiryId: string): string {
+  return `${ownerPortalUrl(origin).origin}${inquiryDetailPath(inquiryId)}`;
+}
+
+/** Warn once at startup without echoing a potentially secret configuration value. */
+export function warnIfOwnerNoticeUnavailable(origin: string | undefined): void {
+  try {
+    ownerPortalUrl(origin);
+  } catch {
+    console.warn(`Owner estimate notices are unavailable: ${OWNER_ORIGIN_REQUIREMENT}`);
   }
 }
 
