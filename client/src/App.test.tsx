@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { AuthContext, type AuthContextValue } from './auth/AuthContext';
@@ -22,11 +22,12 @@ function renderApp(path: string, auth: Partial<AuthContextValue> = {}) {
     ...auth,
   };
 
+  const router = createMemoryRouter([{ path: '*', element: <App /> }], {
+    initialEntries: [path],
+  });
   return render(
     <AuthContext.Provider value={value}>
-      <MemoryRouter initialEntries={[path]}>
-        <App />
-      </MemoryRouter>
+      <RouterProvider router={router} />
     </AuthContext.Provider>,
   );
 }
@@ -81,7 +82,9 @@ describe('App', () => {
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
-      await user.type(screen.getByLabelText(label), value);
+      fireEvent.change(screen.getByLabelText(label), {
+        target: { value },
+      });
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');
@@ -193,6 +196,73 @@ describe('App', () => {
     expect(screen.getByLabelText('City')).toBeInTheDocument();
     expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('does not warn on an empty form even after a validation attempt', async () => {
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
+    await user.click(screen.getByRole('link', { name: 'Cancel' }));
+    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('keeps incomplete details on Cancel and clears the request after Discard', async () => {
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.type(screen.getByLabelText('First name'), 'Ana');
+    await user.type(screen.getByLabelText('Phone number'), 'invalid');
+    await user.click(screen.getByLabelText('Contact me by text message'));
+    const contact = () =>
+      within(screen.getByRole('contentinfo')).getByRole('link', { name: 'Contact' });
+    await user.click(contact());
+    const dialog = await screen.findByRole('dialog', { name: 'Discard request?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('First name')).toHaveValue('Ana');
+    expect(screen.getByLabelText('Phone number')).toHaveValue('invalid');
+    expect(screen.getByLabelText('Contact me by text message')).toBeChecked();
+    await user.click(contact());
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Discard' }),
+    );
+    await screen.findByRole('heading', { name: 'Get in touch' });
+    await user.click(
+      within(screen.getByRole('contentinfo')).getByRole('link', { name: 'Request an estimate' }),
+    );
+    await screen.findByLabelText('First name');
+    expect(screen.getByLabelText('First name')).toHaveValue('');
+    expect(screen.getByLabelText('Phone number')).toHaveValue('');
+    expect(screen.getByLabelText('Contact me by text message')).not.toBeChecked();
+  });
+  it('treats Escape as Cancel and restores focus without losing entered data', async () => {
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.type(screen.getByLabelText('First name'), 'Ana');
+    const cancel = screen.getByRole('link', { name: 'Cancel' });
+    await user.click(cancel);
+    await screen.findByRole('dialog', { name: 'Discard request?' });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(cancel).toHaveFocus();
+    expect(screen.getByLabelText('First name')).toHaveValue('Ana');
+  });
+  it('allows leaving once all entered fields and checkbox choices are cleared', async () => {
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    await user.type(screen.getByLabelText('First name'), 'Ana');
+    await user.click(screen.getByLabelText('Contact me by text message'));
+    await user.clear(screen.getByLabelText('First name'));
+    await user.click(screen.getByLabelText('Contact me by text message'));
+    await user.click(screen.getByRole('link', { name: 'Cancel' }));
+    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('does not treat the hidden honeypot as customer-entered data', async () => {
+    const user = userEvent.setup();
+    renderApp('/estimate');
+    fireEvent.change(document.querySelector('[name="pmw_extra"]')!, { target: { value: 'bot' } });
+    await user.click(screen.getByRole('link', { name: 'Cancel' }));
+    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('shows the business tagline on the home page, not developer notes', () => {
     renderApp('/');
