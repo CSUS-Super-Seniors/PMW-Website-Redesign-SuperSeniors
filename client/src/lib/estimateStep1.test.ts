@@ -17,6 +17,7 @@ it('can consume the shared Step 1 schema, dropdown options and field errors in t
     item: 'Chair',
     issue_type: issueOptions[0].value,
     description: 'One leg is loose.',
+    lead_source: 'google',
   };
   expect(estimateStep1Schema.parse(input).text_ok).toBe(false);
   expect(issueOptions[0].label).toBe('Loose joints / wobbling');

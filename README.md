@@ -31,6 +31,16 @@ npm run dev:server   # API on http://localhost:3001 (check /api/health)
 npm run dev:client   # site on http://localhost:5173 (proxies /api to the server)
 ```
 
+### Playwright in CI
+
+The Playwright smoke-test job uses the official
+`mcr.microsoft.com/playwright:v1.64.1-noble` container, which includes the browsers
+and Linux browser dependencies. This avoids installing Ubuntu packages during
+each run. The job still runs `npm ci` and the full `npm run test:e2e` suite, and
+uploads failure reports. When updating Playwright, update the image tag in
+`.github/workflows/ci.yml` to match the locked Playwright version. The other CI
+jobs and local development commands are unchanged.
+
 ## Scripts (run from the repo root)
 
 | Script                           | What it does                                                                                        |
@@ -218,6 +228,56 @@ always apply cleanup. The job has read-only repository permissions, prevents
 overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
+
+### Lead source collection and handoff (SSPMW-92 / SSPMW-87)
+
+Step 1 collects a required "How did you hear about us?" selection. It starts empty;
+the customer must choose a source rather than inheriting a default. Requiring the
+field is an implementation assumption consistent with the current form; the Jira
+description does not explicitly state whether it is required.
+
+`shared/src/leadSource.ts` exports `leadSourceOptions`, `leadSourceSchema`, and
+`LeadSource` from `@pmw/validation`. Use this configuration for manual jobs
+(SSPMW-311) and lead source reports (SSPMW-145) too.
+
+| Stored value   | Display label |
+| -------------- | ------------- |
+| `google`       | Google        |
+| `referral`     | Referral      |
+| `social_media` | Social media  |
+| `yelp`         | Yelp          |
+| `other`        | Other         |
+
+The shared Step 1 schema requires `lead_source`. The existing public validation
+endpoint returns HTTP 400 with `fieldErrors.lead_source` for missing values,
+unknown values, display labels, and incorrect JSON types. On acceptance, the
+form's `onContinue(details, spamCheck)` includes the selected value unchanged in
+`details`. The page retains it through the service-area check, photos, and Back
+navigation. The endpoint only validates; it does not save an inquiry.
+
+**Remaining acceptance criteria:** this source snapshot has no Step 3 review
+screen or inquiry creation endpoint. SSPMW-92 is not complete until the actual
+review and saving flow includes the following:
+
+- SSPMW-44: carry `details.lead_source` from the photo handoff into Step 3, show
+  the corresponding `leadSourceOptions` label, and preserve edits when navigating
+  between the review and earlier steps.
+- SSPMW-70: validate the final submission on the server, including
+  `leadSourceSchema`, before any write. Explicitly insert the validated value into
+  the existing `public.inquiries.lead_source` column. Revalidate even if Step 1
+  previously passed; a caller can bypass Step 1.
+- Verify that a submitted inquiry stores each selected source and a tampered
+  final request receives HTTP 400 without saving a row. Add review and
+  persistence integration tests when those entry points exist.
+
+For UI verification, check `/estimate` at desktop and phone widths: empty
+selection, missing-selection error, correction, checking/disabled state, server
+field error, network failure and retry, and successful validation with the source
+retained after going to photos and back. Check that an edited source survives
+another trip through photos and Back navigation. Continuing from photos with
+zero photos reaches the current "Your photos are ready" handoff notice; review
+and final submission remain unavailable. Capture desktop and phone screenshots
+for the PR.
 
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 
