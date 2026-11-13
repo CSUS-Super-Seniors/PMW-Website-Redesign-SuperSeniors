@@ -13,7 +13,7 @@ export type AcceptInquiryResult =
   | { outcome: 'not-found' }
   | { outcome: 'not-acceptable'; status: string };
 
-export interface InquiryBackend {
+export interface AcceptInquiryBackend {
   acceptInquiry(inquiryId: string): Promise<AcceptInquiryResult>;
 }
 
@@ -231,7 +231,7 @@ async function copyInquiryPhotos(client: InquiryClient, inquiryId: string, jobId
   }
 }
 
-export function createInquiryBackend(client: InquiryClient): InquiryBackend {
+export function createAcceptInquiryBackend(client: InquiryClient): AcceptInquiryBackend {
   return {
     async acceptInquiry(inquiryId) {
       const inquiry = await loadInquiry(client, inquiryId);

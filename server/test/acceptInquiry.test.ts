@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createInquiryBackend, jobMediaPath } from '../src/inquiries.js';
+import { createAcceptInquiryBackend, jobMediaPath } from '../src/acceptInquiry.js';
 
 type Row = Record<string, unknown>;
 type Action = 'select' | 'insert' | 'update' | 'delete';
@@ -245,7 +245,7 @@ function pick(row: Row, keys: string[]) {
 test('a new customer is created and the job carries over the inquiry details', async () => {
   const db = fakeDatabase({ inquiries: [inquiry()] });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 1);
   const created = db.tables.customers[0];
@@ -287,7 +287,7 @@ test('an existing customer is matched by email, ignoring case', async () => {
     customers: [customer({ email: 'MARGARET@example.com', phone: null })],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 1);
   assert.equal(db.tables.jobs[0].customer_id, 'customer-existing');
@@ -300,7 +300,7 @@ test('an existing customer is matched by phone typed in another format', async (
     customers: [customer({ email: null, phone: '+1 916-555-0142' })],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 1);
   assert.equal(db.tables.jobs[0].customer_id, 'customer-existing');
@@ -312,7 +312,7 @@ test('a phone that only shares the last four digits is not a match', async () =>
     customers: [customer({ email: null, phone: '(530) 555-0142' })],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 2);
   assert.notEqual(db.tables.jobs[0].customer_id, 'customer-existing');
@@ -324,7 +324,7 @@ test('a deleted customer is ignored and a new one is created', async () => {
     customers: [customer({ deleted_at: '2026-06-01T00:00:00.000Z' })],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 2);
   assert.notEqual(db.tables.jobs[0].customer_id, 'customer-existing');
@@ -339,7 +339,7 @@ test('a customer already linked to the inquiry wins over a match', async () => {
     ],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 2);
   assert.equal(db.tables.jobs[0].customer_id, 'customer-linked');
@@ -349,7 +349,7 @@ test('the same person submitting again gets one customer and two jobs', async ()
   const db = fakeDatabase({
     inquiries: [inquiry(), inquiry({ id: SECOND_INQUIRY_ID, item: 'Rocking chair' })],
   });
-  const backend = createInquiryBackend(db.client);
+  const backend = createAcceptInquiryBackend(db.client);
 
   await backend.acceptInquiry(INQUIRY_ID);
   await backend.acceptInquiry(SECOND_INQUIRY_ID);
@@ -361,7 +361,7 @@ test('the same person submitting again gets one customer and two jobs', async ()
 
 test('accepting twice returns the same job and does not create another', async () => {
   const db = fakeDatabase({ inquiries: [inquiry()] });
-  const backend = createInquiryBackend(db.client);
+  const backend = createAcceptInquiryBackend(db.client);
 
   const first = await backend.acceptInquiry(INQUIRY_ID);
   const second = await backend.acceptInquiry(INQUIRY_ID);
@@ -374,7 +374,7 @@ test('accepting twice returns the same job and does not create another', async (
 test('a declined inquiry cannot be accepted and nothing is created', async () => {
   const db = fakeDatabase({ inquiries: [inquiry({ status: 'closed' })] });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.deepEqual(result, { outcome: 'not-acceptable', status: 'closed' });
   assert.equal(db.tables.jobs.length, 0);
@@ -383,14 +383,17 @@ test('a declined inquiry cannot be accepted and nothing is created', async () =>
 
 test('an inquiry that does not exist is reported as not found', async () => {
   const db = fakeDatabase({});
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
   assert.deepEqual(result, { outcome: 'not-found' });
 });
 
 test('if the job cannot be created, the customer made for it is removed', async () => {
   const db = fakeDatabase({ inquiries: [inquiry()] }, ['jobs:insert']);
 
-  await assert.rejects(createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID), /Job could not/);
+  await assert.rejects(
+    createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID),
+    /Job could not/,
+  );
 
   assert.equal(db.tables.customers.length, 0);
   assert.equal(db.tables.inquiries[0].status, 'new');
@@ -399,7 +402,10 @@ test('if the job cannot be created, the customer made for it is removed', async 
 test('if the job cannot be created, a matched customer is kept', async () => {
   const db = fakeDatabase({ inquiries: [inquiry()], customers: [customer()] }, ['jobs:insert']);
 
-  await assert.rejects(createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID), /Job could not/);
+  await assert.rejects(
+    createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID),
+    /Job could not/,
+  );
 
   assert.equal(db.tables.customers.length, 1);
   assert.equal(db.tables.inquiries[0].status, 'new');
@@ -409,7 +415,7 @@ test('a failed customer lookup stops the accept before anything is created', asy
   const db = fakeDatabase({ inquiries: [inquiry()] }, ['customers:select']);
 
   await assert.rejects(
-    createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID),
+    createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID),
     /Customer lookup failed/,
   );
 
@@ -443,7 +449,7 @@ function withPhotos(failing: string[] = []) {
 test('the inquiry photos are copied into the job media', async () => {
   const db = withPhotos();
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   const job = db.tables.jobs[0];
   const jobId = job.id as string;
@@ -468,7 +474,7 @@ test('the inquiry photos are copied into the job media', async () => {
 test('an inquiry with no photos is accepted without any job media', async () => {
   const db = fakeDatabase({ inquiries: [inquiry()] });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(result.outcome, 'accepted');
   assert.equal(db.tables.job_media.length, 0);
@@ -476,7 +482,7 @@ test('an inquiry with no photos is accepted without any job media', async () => 
 
 test('accepting twice does not copy the photos twice', async () => {
   const db = withPhotos();
-  const backend = createInquiryBackend(db.client);
+  const backend = createAcceptInquiryBackend(db.client);
 
   await backend.acceptInquiry(INQUIRY_ID);
   await backend.acceptInquiry(INQUIRY_ID);
@@ -488,7 +494,7 @@ test('accepting twice does not copy the photos twice', async () => {
 test('a failed copy leaves the inquiry open, and a retry finishes the job', async () => {
   const failing = ['storage:copy'];
   const db = withPhotos(failing);
-  const backend = createInquiryBackend(db.client);
+  const backend = createAcceptInquiryBackend(db.client);
 
   await assert.rejects(backend.acceptInquiry(INQUIRY_ID), /could not be copied/);
   assert.equal(db.tables.inquiries[0].status, 'new');
@@ -506,7 +512,7 @@ test('a failed copy leaves the inquiry open, and a retry finishes the job', asyn
 test('a file copied before a failed save is reused when the retry saves its row', async () => {
   const failing = ['job_media:insert'];
   const db = withPhotos(failing);
-  const backend = createInquiryBackend(db.client);
+  const backend = createAcceptInquiryBackend(db.client);
 
   await assert.rejects(backend.acceptInquiry(INQUIRY_ID), /Job media could not be saved/);
   assert.equal(db.tables.job_media.length, 0);
@@ -544,7 +550,7 @@ test('if another Accept creates the job first, that job is used and our new cust
     },
   });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.deepEqual(result, {
     outcome: 'accepted',
@@ -574,7 +580,7 @@ test('a linked customer who was deleted is not used, and a new customer is creat
     ],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 2);
   assert.notEqual(db.tables.jobs[0].customer_id, 'customer-linked');
@@ -594,7 +600,7 @@ test('a deleted linked customer falls back to an active customer with the same e
     ],
   });
 
-  await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.equal(db.tables.customers.length, 2);
   assert.equal(db.tables.jobs[0].customer_id, 'customer-existing');
@@ -615,7 +621,7 @@ test('a declined inquiry is not accepted even if a stray job points at it', asyn
     ],
   });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.deepEqual(result, { outcome: 'not-acceptable', status: 'closed' });
   assert.equal(db.tables.inquiries[0].status, 'closed');
@@ -625,7 +631,7 @@ test('a declined inquiry is not accepted even if a stray job points at it', asyn
 test('an inquiry marked accepted but with no job cannot be accepted', async () => {
   const db = fakeDatabase({ inquiries: [inquiry({ status: 'converted' })] });
 
-  const result = await createInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
+  const result = await createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID);
 
   assert.deepEqual(result, { outcome: 'not-acceptable', status: 'converted' });
   assert.equal(db.tables.jobs.length, 0);

@@ -4,7 +4,7 @@ import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
-import { createInquiryBackend } from '../server/src/inquiries.js';
+import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 
 // Vercel puts one proxy in front of the function and sets X-Forwarded-For itself.
@@ -20,7 +20,7 @@ const contact = config.contactEmail
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
   photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
-  inquiries: createInquiryBackend(supabase),
+  acceptInquiry: createAcceptInquiryBackend(supabase),
 });
 
 export default app;

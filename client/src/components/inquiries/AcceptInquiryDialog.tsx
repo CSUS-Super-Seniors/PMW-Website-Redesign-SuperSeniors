@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { acceptInquiry, type AcceptedJob, type AcceptInquiryResult } from '../../api/inquiries';
+import { acceptInquiry, type AcceptedJob, type AcceptInquiryResult } from '../../api/acceptInquiry';
 import { useAuth } from '../../auth/AuthContext';
 import { Button, ConfirmationDialog, Modal } from '../ui';
 

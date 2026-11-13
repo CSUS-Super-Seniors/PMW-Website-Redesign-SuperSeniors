@@ -15,7 +15,7 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
-import type { InquiryBackend } from './inquiries.js';
+import type { AcceptInquiryBackend } from './acceptInquiry.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import {
@@ -37,7 +37,8 @@ export interface AppOptions {
   photos?: EstimatePhotosBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
   estimateSubmit?: EstimateSubmitHandler;
-  inquiries?: InquiryBackend;
+  /** Accepts an estimate request and turns it into a job (SSPMW-156). */
+  acceptInquiry?: AcceptInquiryBackend;
 }
 
 /**
@@ -57,7 +58,7 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, inquiries }: AppOptions = {},
+  { serviceArea, estimateSubmit, photos, acceptInquiry: acceptBackend }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -282,12 +283,12 @@ export function createApp(
       res.status(404).json({ error: 'Estimate request not found.' });
       return;
     }
-    if (!inquiries) {
+    if (!acceptBackend) {
       res.status(503).json({ error: 'Accepting requests is temporarily unavailable.' });
       return;
     }
     try {
-      const result = await inquiries.acceptInquiry(inquiryId);
+      const result = await acceptBackend.acceptInquiry(inquiryId);
       if (result.outcome === 'not-found') {
         res.status(404).json({ error: 'Estimate request not found.' });
         return;

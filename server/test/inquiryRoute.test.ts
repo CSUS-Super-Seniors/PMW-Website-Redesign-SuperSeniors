@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import type { AcceptInquiryResult, InquiryBackend } from '../src/inquiries.js';
+import type { AcceptInquiryResult, AcceptInquiryBackend } from '../src/acceptInquiry.js';
 import type { AuthBackend } from '../src/supabase.js';
 
 const config = loadConfig({
@@ -25,7 +25,7 @@ function authBackend(role = 'owner'): AuthBackend {
 // Records every id it is asked to accept, and answers with a result or an error.
 function fakeInquiries(answer: AcceptInquiryResult | Error) {
   const calls: string[] = [];
-  const backend: InquiryBackend = {
+  const backend: AcceptInquiryBackend = {
     acceptInquiry: async (id) => {
       calls.push(id);
       if (answer instanceof Error) throw answer;
@@ -43,7 +43,7 @@ const accepted: AcceptInquiryResult = {
 test('owner accepts an inquiry and gets the new job back', async () => {
   const { backend, calls } = fakeInquiries(accepted);
   const response = await request(
-    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+    createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend }),
   )
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
@@ -56,7 +56,7 @@ test('owner accepts an inquiry and gets the new job back', async () => {
 
 test('an employee is refused and nothing is accepted', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  await request(createApp(config, authBackend('employee'), undefined, { inquiries: backend }))
+  await request(createApp(config, authBackend('employee'), undefined, { acceptInquiry: backend }))
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(403);
@@ -65,7 +65,7 @@ test('an employee is refused and nothing is accepted', async () => {
 
 test('a request without a valid token gets 401 and nothing is accepted', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  const app = createApp(config, authBackend('owner'), undefined, { inquiries: backend });
+  const app = createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend });
   await request(app).post(acceptPath).expect(401);
   await request(app).post(acceptPath).set('Authorization', 'Bearer invalid').expect(401);
   assert.deepEqual(calls, []);
@@ -73,7 +73,7 @@ test('a request without a valid token gets 401 and nothing is accepted', async (
 
 test('an id that is not a UUID is a 404 and never reaches the backend', async () => {
   const { backend, calls } = fakeInquiries(accepted);
-  await request(createApp(config, authBackend('owner'), undefined, { inquiries: backend }))
+  await request(createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend }))
     .post('/api/inquiries/INQ-1048/accept')
     .set('Authorization', 'Bearer valid')
     .expect(404);
@@ -82,7 +82,7 @@ test('an id that is not a UUID is a 404 and never reaches the backend', async ()
 
 test('an inquiry that does not exist is a 404', async () => {
   const { backend } = fakeInquiries({ outcome: 'not-found' });
-  await request(createApp(config, authBackend('owner'), undefined, { inquiries: backend }))
+  await request(createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend }))
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
     .expect(404);
@@ -91,7 +91,7 @@ test('an inquiry that does not exist is a 404', async () => {
 test('an inquiry that was already declined is a 409', async () => {
   const { backend } = fakeInquiries({ outcome: 'not-acceptable', status: 'closed' });
   const response = await request(
-    createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+    createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend }),
   )
     .post(acceptPath)
     .set('Authorization', 'Bearer valid')
@@ -106,7 +106,7 @@ test('a backend failure is a 503 that does not leak the cause, and is logged', a
       new Error('password authentication failed for user postgres'),
     );
     const response = await request(
-      createApp(config, authBackend('owner'), undefined, { inquiries: backend }),
+      createApp(config, authBackend('owner'), undefined, { acceptInquiry: backend }),
     )
       .post(acceptPath)
       .set('Authorization', 'Bearer valid')
