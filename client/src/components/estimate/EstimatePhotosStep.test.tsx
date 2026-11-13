@@ -105,7 +105,9 @@ describe('EstimatePhotosStep', () => {
     const { user, onContinue, unmount } = setup();
     const input = photo();
     select(input);
-    expect(await screen.findByRole('img', { name: 'Preview of chair.jpg' })).toBeInTheDocument();
+    const preview = await screen.findByRole('img', { name: 'Preview of chair.jpg' });
+    // The image mounts before its effect assigns the preview URL.
+    await waitFor(() => expect(preview).toHaveAttribute('src', 'blob:photo-1'));
     expect(createUrl).toHaveBeenCalledWith(processed);
     expect(screen.getByText(/Ready on this device/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Next' }));
