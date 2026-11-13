@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button, ErrorBanner } from '../ui';
 import type { EstimatePhoto, PreparedEstimatePhoto } from '../../lib/estimatePhotos';
+import EstimatePhotoPreview from './EstimatePhotoPreview';
 
 interface EstimatePhotosStepProps {
   photos: EstimatePhoto[];
@@ -8,22 +9,6 @@ interface EstimatePhotosStepProps {
   onRemove: (id: string) => void;
   onBack: () => void;
   onContinue: (photos: PreparedEstimatePhoto[]) => void | Promise<void>;
-}
-
-function PhotoPreview({ file }: { file: File }) {
-  const imageRef = useRef<HTMLImageElement>(null);
-  useEffect(() => {
-    const url = URL.createObjectURL(file);
-    if (imageRef.current) imageRef.current.src = url;
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  return (
-    <img
-      ref={imageRef}
-      alt={`Preview of ${file.name}`}
-      className="h-40 w-full rounded-sm bg-neutral-100 object-contain"
-    />
-  );
 }
 
 export default function EstimatePhotosStep({
@@ -118,7 +103,7 @@ export default function EstimatePhotosStep({
       <ul aria-label="Selected photos" className="mt-6 grid gap-4 sm:grid-cols-2">
         {photos.map((photo) => (
           <li key={photo.id} className="min-w-0 rounded-lg border border-neutral-300 p-3">
-            {photo.status === 'ready' && <PhotoPreview file={photo.file} />}
+            {photo.status === 'ready' && <EstimatePhotoPreview file={photo.file} />}
             <p className="type-label mt-2 break-words">{photo.original.name}</p>
             {photo.status === 'processing' && (
               <p className="type-body-sm" role="status">

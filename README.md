@@ -174,7 +174,8 @@ Both server entry points provide service-area and photo backends through `create
 JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
 Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
 Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
-The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
+Step 3 shows the review/edit screen and opens confirmation. Sending remains unavailable;
+SSPMW-53 owns final confirmation/Thanks and SSPMW-70 owns saving/emails.
 SSPMW-31 is partial for inquiry attachment: `attachPhotos` currently has no application caller,
 so this flow does not create `inquiry_photos` rows. Removal from previews and the handoff is
 implemented; attachment and exclusion of removed photos on the saved inquiry remain deferred
@@ -229,6 +230,42 @@ overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
+### Estimate review and editing (SSPMW-44 / SSPMW-50)
+
+After optional photos finish uploading, Step 3 shows contact details (including text
+permission), service address/city, item, the readable problem option, description,
+lead source and local photo thumbnails. Zero photos shows "No photos selected."
+Private storage URLs are not exposed; local preview URLs are revoked on unmount.
+
+Edit buttons open the existing details/photo step and focus the selected section.
+**Return to review** revalidates details and service-area membership. Other values,
+text permission, the hidden spam check and selected photos remain intact. Unchanged
+photos are not uploaded again; removing/replacing photos refreshes the photo handoff.
+
+**Submit request** opens the shared modal. Cancel, Escape and Close return to review
+with data kept. The dialog clearly states that nothing has been submitted and its
+final send button is disabled. SSPMW-53 can connect its confirmation/Thanks flow using
+the retained `EstimateRequestHandoff` shape `{ details, spamCheck, photoSession, photos }`.
+Opening confirmation does not mark the request submitted or disable the leave guard.
+
+Scope and dependencies:
+
+- The merged lead-source code (SSPMW-87/92) supplies a required Step 1
+  dropdown and shared labels. Options are Google, Referral, Social media, Yelp and
+  Other. Step 3 displays the selected label and supports editing it while retaining
+  other fields/photos. Shared client/server validation rejects unsupported values.
+- SSPMW-70/PR #66 is not a dependency of SSPMW-44. This branch adds no final-save
+  API, email wiring, database migration, submission retry logic or Thanks screen.
+  Those acceptance checks belong to their owning stories.
+- Existing SSPMW-64 leave protection remains active across review, editing and the
+  confirmation preview. The future successful-submit flow must call `markSubmitted()`
+  only after the server confirms success.
+
+Unit tests cover the summary, edit/return, field/service-area errors, photo replacement,
+lead-source retention, and confirmation cancellation without submitting anything.
+Browser coverage: `e2e/estimate-photos.spec.ts`, `e2e/estimate-leave-guard.spec.ts`, and
+`e2e/estimate-review-confirmation.spec.ts`, with desktop/phone screenshots in `test-results/`.
+
 ### Lead source collection and handoff (SSPMW-92 / SSPMW-87)
 
 Step 1 collects a required "How did you hear about us?" selection. It starts empty;
@@ -255,13 +292,11 @@ form's `onContinue(details, spamCheck)` includes the selected value unchanged in
 `details`. The page retains it through the service-area check, photos, and Back
 navigation. The endpoint only validates; it does not save an inquiry.
 
-**Remaining acceptance criteria:** this source snapshot has no Step 3 review
-screen or inquiry creation endpoint. SSPMW-92 is not complete until the actual
-review and saving flow includes the following:
+**Integration status:** Step 3 now displays the source label and preserves edits.
+Final inquiry persistence remains owned by SSPMW-70:
 
-- SSPMW-44: carry `details.lead_source` from the photo handoff into Step 3, show
-  the corresponding `leadSourceOptions` label, and preserve edits when navigating
-  between the review and earlier steps.
+- SSPMW-44 carries `details.lead_source` into Step 3, displays the shared label,
+  and tests retention when editing and navigating between steps.
 - SSPMW-70: validate the final submission on the server, including
   `leadSourceSchema`, before any write. Explicitly insert the validated value into
   the existing `public.inquiries.lead_source` column. Revalidate even if Step 1
@@ -274,10 +309,9 @@ For UI verification, check `/estimate` at desktop and phone widths: empty
 selection, missing-selection error, correction, checking/disabled state, server
 field error, network failure and retry, and successful validation with the source
 retained after going to photos and back. Check that an edited source survives
-another trip through photos and Back navigation. Continuing from photos with
-zero photos reaches the current "Your photos are ready" handoff notice; review
-and final submission remain unavailable. Capture desktop and phone screenshots
-for the PR.
+another trip through photos and Back navigation. Continuing with zero photos opens
+review with "No photos selected." Submit opens confirmation without sending the
+request. Capture desktop and phone screenshots for the PR.
 
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 

@@ -113,8 +113,11 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
     await screen.findByLabelText('Choose photos');
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    await screen.findByRole('heading', { name: 'Your photos are ready' });
-    expect(screen.getByRole('status')).toHaveTextContent('0 photo(s)');
+    await screen.findByRole('heading', { name: 'Review your request' });
+    expect(screen.getByText('No photos selected.')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Repair details' })).getByText('Chair repair'),
+    ).toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       '/api/estimates/validate-step-1',
       '/api/estimates/service-area',

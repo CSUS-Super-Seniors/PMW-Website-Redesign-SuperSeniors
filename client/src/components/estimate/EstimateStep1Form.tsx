@@ -35,6 +35,9 @@ export interface EstimateStep1FormProps {
   initialValues?: EstimateStep1Input;
   initialSpamCheck?: EstimateSpamCheck;
   onEdit?: () => void;
+  /** Focus the section selected from Step 3 after this form mounts. */
+  initialFocusField?: keyof EstimateStep1Input;
+  continueLabel?: string;
   /** Reports current visible form data, including incomplete or invalid entries. */
   onHasDataChange?: (hasData: boolean) => void;
   /** Replaced in tests. Defaults to the server check against `service_cities`. */
@@ -67,6 +70,8 @@ export default function EstimateStep1Form({
   initialValues,
   initialSpamCheck,
   onEdit,
+  initialFocusField,
+  continueLabel = 'Continue to photos',
   onHasDataChange,
   checkServiceArea = checkEstimateServiceArea,
 }: EstimateStep1FormProps) {
@@ -104,6 +109,15 @@ export default function EstimateStep1Form({
   }, [hasData, onHasDataChange]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!initialFocusField) return;
+    const target = formRef.current?.elements.namedItem(initialFocusField);
+    if (target instanceof HTMLElement) {
+      target.focus();
+      target.scrollIntoView?.({ block: 'center' });
+    }
+  }, [initialFocusField]);
 
   useEffect(() => {
     if (pending || !focusRequest) return;
@@ -205,7 +219,7 @@ export default function EstimateStep1Form({
           showErrors({
             fieldErrors: {},
             formErrors: [
-              'We could not continue to photos. Your request has not been sent. Please try again.',
+              'We could not continue. Your request has not been sent. Please try again.',
             ],
           });
         }
@@ -422,7 +436,7 @@ export default function EstimateStep1Form({
             Cancel
           </Link>
           <Button type="submit" variant="secondary" disabled={pending} className="w-full sm:w-auto">
-            {pending ? 'Checking details…' : 'Continue to photos'}
+            {pending ? 'Checking details…' : continueLabel}
           </Button>
         </div>
         <p role="status" className="sr-only">
