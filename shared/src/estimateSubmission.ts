@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { estimateStep1Schema } from './estimateStep1.js';
-import { photoSessionSchema, uploadedEstimatePhotoSchema } from './estimatePhotos.js';
+import {
+  ESTIMATE_PHOTO_LIMIT_MESSAGE,
+  MAX_ESTIMATE_PHOTOS,
+  photoSessionSchema,
+  uploadedEstimatePhotoSchema,
+} from './estimatePhotos.js';
 
 // Flatten details and spamCheck from the review handoff into this request. The
 // honeypot middleware consumes pmw_extra before this strict schema is applied.
@@ -8,7 +13,10 @@ export const estimateSubmissionSchema = estimateStep1Schema
   .extend({
     submission_id: z.uuid(),
     photoSession: photoSessionSchema.nullable().default(null),
-    photos: z.array(uploadedEstimatePhotoSchema).default([]),
+    photos: z
+      .array(uploadedEstimatePhotoSchema)
+      .max(MAX_ESTIMATE_PHOTOS, { error: ESTIMATE_PHOTO_LIMIT_MESSAGE })
+      .default([]),
   })
   .superRefine((value, context) => {
     if (value.photos.length && !value.photoSession) {

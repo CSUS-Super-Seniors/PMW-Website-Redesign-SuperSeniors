@@ -10,6 +10,7 @@ import type { EstimateSubmitHandler } from './app.js';
 import type { ContactEmailConfig } from './config.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { buildEstimateReceiptEmail } from './estimateReceiptEmail.js';
+import { EmailDeliveryError, emailFailureLogContext } from './lib/emailDeliveryError.js';
 import { sendResendEmail } from './lib/resendEmail.js';
 
 export interface SavedEstimate {
@@ -55,7 +56,7 @@ export function createEstimateSubmissionBackend(
   fetchEmail: typeof fetch = fetch,
 ): EstimateSubmissionBackend {
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
-    if (!email) throw new Error('Estimate email is not configured.');
+    if (!email) throw new EmailDeliveryError('not_configured');
     const receipt = kind === 'receipt';
     await sendResendEmail(
       email,
@@ -183,6 +184,7 @@ export function createEstimateSubmitHandler(
             inquiryId: saved.id,
             inquiryNumber: saved.inquiry_number,
             notification: index === 0 ? 'receipt' : 'owner',
+            ...emailFailureLogContext(result.reason),
           });
       });
     }

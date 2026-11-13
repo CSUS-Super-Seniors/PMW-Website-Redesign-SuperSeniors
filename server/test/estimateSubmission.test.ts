@@ -2,10 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { estimateSubmissionSchema } from '@pmw/validation';
+import {
+  businessContact,
+  ESTIMATE_PHOTO_LIMIT_MESSAGE,
+  MAX_ESTIMATE_PHOTOS,
+  estimateSubmissionSchema,
+} from '@pmw/validation';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { PhotoRequestError } from '../src/estimatePhotos.js';
+import { EmailDeliveryError } from '../src/lib/emailDeliveryError.js';
 import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
@@ -64,6 +70,58 @@ function fixture(inArea = true) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('final estimate submission', () => {
+  it('refuses eleven photos before lookup, storage verification, save, or emails', async () => {
+    const f = fixture();
+    const photos = Array.from({ length: MAX_ESTIMATE_PHOTOS + 1 }, (_, index) => ({
+      id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      storagePath: `path-${index}.jpg`,
+      receipt: 'proof',
+    }));
+    const response = await request(f.app)
+      .post('/api/estimates')
+      .send({
+        ...input,
+        photoSession: { token: 'session', expiresAt: 1900000000 },
+        photos,
+      })
+      .expect(400);
+    expect(response.body.formErrors).toContain(ESTIMATE_PHOTO_LIMIT_MESSAGE);
+    expect(f.backend.findSaved).not.toHaveBeenCalled();
+    expect(f.photos.prepareSubmission).not.toHaveBeenCalled();
+    expect(f.backend.save).not.toHaveBeenCalled();
+    expect(f.backend.sendReceipt).not.toHaveBeenCalled();
+    expect(f.backend.sendOwnerNotice).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new EmailDeliveryError('http_error', 403), { reason: 'http_error', httpStatus: 403 }],
+    [new EmailDeliveryError('not_configured'), { reason: 'not_configured' }],
+    [
+      new EmailDeliveryError('invalid_response', 200),
+      { reason: 'invalid_response', httpStatus: 200 },
+    ],
+    [new DOMException('private timeout details', 'TimeoutError'), { reason: 'timeout' }],
+    [new TypeError('private endpoint details'), { reason: 'request_error' }],
+    [new SyntaxError('private response body'), { reason: 'invalid_response' }],
+    [
+      Object.assign(new Error('private message'), { name: 'secret-provider-error', status: 403 }),
+      { reason: 'unknown_error' },
+    ],
+  ])('logs bounded email failure context and preserves success: %j', async (error, context) => {
+    const f = fixture();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    f.backend.sendReceipt.mockRejectedValueOnce(error);
+    await request(f.app).post('/api/estimates').send(input).expect(201);
+    expect(f.backend.save).toHaveBeenCalledTimes(1);
+    expect(f.backend.sendOwnerNotice).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledExactlyOnceWith('Estimate email failed', {
+      inquiryId: saved.id,
+      inquiryNumber: saved.inquiry_number,
+      notification: 'receipt',
+      ...context,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/private|secret-provider-error/);
+  });
   it('saves unchanged customer fields, then requests both emails and returns the INQ number', async () => {
     const f = fixture();
     const response = await request(f.app)
@@ -292,8 +350,6 @@ describe('submission persistence and Resend adapter', () => {
     expect(bodies[0]).toMatchObject({
       to: ['Zoe+repairs@Example.com'],
       subject: 'Estimate request received',
-      reply_to: ['todd@example.com', 'girlie@example.com'],
-      html: expect.stringContaining('Hi Zoë 李,'),
     });
     expect(bodies[1]).toMatchObject({
       to: ['todd@example.com', 'girlie@example.com'],
@@ -312,11 +368,50 @@ describe('submission persistence and Resend adapter', () => {
     }
     expect(bodies[0].text).toContain('Hi Zoë 李,');
     expect(bodies[0].text).toContain('Item: Dining chair');
-    expect(bodies[0].text).toContain('(916) 643-5686');
-    expect(bodies[0].text).not.toContain(input.description);
+    expect(bodies[0].text).toContain(businessContact.phoneDisplay);
     expect(bodies[0].text).not.toContain(input.address);
     expect(bodies[1].html).toBeUndefined();
+    expect(bodies[0].text).not.toContain(input.description);
     expect(bodies[1].text).toContain(input.description);
+  });
+
+  it('never relays link-like names/items, private fields, or credentials in the customer receipt', async () => {
+    const f = backendFixture();
+    const details = {
+      ...estimateSubmissionSchema.parse(input),
+      first_name: 'https://spam.example/name',
+      last_name: 'PRIVATE SURNAME',
+      email: 'recipient@example.com',
+      phone: 'PRIVATE PHONE',
+      address: 'PRIVATE ADDRESS',
+      city: 'PRIVATE CITY',
+      item: 'https://spam.example/item',
+      description: 'PRIVATE DESCRIPTION',
+      photoSession: { token: 'PRIVATE TOKEN', expiresAt: 1900000000 },
+      photos: [{ id: randomUUID(), storagePath: 'PRIVATE PATH', receipt: 'PRIVATE RECEIPT' }],
+    };
+    await f.backend.sendReceipt(saved, details);
+    const body = JSON.parse(String(f.fetchEmail.mock.calls[0][1]?.body));
+    expect(body.to).toEqual(['recipient@example.com']);
+    expect(body.subject).toBe('Estimate request received');
+    expect(body.text).toContain(saved.inquiry_number);
+    expect(body.text).toContain('We received your estimate request.');
+    expect(body.text).toContain('Hi there,');
+    expect(body.text).toContain('Item: Furniture repair request');
+    expect(`${body.text} ${body.html}`).not.toMatch(/PRIVATE|spam\.example|recipient@example/);
+  });
+
+  it('retains a provider status without retaining its private response body', async () => {
+    const f = backendFixture();
+    f.fetchEmail.mockResolvedValueOnce(
+      Response.json({ message: 'PRIVATE PROVIDER BODY' }, { status: 403 }),
+    );
+    await expect(
+      f.backend.sendReceipt(saved, estimateSubmissionSchema.parse(input)),
+    ).rejects.toMatchObject({
+      reason: 'http_error',
+      httpStatus: 403,
+    });
   });
 
   it.each([false, true])(
@@ -348,13 +443,15 @@ describe('submission persistence and Resend adapter', () => {
       const receipt = JSON.parse(String(f.fetchEmail.mock.calls[0][1]?.body));
       expect(receipt.to).toEqual([input.email.trim()]);
       expect(receipt.html).toContain(saved.inquiry_number);
-      expect(receipt.text).toContain('(916) 643-5686');
+      expect(receipt.text).toContain(businessContact.phoneDisplay);
       expect(log).toHaveBeenCalledTimes(receiptFails ? 1 : 0);
       if (receiptFails)
         expect(log).toHaveBeenCalledWith('Estimate email failed', {
           inquiryId: saved.id,
           inquiryNumber: saved.inquiry_number,
           notification: 'receipt',
+          reason: 'http_error',
+          httpStatus: 503,
         });
       expect(JSON.stringify(log.mock.calls)).not.toContain('private provider details');
       const hash = f.rpc.mock.calls[0][1].p_submission_hash;
@@ -386,6 +483,34 @@ describe('submission persistence and Resend adapter', () => {
       ).rejects.toThrow();
     },
   );
+
+  it('keeps the committed success and logs a provider status through the real email adapter', async () => {
+    const f = backendFixture();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    f.fetchEmail.mockResolvedValueOnce(
+      Response.json({ message: 'PRIVATE PROVIDER BODY' }, { status: 403 }),
+    );
+    const app = createApp(config, auth, undefined, {
+      serviceArea: { isInServiceArea: async () => true },
+      estimateSubmit: createEstimateSubmitHandler(f.backend, {
+        prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
+      }),
+    });
+    await request(app).post('/api/estimates').send(input).expect(201, {
+      success: true,
+      inquiry_number: saved.inquiry_number,
+    });
+    expect(f.rpc).toHaveBeenCalledTimes(1);
+    expect(f.fetchEmail).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenCalledExactlyOnceWith('Estimate email failed', {
+      inquiryId: saved.id,
+      inquiryNumber: saved.inquiry_number,
+      notification: 'receipt',
+      reason: 'http_error',
+      httpStatus: 403,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE');
+  });
 
   it('still saves and returns success with missing email configuration', async () => {
     const f = backendFixture(false);
