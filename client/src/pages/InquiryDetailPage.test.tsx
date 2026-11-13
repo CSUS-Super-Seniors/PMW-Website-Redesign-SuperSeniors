@@ -31,7 +31,7 @@ function margaret(overrides: Partial<InquiryDetail> = {}): InquiryDetail {
     status: 'new',
     submittedAt: new Date(2020, 9, 1, 10, 18).toISOString(),
     item: 'Dining chair',
-    issueType: 'Loose joint / wobbling',
+    issueType: 'loose_joints',
     description: 'The chair rocks from side to side.',
     customerName: 'Margaret Lewis',
     email: 'margaret@example.com',
@@ -146,7 +146,8 @@ describe('InquiryDetailPage', () => {
 
     const request = section('Request');
     expect(within(request).getByText('Dining chair')).toBeInTheDocument();
-    expect(within(request).getByText('Loose joint / wobbling')).toBeInTheDocument();
+    expect(within(request).getByText('Loose joints / wobbling')).toBeInTheDocument();
+    expect(within(request).queryByText('loose_joints')).not.toBeInTheDocument();
     expect(within(request).getByText('The chair rocks from side to side.')).toBeInTheDocument();
 
     const contact = section('Contact');
@@ -285,6 +286,14 @@ describe('InquiryDetailPage', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(requests(fakeFetch).some((call) => call.includes('/api/inquiry-photos/'))).toBe(false);
+  });
+
+  it('shows an issue that is not a form value as it was stored', async () => {
+    fakeServer({ inquiry: margaret({ status: 'contacted', issueType: 'Loose joint / wobbling' }) });
+    renderPage();
+
+    await screen.findByRole('heading', { name: 'INQ-1048' });
+    expect(within(section('Request')).getByText('Loose joint / wobbling')).toBeInTheDocument();
   });
 
   it('shows missing optional details as not provided', async () => {

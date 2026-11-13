@@ -8,6 +8,7 @@ import type { InquiryDetail } from '../api/inquiryDetail';
 import { useInquiryDetail } from '../api/useInquiryDetail';
 import { routes } from '../config/site';
 import {
+  formatIssueType,
   formatSubmittedAt,
   inquiryStatusBadgeVariants,
   inquiryStatusLabels,
@@ -80,7 +81,9 @@ function Details({
           <Section title="Request">
             <dl className="space-y-4">
               <Field label="Item">{inquiry.item}</Field>
-              <Field label="What happened?">{inquiry.issueType ?? <NotProvided />}</Field>
+              <Field label="What happened?">
+                {inquiry.issueType ? formatIssueType(inquiry.issueType) : <NotProvided />}
+              </Field>
               <Field label="Description">
                 {inquiry.description ? (
                   <span className="whitespace-pre-line">{inquiry.description}</span>
