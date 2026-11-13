@@ -62,6 +62,7 @@ function fakeServer({
   inquiry = margaret(),
   detail,
   review,
+  decline = [jsonResponse(200, { status: 'closed', email: 'sent' })],
   photo = (id: string) =>
     jsonResponse(200, { signedUrl: `https://storage.test/${id}?token=signed`, expiresIn: 300 }),
   role = 'owner',
@@ -69,10 +70,13 @@ function fakeServer({
   inquiry?: InquiryDetail;
   detail?: Answer[];
   review?: ReturnType<typeof jsonResponse>;
+  /** Answers to each decline call, used in turn. */
+  decline?: Answer[];
   photo?: (id: string) => ReturnType<typeof jsonResponse>;
   role?: string;
 } = {}) {
   let detailCalls = 0;
+  let declineCalls = 0;
   const fakeFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/me') return jsonResponse(200, { role });
     if (url === `/api/inquiries/${ID}` && !init?.method) {
@@ -82,6 +86,10 @@ function fakeServer({
     }
     if (url === `/api/inquiries/${ID}/review` && init?.method === 'POST') {
       return review ?? jsonResponse(200, { status: 'contacted' });
+    }
+    if (url === `/api/inquiries/${ID}/decline` && init?.method === 'POST') {
+      const answer = decline[Math.min(declineCalls++, decline.length - 1)];
+      return answer === 'pending' ? new Promise<never>(() => {}) : answer;
     }
     const photoMatch = /^\/api\/inquiry-photos\/([^/]+)\/view-url$/.exec(url);
     if (photoMatch) return photo(photoMatch[1]);
@@ -305,15 +313,13 @@ describe('InquiryDetailPage', () => {
     expect(within(section('Address')).getByText('Outside service area')).toBeInTheDocument();
   });
 
-  it('shows Accept and Decline as not yet available', async () => {
+  it('shows Accept as not yet available', async () => {
     fakeServer({ inquiry: margaret({ status: 'contacted', photos: [] }) });
     renderPage();
 
     expect(await screen.findByRole('button', { name: 'Accept' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Decline' })).toBeDisabled();
-    expect(
-      screen.getByText('Accepting and declining requests is coming soon.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Accepting requests is coming soon.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeEnabled();
   });
 
   it('links back to the list', async () => {
@@ -374,5 +380,249 @@ describe('InquiryDetailPage', () => {
       await screen.findByRole('heading', { name: 'You do not have access to this page' }),
     ).toBeInTheDocument();
     expect(requests(fakeFetch)).toEqual([]);
+  });
+});
+
+function declines(fakeFetch: ReturnType<typeof fakeServer>) {
+  return fakeFetch.mock.calls
+    .filter(([url]) => url === `/api/inquiries/${ID}/decline`)
+    .map(([, init]) => JSON.parse(String((init as RequestInit).body)));
+}
+
+async function openDeclineDialog() {
+  const button = await screen.findByRole('button', { name: 'Decline' });
+  // A real click or keypress focuses the button first; jsdom's click does not.
+  button.focus();
+  fireEvent.click(button);
+  return screen.getByRole('dialog', { name: 'Decline INQ-1048?' });
+}
+
+function statusBadge() {
+  const header = screen.getByRole('heading', { name: 'INQ-1048' }).parentElement as HTMLElement;
+  return within(header).queryByText(/^(New|Reviewed|Accepted|Declined)$/);
+}
+
+describe('Declining an estimate request', () => {
+  it('asks for confirmation, then declines and emails the customer', async () => {
+    const fakeFetch = fakeServer({ inquiry: margaret({ status: 'contacted', photos: [] }) });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    expect(
+      within(dialog).getByText(
+        /marked Declined and removed from the active estimate requests list/,
+      ),
+    ).toBeInTheDocument();
+    const checkbox = within(dialog).getByRole('checkbox', {
+      name: "Email the customer that we can't take this request",
+    });
+    expect(checkbox).toBeChecked();
+    expect(within(dialog).getByText('margaret@example.com')).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+
+    expect(await screen.findByText('Request declined')).toBeInTheDocument();
+    expect(screen.getByText('We emailed the customer to let them know.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(declines(fakeFetch)).toEqual([{ notifyCustomer: true }]);
+    expect(statusBadge()).toHaveTextContent('Declined');
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to estimate requests' })).toHaveAttribute(
+      'href',
+      '/portal/inquiries',
+    );
+  });
+
+  it('declines a New request that was just marked Reviewed', async () => {
+    const fakeFetch = fakeServer({ inquiry: margaret({ photos: [] }) });
+    renderPage();
+
+    await waitFor(() => expect(statusBadge()).toHaveTextContent('Reviewed'));
+    fireEvent.click(
+      within(await openDeclineDialog()).getByRole('button', { name: 'Decline request' }),
+    );
+
+    await waitFor(() => expect(statusBadge()).toHaveTextContent('Declined'));
+    expect(declines(fakeFetch)).toHaveLength(1);
+  });
+
+  it.each([
+    ['Cancel', (dialog: HTMLElement) => fireEvent.click(within(dialog).getByText('Cancel'))],
+    [
+      'the close button',
+      (dialog: HTMLElement) =>
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Close dialog' })),
+    ],
+    ['Escape', () => fireEvent.keyDown(document, { key: 'Escape' })],
+  ])('changes nothing when the owner closes the dialog with %s', async (_name, close) => {
+    const fakeFetch = fakeServer({ inquiry: margaret({ status: 'contacted', photos: [] }) });
+    renderPage();
+
+    close(await openDeclineDialog());
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(declines(fakeFetch)).toEqual([]);
+    expect(statusBadge()).toHaveTextContent('Reviewed');
+    expect(screen.getByRole('button', { name: 'Decline' })).toHaveFocus();
+  });
+
+  it('declines without emailing when the owner unticks the email', async () => {
+    const fakeFetch = fakeServer({
+      inquiry: margaret({ status: 'contacted', photos: [] }),
+      decline: [jsonResponse(200, { status: 'closed', email: 'skipped' })],
+    });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    fireEvent.click(within(dialog).getByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+
+    expect(await screen.findByText('The customer was not emailed.')).toBeInTheDocument();
+    expect(declines(fakeFetch)).toEqual([{ notifyCustomer: false }]);
+  });
+
+  it('does not offer the email when the request has no address', async () => {
+    const fakeFetch = fakeServer({
+      inquiry: margaret({ status: 'contacted', email: null, photos: [] }),
+      decline: [jsonResponse(200, { status: 'closed', email: 'skipped' })],
+    });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "This request has no email address, so the customer won't be emailed.",
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+
+    await screen.findByText('Request declined');
+    expect(declines(fakeFetch)).toEqual([{ notifyCustomer: false }]);
+  });
+
+  it('disables both buttons while the decline is saving', async () => {
+    fakeServer({ inquiry: margaret({ status: 'contacted', photos: [] }), decline: ['pending'] });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+
+    expect(await within(dialog).findByRole('button', { name: 'Declining...' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('keeps the dialog open with an error when the decline fails, and can retry', async () => {
+    const fakeFetch = fakeServer({
+      inquiry: margaret({ status: 'contacted', photos: [] }),
+      decline: [jsonResponse(503, {}), jsonResponse(200, { status: 'closed', email: 'sent' })],
+    });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+
+    expect(
+      await within(dialog).findByText(
+        'We could not decline this request. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(statusBadge()).toHaveTextContent('Reviewed');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+    expect(await screen.findByText('Request declined')).toBeInTheDocument();
+    expect(declines(fakeFetch)).toHaveLength(2);
+  });
+
+  it.each([
+    [401, 'Your session is no longer valid. Please log in again.'],
+    [403, 'You no longer have permission to decline estimate requests.'],
+    [404, 'This estimate request no longer exists.'],
+  ])('explains a %i answer in the dialog', async (code, message) => {
+    fakeServer({
+      inquiry: margaret({ status: 'contacted', photos: [] }),
+      decline: [jsonResponse(code, {})],
+    });
+    renderPage();
+
+    const dialog = await openDeclineDialog();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Decline request' }));
+    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+  });
+
+  it('shows the new status when the request was accepted in the meantime', async () => {
+    fakeServer({
+      inquiry: margaret({ status: 'contacted', photos: [] }),
+      decline: [jsonResponse(409, { error: 'accepted', status: 'converted' })],
+    });
+    renderPage();
+
+    fireEvent.click(
+      within(await openDeclineDialog()).getByRole('button', { name: 'Decline request' }),
+    );
+
+    expect(
+      await screen.findByText('This request was accepted, so it can no longer be declined.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(statusBadge()).toHaveTextContent('Accepted');
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
+  });
+
+  it('tells the owner when the email failed and lets them send it again', async () => {
+    const fakeFetch = fakeServer({
+      inquiry: margaret({ status: 'contacted', photos: [] }),
+      decline: [
+        jsonResponse(200, { status: 'closed', email: 'failed' }),
+        jsonResponse(200, { status: 'closed', email: 'sent' }),
+      ],
+    });
+    renderPage();
+
+    fireEvent.click(
+      within(await openDeclineDialog()).getByRole('button', { name: 'Decline request' }),
+    );
+
+    expect(await screen.findByText('Customer not emailed')).toBeInTheDocument();
+    expect(screen.getByText('The email to the customer could not be sent.')).toBeInTheDocument();
+    expect(statusBadge()).toHaveTextContent('Declined');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try sending the email again' }));
+
+    expect(
+      await screen.findByText('We emailed the customer to let them know.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Customer not emailed')).not.toBeInTheDocument();
+    expect(declines(fakeFetch)).toEqual([{ notifyCustomer: true }, { notifyCustomer: true }]);
+  });
+
+  it('says why the customer was not emailed when the address is unusable', async () => {
+    fakeServer({
+      inquiry: margaret({ status: 'contacted', email: 'not an address', photos: [] }),
+      decline: [jsonResponse(200, { status: 'closed', email: 'no_email' })],
+    });
+    renderPage();
+
+    fireEvent.click(
+      within(await openDeclineDialog()).getByRole('button', { name: 'Decline request' }),
+    );
+
+    expect(await screen.findByText(/no usable email address/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Try sending the email again' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['closed', 'This request was declined.'],
+    ['converted', 'This request was accepted.'],
+  ] as const)('does not offer Decline for a %s request', async (status, message) => {
+    fakeServer({ inquiry: margaret({ status, photos: [] }) });
+    renderPage();
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Decline' })).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchInquiry, fetchPhotoViewUrl, markInquiryReviewed } from './inquiryDetail';
+import {
+  declineInquiry,
+  fetchInquiry,
+  fetchPhotoViewUrl,
+  markInquiryReviewed,
+} from './inquiryDetail';
 
 const ID = '5eed0003-0000-4000-8000-000000001048';
 
@@ -97,6 +102,77 @@ describe('markInquiryReviewed', () => {
   ])('returns null for %s', async (_name, code, body) => {
     respond(code, body);
     expect(await markInquiryReviewed('token-123', ID)).toBeNull();
+  });
+});
+
+describe('declineInquiry', () => {
+  it('posts the email choice as JSON and returns the email outcome', async () => {
+    const fakeFetch = respond(200, { status: 'closed', email: 'sent' });
+
+    expect(await declineInquiry('token-123', ID, true)).toEqual({
+      status: 'declined',
+      email: 'sent',
+    });
+    expect(fakeFetch).toHaveBeenCalledWith(`/api/inquiries/${ID}/decline`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer token-123', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notifyCustomer: true }),
+    });
+  });
+
+  it('sends false when the owner chose not to email', async () => {
+    const fakeFetch = respond(200, { status: 'closed', email: 'skipped' });
+    await declineInquiry('token-123', ID, false);
+    expect(fakeFetch.mock.calls[0][1]?.body).toBe(JSON.stringify({ notifyCustomer: false }));
+  });
+
+  it.each(['sent', 'already_sent', 'skipped', 'no_email', 'unavailable', 'failed'])(
+    'passes the %s email outcome through',
+    async (email) => {
+      respond(200, { status: 'closed', email });
+      expect(await declineInquiry('token-123', ID, true)).toEqual({ status: 'declined', email });
+    },
+  );
+
+  it.each([
+    [401, 'unauthenticated'],
+    [403, 'no-access'],
+    [404, 'not-found'],
+    [400, 'error'],
+    [503, 'error'],
+  ])('maps HTTP %i to %s', async (code, status) => {
+    respond(code);
+    expect(await declineInquiry('token-123', ID, true)).toEqual({ status });
+  });
+
+  it('reports the current status when the request can no longer be declined', async () => {
+    respond(409, { error: 'accepted', status: 'converted' });
+    expect(await declineInquiry('token-123', ID, true)).toEqual({
+      status: 'not-declinable',
+      current: 'converted',
+    });
+  });
+
+  it('ignores an unknown status in a 409 answer', async () => {
+    respond(409, { status: 'archived' });
+    expect(await declineInquiry('token-123', ID, true)).toEqual({
+      status: 'not-declinable',
+      current: null,
+    });
+  });
+
+  it.each([
+    ['a status other than closed', { status: 'contacted', email: 'sent' }],
+    ['an unknown email outcome', { status: 'closed', email: 'queued' }],
+    ['a missing email outcome', { status: 'closed' }],
+  ])('treats a body with %s as an error', async (_name, body) => {
+    respond(200, body);
+    expect(await declineInquiry('token-123', ID, true)).toEqual({ status: 'error' });
+  });
+
+  it('returns error when the network is down', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    expect(await declineInquiry('token-123', ID, true)).toEqual({ status: 'error' });
   });
 });
 
