@@ -100,13 +100,7 @@ test('owner can reach employee routes and owner-only areas', async () => {
     .post('/api/jobs/J-1001/media')
     .set('Authorization', 'Bearer valid')
     .expect(501);
-  for (const path of [
-    '/api/customers',
-    '/api/reports',
-    '/api/staff',
-    '/api/inquiries',
-    '/api/testimonials',
-  ]) {
+  for (const path of ['/api/customers', '/api/reports', '/api/staff', '/api/testimonials']) {
     await request(app).get(path).set('Authorization', 'Bearer valid').expect(404);
   }
 });

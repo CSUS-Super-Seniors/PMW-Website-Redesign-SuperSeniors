@@ -25,6 +25,7 @@ import {
   type ServiceAreaLocals,
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
+import { parseInquiryListQuery, type InquiryBackend } from './inquiries.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
@@ -37,6 +38,8 @@ export interface AppOptions {
   photos?: EstimatePhotosBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
   estimateSubmit?: EstimateSubmitHandler;
+  /** Reads the owner's estimate request list (SSPMW-130). */
+  inquiries?: InquiryBackend;
   /** Accepts an estimate request and turns it into a job (SSPMW-156). */
   acceptInquiry?: AcceptInquiryBackend;
 }
@@ -58,7 +61,7 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, acceptInquiry: acceptBackend }: AppOptions = {},
+  { serviceArea, estimateSubmit, photos, inquiries, acceptInquiry: acceptBackend }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -274,6 +277,25 @@ export function createApp(
   });
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
+  });
+  api.get('/inquiries', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const query = parseInquiryListQuery(req.query);
+    if (!query.ok) {
+      res.status(400).json({ error: query.error });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const { page, pageSize } = query;
+      const result = await inquiries.listInquiries({ page, pageSize });
+      res.json({ ...result, page, pageSize });
+    } catch {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
   });
   api.post('/inquiries/:inquiryId/accept', async (req, res) => {
     res.set('Cache-Control', 'no-store');

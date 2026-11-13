@@ -1,3 +1,6 @@
+import { isBareMailbox } from './lib/resendEmail.js';
+
+/** Resend settings. Contact notifications go to `to`; decline emails use it as Reply-To. */
 export interface ContactEmailConfig {
   apiKey: string;
   from: string;
@@ -74,12 +77,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .CONTACT_OWNER_EMAILS!.split(',')
       .map((value) => value.trim())
       .filter(Boolean);
-    const mailbox = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-    if (
-      to.length === 0 ||
-      to.length > 50 ||
-      ![from, ...to].every((value) => value.length <= 254 && mailbox.test(value))
-    ) {
+    if (to.length === 0 || to.length > 50 || ![from, ...to].every(isBareMailbox)) {
       throw new Error(
         'RESEND_FROM_EMAIL and CONTACT_OWNER_EMAILS must contain bare email addresses',
       );
