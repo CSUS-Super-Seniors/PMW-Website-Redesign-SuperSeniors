@@ -22,7 +22,7 @@ import {
   type ServiceAreaLocals,
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
-import { parseInquiryListQuery, type InquiryBackend } from './inquiries.js';
+import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inquiries.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
@@ -290,6 +290,53 @@ export function createApp(
       res.json({ ...result, page, pageSize });
     } catch {
       res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  // One estimate request with its photo ids (SSPMW-144). Read-only, so loading or
+  // prefetching it never changes the status; the page marks it Reviewed with a POST.
+  api.get('/inquiries/:inquiryId', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const inquiry = await inquiries.getInquiry(id);
+      if (!inquiry) {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      res.json(inquiry);
+    } catch {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  // Opening a New request marks it Reviewed. Other statuses are left as they are.
+  api.post('/inquiries/:inquiryId/review', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const status = await inquiries.markReviewed(id);
+      if (status === null) {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      res.json({ status });
+    } catch {
+      res.status(503).json({ error: 'Could not update the estimate request. Please retry.' });
     }
   });
   app.use('/api', api);
