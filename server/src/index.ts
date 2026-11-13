@@ -9,6 +9,7 @@ import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
 } from './estimateSubmission.js';
+import { createInquiryBackend } from './inquiries.js';
 try {
   const config = loadConfig();
   const supabase = createSupabaseAdmin(config);
@@ -28,6 +29,7 @@ try {
       createEstimateSubmissionBackend(supabase, config.contactEmail),
       photos,
     ),
+    inquiries: createInquiryBackend(supabase),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });

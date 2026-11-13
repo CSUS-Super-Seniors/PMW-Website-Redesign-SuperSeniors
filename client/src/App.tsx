@@ -7,6 +7,7 @@ import { business, routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
+import InquiriesPage from './pages/InquiriesPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -39,6 +40,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>
+            <Route path="inquiries" element={<InquiriesPage />} />
+            {/* Inquiry detail is SSPMW-144. */}
             <Route path="inquiries/*" element={<PlaceholderPage />} />
             <Route path="customers/*" element={<PlaceholderPage />} />
             <Route path="reports/*" element={<PlaceholderPage />} />
