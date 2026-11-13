@@ -81,7 +81,7 @@ describe('App', () => {
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
-      await user.type(screen.getByLabelText(label), value);
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
     await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');
@@ -98,7 +98,7 @@ describe('App', () => {
       '/api/estimates/service-area',
     ]);
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
+    expect(await screen.findByLabelText('Email address')).toHaveValue('ana+chair@example.com');
     expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
       lead_source: 'referral',
     });
@@ -124,7 +124,7 @@ describe('App', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Back to photos' }));
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByLabelText('Item')).toHaveValue('Chair repair');
+    expect(await screen.findByLabelText('Item')).toHaveValue('Chair repair');
     expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('yelp');
     expect(honeypot()).toHaveValue('bot-filled-value');
   });
@@ -172,7 +172,7 @@ describe('App', () => {
     await advance();
     await screen.findByLabelText('Choose photos');
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Davis' } });
+    fireEvent.change(await screen.findByLabelText('City'), { target: { value: 'Davis' } });
     await advance();
     await screen.findByText('Outside our service area');
     expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();

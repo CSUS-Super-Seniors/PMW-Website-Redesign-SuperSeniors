@@ -294,6 +294,14 @@ Create a new ID only for a new request or edited details, never automatically on
 Do not log the payload, session token or receipts. `photoSession` defaults to `null` and
 `photos` to `[]`; keep any existing session even if every photo was removed.
 
+A final request accepts at most **10 photos**, using shared `MAX_ESTIMATE_PHOTOS`.
+`estimateSubmissionSchema` refuses an oversized array with HTTP 400 before inquiry
+lookup, photo verification, saving, or emails. `prepareSubmission` also checks the
+count before session verification or any storage call; the older `attachPhotos`
+entry point enforces the same bound. For accepted 1 MiB uploads, normal verification reads
+at most 10 MiB for a submission. The future review UI should use the shared constant
+for immediate selection feedback; the server remains authoritative.
+
 The server runs the IP limiter, honeypot, current service-area check, shared final schema,
 and signed photo/byte checks. It stores all validated customer strings as submitted,
 `lead_source`, `in_service_area = true`, and `status = 'new'` (displayed as New).
@@ -323,11 +331,28 @@ the contact endpoint retains its existing 503 behavior.
 
 Each email has an inquiry-specific idempotency key and a ten-second timeout. Both sends
 are awaited together so serverless execution can finish them; "non-blocking" means an
-email error cannot fail or undo the save. Logs include only inquiry ID/number and the
-failed notification kind. Exact submission retries never resend mail, including after
+email error cannot fail or undo the save. Failure logs include inquiry ID/number,
+notification kind, a fixed `reason`, and a numeric `httpStatus` when available.
+Reasons are `http_error`, `not_configured`, `invalid_response`, `timeout`,
+`request_error`, or `unknown_error`. Request errors can include network failures;
+provider bodies, exception messages/stacks, arbitrary error names, customer fields,
+credentials, and tokens are never logged. Exact submission retries never resend mail, including after
 the provider's idempotency window. Delivery is best effort: a crash after commit or an
 email failure has no automatic retry worker in this story. Resend acknowledgement is
 not proof of inbox delivery. N1/N2's separate stories may refine message content.
+
+The interim customer receipt contains only fixed confirmation text and saved inquiry
+metadata. It never relays submitted names, items, descriptions, addresses, contact
+details, or photo credentials to the unverified recipient address. SSPMW-197 / PR #68
+adds the filtered personalized receipt. Its current reviewed snapshot (`c1439bd`)
+omits descriptions/contact details and uses the decline-email link-like-text filter.
+When integrating #68/#69, retain this branch's photo cap and failure-log context;
+the shared Resend sender must preserve HTTP status in `EmailDeliveryError`.
+
+The merge hold remains: merge PR #56 into main first, integrate main into #66 and
+retarget #66 to main, then rerun CI before merging #66, #68, and #69 in that order.
+Preserve main's `inquiries:` application option and `business.js` validation export
+alongside estimate submission wiring when resolving integration conflicts.
 
 Run the ordinary checks plus database tests against local Supabase with all migrations:
 

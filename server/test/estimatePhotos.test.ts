@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createApp, type EstimateSubmitHandler } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createEstimatePhotosBackend, type EstimatePhotosBackend } from '../src/estimatePhotos.js';
+import { ESTIMATE_PHOTO_LIMIT_MESSAGE, MAX_ESTIMATE_PHOTOS } from '@pmw/validation';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const inquiry = '22222222-2222-4222-8222-222222222222';
@@ -114,6 +115,39 @@ function storageFixture() {
 }
 
 describe('private photo storage backend', () => {
+  it('rejects excess photos before any bucket lookup, download, or attachment RPC', async () => {
+    const f = storageFixture();
+    const photos = Array.from({ length: MAX_ESTIMATE_PHOTOS + 1 }, () => ({
+      id,
+      storagePath: 'unused/path.jpg',
+      receipt: 'unused-proof',
+    }));
+    // Even an invalid capability must not start storage work for an oversized set.
+    await expect(f.backend.prepareSubmission('invalid-token', photos)).rejects.toThrow(
+      ESTIMATE_PHOTO_LIMIT_MESSAGE,
+    );
+    await expect(f.backend.attachPhotos(inquiry, 'invalid-token', photos)).rejects.toThrow(
+      ESTIMATE_PHOTO_LIMIT_MESSAGE,
+    );
+    expect(f.getBucket).not.toHaveBeenCalled();
+    expect(f.download).not.toHaveBeenCalled();
+    expect(f.rpc).not.toHaveBeenCalled();
+  });
+
+  it('verifies exactly the maximum number of live uploaded photos', async () => {
+    const f = storageFixture();
+    const session = f.backend.startSession();
+    const photos = [];
+    for (let index = 0; index < MAX_ESTIMATE_PHOTOS; index++) {
+      const photoId = `60000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+      photos.push(await f.backend.upload(session.token, photoId, jpeg, 'image/jpeg'));
+    }
+    f.download.mockClear();
+    const prepared = await f.backend.prepareSubmission(session.token, photos);
+    expect(prepared.storagePaths).toHaveLength(MAX_ESTIMATE_PHOTOS);
+    expect(f.download).toHaveBeenCalledTimes(MAX_ESTIMATE_PHOTOS);
+    expect(f.rpc).not.toHaveBeenCalled();
+  });
   it('prepares only verified retained uploads before creating an inquiry, without database mutations', async () => {
     const f = storageFixture();
     const session = f.backend.startSession();

@@ -9,6 +9,7 @@ import {
 import type { EstimateSubmitHandler } from './app.js';
 import type { ContactEmailConfig } from './config.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
+import { EmailDeliveryError, emailFailureLogContext } from './lib/emailDeliveryError.js';
 
 export interface SavedEstimate {
   id: string;
@@ -53,7 +54,7 @@ export function createEstimateSubmissionBackend(
   fetchEmail: typeof fetch = fetch,
 ): EstimateSubmissionBackend {
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
-    if (!email) throw new Error('Estimate email is not configured.');
+    if (!email) throw new EmailDeliveryError('not_configured');
     const receipt = kind === 'receipt';
     const response = await fetchEmail('https://api.resend.com/emails', {
       method: 'POST',
@@ -70,32 +71,41 @@ export function createEstimateSubmissionBackend(
           ? 'Estimate request received'
           : `New estimate request: ${saved.inquiry_number}`,
         ...(!receipt ? { reply_to: details.email.trim() } : {}),
-        text: [
-          receipt ? `Hi ${details.first_name},` : 'New estimate request',
-          '',
-          ...(receipt
-            ? ['We received your estimate request. We will review it and contact you.', '']
-            : []),
-          `Inquiry: ${saved.inquiry_number}`,
-          `Received: ${saved.created_at}`,
-          `Name: ${details.first_name} ${details.last_name}`,
-          `Email: ${details.email}`,
-          `Phone: ${details.phone}`,
-          `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
-          `Address: ${details.address}`,
-          `City: ${details.city}`,
-          `Item: ${details.item}`,
-          `Issue: ${details.issue_type}`,
-          `Lead source: ${details.lead_source}`,
-          '',
-          details.description,
-          ...(!receipt
-            ? ['', 'View this inquiry and its private photos in the owner Inquiries list.']
-            : []),
-        ].join('\n'),
+        // The public form does not prove ownership of the entered email. Keep
+        // the interim receipt free of submitted text; SSPMW-197 adds its filtered
+        // personalized template separately. Owner recipients are server-configured.
+        text: (receipt
+          ? [
+              'Estimate request received',
+              '',
+              'We received your estimate request. We will review it and contact you.',
+              '',
+              `Inquiry: ${saved.inquiry_number}`,
+              `Received: ${saved.created_at}`,
+            ]
+          : [
+              'New estimate request',
+              '',
+              `Inquiry: ${saved.inquiry_number}`,
+              `Received: ${saved.created_at}`,
+              `Name: ${details.first_name} ${details.last_name}`,
+              `Email: ${details.email}`,
+              `Phone: ${details.phone}`,
+              `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
+              `Address: ${details.address}`,
+              `City: ${details.city}`,
+              `Item: ${details.item}`,
+              `Issue: ${details.issue_type}`,
+              `Lead source: ${details.lead_source}`,
+              '',
+              details.description,
+              '',
+              'View this inquiry and its private photos in the owner Inquiries list.',
+            ]
+        ).join('\n'),
       }),
     });
-    if (!response.ok) throw new Error('Estimate email could not be sent.');
+    if (!response.ok) throw new EmailDeliveryError('http_error', response.status);
     const result: unknown = await response.json();
     if (
       !result ||
@@ -104,7 +114,7 @@ export function createEstimateSubmissionBackend(
       typeof result.id !== 'string' ||
       !result.id.trim()
     )
-      throw new Error('Estimate email was not acknowledged.');
+      throw new EmailDeliveryError('invalid_response', response.status);
   }
   return {
     async findSaved(submissionId, hash) {
@@ -197,6 +207,7 @@ export function createEstimateSubmitHandler(
             inquiryId: saved.id,
             inquiryNumber: saved.inquiry_number,
             notification: index === 0 ? 'receipt' : 'owner',
+            ...emailFailureLogContext(result.reason),
           });
       });
     }
