@@ -1,16 +1,43 @@
+import { isBareMailbox } from './lib/resendEmail.js';
+
+/** Resend settings. Contact notifications go to `to`; decline emails use it as Reply-To. */
 export interface ContactEmailConfig {
   apiKey: string;
   from: string;
   to: string[];
 }
 
+export interface RateLimitConfig {
+  max: number;
+  windowMs: number;
+}
+
 export interface Config {
   port: number;
   clientOrigins: string[];
+  /** Proxies in front of the app whose X-Forwarded-For can be trusted (Vercel: 1). */
+  trustProxyHops: number;
+  /** Estimate submissions allowed per visitor IP in one window. */
+  estimateRateLimit: RateLimitConfig;
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   contactEmail?: ContactEmailConfig;
 }
+function wholeNumberSetting(
+  env: NodeJS.ProcessEnv,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const raw = env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || value < min || value > max)
+    throw new Error(`${key} must be a whole number from ${min} to ${max}`);
+  return value;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const required = ['CLIENT_ORIGINS', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
   const missing = required.filter((key) => !env[key]?.trim());
@@ -50,21 +77,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .CONTACT_OWNER_EMAILS!.split(',')
       .map((value) => value.trim())
       .filter(Boolean);
-    const mailbox = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
-    if (
-      to.length === 0 ||
-      to.length > 50 ||
-      ![from, ...to].every((value) => value.length <= 254 && mailbox.test(value))
-    ) {
+    if (to.length === 0 || to.length > 50 || ![from, ...to].every(isBareMailbox)) {
       throw new Error(
         'RESEND_FROM_EMAIL and CONTACT_OWNER_EMAILS must contain bare email addresses',
       );
     }
     contactEmail = { apiKey: env.RESEND_API_KEY!.trim(), from, to: [...new Set(to)] };
   }
+  const trustProxyHops = wholeNumberSetting(env, 'TRUST_PROXY_HOPS', 0, 0, 10);
+  const estimateRateLimit = {
+    max: wholeNumberSetting(env, 'ESTIMATE_RATE_LIMIT_MAX', 5, 1, 1000),
+    windowMs: wholeNumberSetting(env, 'ESTIMATE_RATE_LIMIT_WINDOW_MINUTES', 60, 1, 1440) * 60_000,
+  };
   return {
     port,
     clientOrigins,
+    trustProxyHops,
+    estimateRateLimit,
     supabaseUrl,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
     contactEmail,

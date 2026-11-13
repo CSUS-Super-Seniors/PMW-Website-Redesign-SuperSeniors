@@ -9,7 +9,7 @@ Jira: [Super Seniors - PMW Website Redesign](https://csus-super-seniors.atlassia
 - `client/`: React + Vite + TypeScript + React Router + Tailwind CSS
 - `server/`: Node.js + Express + TypeScript (all routes under `/api`)
 - `shared/`: browser-compatible `@pmw/validation` workspace (Zod schemas and form configuration)
-- Tests: Vitest (unit). Playwright is added later (SSPMW-232).
+- Tests: Vitest (unit) and Playwright (browser).
 - CI: GitHub Actions runs lint, format check, type check, and tests on every PR to `main`.
 
 ## Getting started
@@ -93,16 +93,163 @@ mapping for the client and server. Its source is `shared/src/estimateStep1.ts`.
 
 ### Step 1 handoff (SSPMW-296), Concerning SSPMW-24 and SSPMW-31
 
-Step 1 validation and the responsive layout are implemented. Valid input
-currently shows an unavailable notice instead of advancing to Step 2.
-
-Remaining integration: connect successful validation to the service-area
-check (SSPMW-24), then the photo screen (SSPMW-31). Preserve values when
-returning to Step 1 and allow continuation with zero photos.
+Step 1 validation, the responsive layout and the service-area check (SSPMW-24) are implemented.
+Valid input in an active service city advances to optional photos. Back preserves the details,
+City, honeypot value, and selected photos.
 
 The current entry point is `client/src/pages/EstimateRequestPage.tsx`.
-Update `client/src/App.test.tsx` to cover advancement, service-area
-outcomes, retries, and Back navigation.
+`client/src/App.test.tsx` and the photo e2e tests cover advancement, retries, and Back navigation.
+
+### Service area check (SSPMW-24)
+
+Step 1 has a required City field. After the details pass validation, the form asks the server
+whether that city is in the `service_cities` table (active rows only). Capitalization, extra spaces
+and a trailing state, ZIP code or country do not matter. A city outside the area shows an "Outside our service area"
+error with a tap-to-call link, and the customer cannot continue. If the check can't run, the
+customer also can't continue and is asked to try again.
+
+- Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
+  `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
+  active cities aren't secret; the Service Area page will show them). Bad input returns 400, an
+  unreadable city list returns 503, and too many checks return 429 (see spam protection below).
+- The submit route runs `requireServiceArea` (see spam protection below). It checks only the
+  city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
+  422 (`code: "outside_service_area"`) even when the browser check was skipped. The SSPMW-70
+  handler reads `res.locals.inServiceArea` (typed as `ServiceAreaLocals`) for the inquiry's
+  `in_service_area` column, and still validates the rest of the body.
+- The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
+  Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
+  for local, dev and staging. Production cities come from the client's Q7 answer.
+
+## Estimate form spam protection (SSPMW-95)
+
+The estimate form is public and accepts photos, so the submit route is protected before its
+handler (SSPMW-70) runs. `createApp(config, auth, contact, { serviceArea, estimateSubmit })`
+mounts `POST /api/estimates` (`ESTIMATE_SUBMIT_PATH`) in this order: rate limit, JSON body,
+honeypot, service-area check (`requireServiceArea`, SSPMW-24), then the handler. The handler is
+typed as `EstimateSubmitHandler`, so `res.locals.inServiceArea` is known to be `true` there.
+Until the handler is passed in, the route answers 501.
+
+- **Rate limit:** each visitor gets `ESTIMATE_RATE_LIMIT_MAX` submissions per
+  `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). A visitor is one IPv4 address, or
+  one IPv6 /64 network so a bot can't rotate through its addresses. Over the limit, the reply is
+  429 with a friendly message and a `Retry-After` header. The count lives in each server
+  instance's memory, so it costs nothing but is per instance on Vercel.
+  - Up to 50,000 visitors are tracked one by one. During a flood beyond that, new visitors are
+    counted in 4,096 overflow buckets, chosen by network (an IPv4 /24 or IPv6 /48) so one network
+    always lands in the same bucket, 10 requests per bucket per window. Nobody's limit is reset, one
+    network can't use up the overflow for everyone, and new visitors are only slowed down if a flood
+    from thousands of separate networks fills every bucket.
+  - This limits each visitor, not the total. A total cap (for example, refusing new inquiries past
+    a daily count) belongs in the SSPMW-70 handler, which can count saved inquiries.
+  - `POST /api/estimates/service-area` has its own limit of 30 checks per 10 minutes. Over it,
+    Step 1 asks the customer to wait a few minutes or call.
+- **Honeypot:** Step 1 has a hidden `pmw_extra` field that people never see. The form hands
+  its value to the page (`onContinue(details, spamCheck)`), which keeps it for the submit step.
+  The submit request should send it. A filled honeypot gets a normal-looking 201 reply, but
+  nothing is saved and no email is sent. An empty one is removed from the body before the handler
+  sees it. Leaving the field out is treated as clean, so this catches bots that fill in every
+  input, not scripts that post straight to the API (the rate limit covers those).
+- **Photo checks:** `checkEstimatePhoto(bytes, contentType, maxBytes)` in
+  `server/src/lib/photoChecks.ts` reads the file's first bytes, so a renamed non-image is refused
+  (415) even when the browser checks are bypassed. Files over 10 MB are refused (413). The SSPMW-31
+  photo backend calls it before storage with a 1 MiB limit for compressed files. It
+  checks the file signature, not every byte, so photos must stay private and only be served back
+  as images. Only JPG and PNG pass, matching the SSPMW-31 and SSPMW-95 stories.
+
+### Estimate flow and photos (SSPMW-31 / SSPMW-39 / SSPMW-41)
+
+Step 1 validates the details and checks the active service cities before opening optional photos.
+Both server entry points provide service-area and photo backends through `createApp`'s fourth-argument options.
+JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
+Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
+Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
+The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
+SSPMW-31 is partial for inquiry attachment: `attachPhotos` currently has no application caller,
+so this flow does not create `inquiry_photos` rows. Removal from previews and the handoff is
+implemented; attachment and exclusion of removed photos on the saved inquiry remain deferred
+to SSPMW-70 and are not verified end to end here.
+
+`useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
+After applying both photo reconciliation/confirmation migrations, trusted submission code verifies inquiry ownership and calls:
+
+```ts
+const backend = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+await backend.attachPhotos(inquiryId, photoSession?.token ?? '', photos, { finalize: true });
+```
+
+Keep tokens/receipts private, including the session when removing all photos. Draft links are replaced atomically; finalized sets cannot change.
+After a lost submit response, retry the same inquiry ID and **original handoff before renewing/reuploading**; exact finalized retries work after expiry, but expired credentials cannot finalize drafts.
+SSPMW-70 must retain stable request/results, deduplicate inquiry creation/emails, and wait for attachment success before notification; photo confirmation is not proof of email delivery.
+Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
+Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; SSPMW-95 protects the submit route, and its file checks are connected to the photo backend.
+The page retains `{ details, spamCheck, photoSession, photos }` for the later review/submission flow.
+SSPMW-70 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`,
+provide `estimateSubmit` in the app options, and persist the server-approved service-area result.
+
+- Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
+- Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
+- Cleanup: `.github/workflows/cleanup-estimate-photos.yml` runs daily at 10:23 UTC with `--apply`, deleting only unattached uploads expired for over 24 hours. The command `npm run cleanup:estimate-photos -w server` remains a dry run by default.
+- Before completion: `npm run verify:storage -w server` against local Supabase, normal migration deployment, and PR review/merge remain required.
+
+#### Photo rate limiting behind Vercel
+
+The Vercel entry point (`api/index.ts`) defaults `TRUST_PROXY_HOPS` to one so the
+photo limiter uses each visitor's IP. Vercel overwrites `X-Forwarded-For` with the
+connecting client's address ([Vercel request headers](https://vercel.com/docs/headers/request-headers));
+Express reads the nearest forwarded address with this setting
+([Express proxy configuration](https://expressjs.com/en/guide/behind-proxies/)).
+The direct local server defaults `TRUST_PROXY_HOPS` to zero. Revisit this setting if the
+hosting topology changes. Upload and submit limits remain instance-local; distributed limits are outside the current implementation.
+
+#### Daily photo cleanup setup
+
+Create a GitHub Actions environment named `estimate-photo-cleanup` for the Supabase
+project whose uploads should be cleaned. Set its secrets `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY`, and its variable `CLIENT_ORIGINS` to that deployment's
+allowed website origin(s). The existing script validates these server settings;
+it does not send HTTP requests to the website. Keep staging and production credentials separate.
+
+The schedule starts only after the workflow reaches the repository's default branch
+and these settings exist. Local changes alone do not activate it. From the Actions
+tab, manually run **Clean up abandoned estimate photos** with `apply` unchecked to
+inspect the eligible count; check `apply` to delete eligible objects. Scheduled runs
+always apply cleanup. The job has read-only repository permissions, prevents
+overlapping cleanup runs, and reports failures through its Actions run status.
+The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
+attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
+
+### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
+
+The estimate page uses the existing shared `ConfirmationDialog` when a customer
+tries to leave through site links, Cancel, or browser Back/Forward with entered
+details or selected photos. Incomplete and invalid entries count as data; the
+hidden honeypot does not. Clearing all entered values and removing photos turns
+the guard off. Moving between estimate steps or same-page anchors does not prompt.
+
+**Cancel**, Escape, and closing the dialog keep the current step and all data.
+**Discard** resumes the intended navigation. Leaving unmounts the request page,
+clearing its in-memory details, photos, upload session, and handoff. Uploaded,
+unattached files remain subject to the existing abandoned-upload cleanup.
+
+Refresh, tab closing, and full document navigation use the browser's native
+`beforeunload` warning while data exists. Its wording and availability are
+browser-controlled, especially on mobile. No draft is persisted across a confirmed reload.
+
+`client/src/main.tsx` uses `createBrowserRouter` / `RouterProvider` so the existing
+App route tree supports `useBlocker`. Tests mounting the estimate page must likewise
+use a data router, such as `createMemoryRouter`.
+
+`useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
+SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
+before navigating to Thanks. It permits immediate navigation and disables both
+warnings. A new request must clear the old draft/photos and call `startNewRequest()`
+if reusing the same mounted page. The current photo handoff is not submission and
+remains protected. The success/reset contract is covered in hook tests; wiring it
+into the real submission flow remains pending SSPMW-53/70.
+
+Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
+The spec captures desktop and phone versions of the dialog in `test-results/`.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
@@ -123,6 +270,32 @@ with the saved message ID and still return 201, so the page shows receipt instea
 of prompting duplicate submissions. Validation failures return 400 with inline
 field errors; configuration or save failures return 503. Notification acceptance
 does not prove inbox delivery. N9 branding will be adopted when available.
+
+## Decline email (SSPMW-215)
+
+`server/src/declineEmail.ts` builds and sends the email a customer gets when an owner declines their
+estimate request: a short plain-text message with their first name, inquiry number, item and the
+business phone number. Internal notes are never included. Nothing sends it yet: the decline action
+(SSPMW-172) will call it, and until that ships no decline emails go out.
+
+Because the form doesn't verify email addresses, a name or item that looks like a link, an email
+address, a domain or a phone number (or runs long) is replaced with a plain word, so spam text isn't
+resent from the business's domain. Words joined by a dot only count as a domain when the ending is a
+real top-level domain, so names like "Mr.Smith" are kept. The check also catches phone numbers written with other dashes,
+`~` or non-ASCII digits, and links hidden with invisible characters, which are dropped from the text
+that is sent. SSPMW-172 should also offer declining spam without emailing. The email uses the same
+Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and replies go to
+`CONTACT_OWNER_EMAILS`. Both emails send through `server/src/lib/resendEmail.ts`. The wording is a
+draft until Girlie and Todd approve it.
+
+For SSPMW-172: save the inquiry's status as `closed` first, then call
+`notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws, so
+a failed email can't undo the decline. It returns `sent`, `already_sent`, `no_email` (no address, or
+not a usable one), `unavailable` (email not configured) or `failed`, so the screen can tell the owner
+whether the customer was emailed. Each send uses a Resend idempotency key made from the inquiry and
+the address, so within 24 hours a retried decline doesn't email the customer twice (`sent` or
+`already_sent`), while a decline sent again after the address was corrected reaches the new address.
+If another send for the same decline is still running, the result is `failed`, and retrying is safe.
 
 ## Database
 

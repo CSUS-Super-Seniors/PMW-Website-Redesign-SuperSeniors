@@ -102,7 +102,7 @@ test('owner can reach employee routes and owner-only areas', async () => {
     .post('/api/jobs/J-1001/media')
     .set('Authorization', 'Bearer valid')
     .expect(501);
-  for (const path of ['/api/customers', '/api/reports', '/api/inquiries', '/api/testimonials']) {
+  for (const path of ['/api/customers', '/api/reports', '/api/testimonials']) {
     await request(app).get(path).set('Authorization', 'Bearer valid').expect(404);
   }
 });
@@ -185,7 +185,7 @@ function staffBackend(fail = false) {
 
 test('owner gets the staff list with all five fields', async () => {
   const { staff } = staffBackend();
-  const response = await request(createApp(config, backend('owner'), undefined, staff))
+  const response = await request(createApp(config, backend('owner'), undefined, { staff }))
     .get('/api/staff')
     .set('Authorization', 'Bearer valid')
     .expect(200);
@@ -195,7 +195,7 @@ test('owner gets the staff list with all five fields', async () => {
 
 test('employee is refused the staff list and the data is never read', async () => {
   const { staff, calls } = staffBackend();
-  const response = await request(createApp(config, backend('employee'), undefined, staff))
+  const response = await request(createApp(config, backend('employee'), undefined, { staff }))
     .get('/api/staff')
     .set('Authorization', 'Bearer valid')
     .expect(403);
@@ -205,14 +205,14 @@ test('employee is refused the staff list and the data is never read', async () =
 
 test('staff list requires a valid token', async () => {
   const { staff } = staffBackend();
-  await request(createApp(config, backend('owner'), undefined, staff))
+  await request(createApp(config, backend('owner'), undefined, { staff }))
     .get('/api/staff')
     .expect(401);
 });
 
 test('staff list failure returns 503 without leaking details', async () => {
   const { staff } = staffBackend(true);
-  const response = await request(createApp(config, backend('owner'), undefined, staff))
+  const response = await request(createApp(config, backend('owner'), undefined, { staff }))
     .get('/api/staff')
     .set('Authorization', 'Bearer valid')
     .expect(503);

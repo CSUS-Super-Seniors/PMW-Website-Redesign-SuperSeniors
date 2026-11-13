@@ -1,13 +1,15 @@
+import { businessContact } from '@pmw/validation';
+
 /**
  * Business details and site navigation in one place, so a client answer
- * (for example the phone number or a page name) only needs to change this file.
+ * (for example the hours or a page name) only needs to change this file. The name
+ * and phone number are in `shared/src/business.ts`, which the server's emails use too.
  * Services page content (Q8, the final service names) lives in `services.ts`.
  */
 
 export const business = {
-  name: 'Peterson Mobile Woodworking',
-  phoneDisplay: '(916) 643-5686',
-  phoneHref: 'tel:+19166435686',
+  /** Name and phone live in the shared package, so emails use the same values. */
+  ...businessContact,
   /** Hours from SSPMW-257/261 and the Updated 10-3 Contact frame. */
   hours: 'Monday to Saturday, 8 am to 5 pm',
   /** Only the city is ever shown. Never add a street address to the site. */
@@ -33,7 +35,13 @@ export const routes = {
   staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
+  portalInquiries: '/portal/inquiries',
 } as const;
+
+/** Inquiry detail page (SSPMW-144). The list rows link here. */
+export function inquiryDetailPath(id: string): string {
+  return `${routes.portalInquiries}/${encodeURIComponent(id)}`;
+}
 
 export type NavLinkItem = { label: string; to: string };
 
