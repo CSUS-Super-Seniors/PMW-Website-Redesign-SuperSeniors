@@ -66,6 +66,21 @@ describe('PortalLayout', () => {
     );
   });
 
+  it('keeps the section title and current link on a page inside the section', () => {
+    renderAt('/portal/inquiries/5eed0003-0000-4000-8000-000000001048');
+    expect(screen.getByText('Inquiries', { selector: 'p' })).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Portal' });
+    expect(within(nav).getByRole('link', { name: 'Inquiries' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+  });
+
+  it('does not borrow a title from a section that only shares a prefix', () => {
+    renderAt('/portal/inquiries-archive');
+    expect(screen.queryByText('Inquiries', { selector: 'p' })).not.toBeInTheDocument();
+  });
+
   it('shows the page title and a link to the public site', () => {
     renderAt('/portal/schedule');
     expect(screen.getByText('Schedule', { selector: 'p' })).toBeInTheDocument();

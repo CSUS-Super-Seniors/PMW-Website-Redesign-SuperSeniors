@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
-import type { EstimateStep1Input } from '@pmw/validation';
+import { leadSourceOptions, type EstimateStep1Input } from '@pmw/validation';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 
@@ -14,6 +14,7 @@ const validInput: EstimateStep1Input = {
   item: 'Dining chair',
   issue_type: 'loose_joints',
   description: 'The back leg wobbles.',
+  lead_source: 'referral',
 };
 const path = '/api/estimates/validate-step-1';
 
@@ -64,6 +65,44 @@ describe('POST /api/estimates/validate-step-1', () => {
     });
     expect(backend.verifyToken).not.toHaveBeenCalled();
     expect(backend.loadProfile).not.toHaveBeenCalled();
+  });
+
+  it.each(leadSourceOptions)(
+    'accepts lead source $value without authentication',
+    async ({ value }) => {
+      const { app, backend } = setup();
+      const response = await request(app)
+        .post(path)
+        .send({ ...validInput, lead_source: value })
+        .expect(200);
+      expect(response.body).toEqual({ valid: true });
+      expect(backend.verifyToken).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    undefined,
+    '',
+    'unknown',
+    'Google',
+    'social media',
+    ' google ',
+    null,
+    123,
+    true,
+    [],
+    {},
+  ])('refuses invalid or missing lead source %j on the server', async (lead_source) => {
+    const { app } = setup();
+    const response = await request(app)
+      .post(path)
+      .send({ ...validInput, lead_source })
+      .expect(400);
+    expect(response.body).toEqual({
+      valid: false,
+      fieldErrors: { lead_source: 'Select how you heard about us from the list.' },
+      formErrors: [],
+    });
   });
 
   it('rejects unknown fields at form level', async () => {

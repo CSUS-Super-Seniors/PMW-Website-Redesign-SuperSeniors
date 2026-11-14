@@ -1,3 +1,4 @@
+import { issueOptions } from '@pmw/validation';
 import type { InquiryStatus } from '../api/inquiries';
 import type { BadgeVariant } from '../components/ui';
 
@@ -16,6 +17,19 @@ export const inquiryStatusBadgeVariants: Record<InquiryStatus, BadgeVariant> = {
   converted: 'success',
   closed: 'default',
 };
+
+const issueLabels: ReadonlyMap<string, string> = new Map(
+  issueOptions.map(({ value, label }) => [value, label]),
+);
+
+/**
+ * The estimate form stores the issue option's value, such as `loose_joints`.
+ * Shows its label instead. Text that is not a known value, such as older rows
+ * or seed data, is shown as it was stored.
+ */
+export function formatIssueType(issueType: string): string {
+  return issueLabels.get(issueType) ?? issueType;
+}
 
 function formatTime(date: Date): string {
   const hours = date.getHours();

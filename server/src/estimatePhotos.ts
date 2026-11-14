@@ -2,6 +2,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   MAX_ESTIMATE_PHOTO_BYTES,
+  MAX_ESTIMATE_PHOTOS,
+  ESTIMATE_PHOTO_LIMIT_MESSAGE,
   PHOTO_BUCKET,
   uploadedEstimatePhotoSchema,
   type PhotoSession,
@@ -24,6 +26,11 @@ export class PhotoRequestError extends Error {
 export interface EstimatePhotosBackend {
   startSession(): PhotoSession;
   renewSession(token: string): PhotoSession;
+  /** Verify live upload capabilities and stored bytes before an atomic submit. */
+  prepareSubmission(
+    token: string,
+    photos: UploadedEstimatePhoto[],
+  ): Promise<{ sessionId: string | null; storagePaths: string[] }>;
   upload(
     token: string,
     id: string,
@@ -109,6 +116,46 @@ export function createEstimatePhotosBackend(
       const expiresAt = Math.floor(now() / 1000) + SESSION_SECONDS;
       return { token: sign({ kind: 'session', id: owner.id, expiresAt }), expiresAt };
     },
+    async prepareSubmission(token, photos) {
+      if (photos.length > MAX_ESTIMATE_PHOTOS)
+        throw new PhotoRequestError(ESTIMATE_PHOTO_LIMIT_MESSAGE);
+      const owner = token ? session(token) : null;
+      if (photos.length && !owner)
+        throw new PhotoRequestError('Photo authorization is required.', 401);
+      const paths = new Set<string>();
+      const ids = new Set<string>();
+      if (photos.length) await ensurePrivate();
+      for (const input of photos) {
+        const parsed = uploadedEstimatePhotoSchema.safeParse(input);
+        if (!parsed.success) throw new PhotoRequestError('Invalid uploaded photo.');
+        const proof = verify(parsed.data.receipt);
+        if (
+          proof.kind !== 'photo' ||
+          proof.session !== owner?.id ||
+          proof.id !== input.id ||
+          proof.storagePath !== input.storagePath ||
+          proof.expiresAt !== owner?.expiresAt
+        )
+          throw new PhotoRequestError('This photo does not belong to this request.', 403);
+        if (paths.has(input.storagePath) || ids.has(input.id))
+          throw new PhotoRequestError('Duplicate photos are not allowed.');
+        paths.add(input.storagePath);
+        ids.add(input.id);
+        const object = await client.storage.from(PHOTO_BUCKET).download(input.storagePath);
+        if (
+          object.error ||
+          !object.data ||
+          createHash('sha256')
+            .update(Buffer.from(await object.data.arrayBuffer()))
+            .digest('hex') !== proof.hash
+        )
+          throw new PhotoRequestError(
+            'An uploaded photo is missing or changed. Return to photos and retry.',
+            409,
+          );
+      }
+      return { sessionId: owner?.id ?? null, storagePaths: [...paths] };
+    },
     async upload(token, id, bytes, contentType) {
       const owner = session(token);
       if (!UUID.test(id)) throw new PhotoRequestError('Invalid photo identifier.');
@@ -149,6 +196,8 @@ export function createEstimatePhotosBackend(
     async attachPhotos(inquiryId, token, photos, options = {}) {
       if (!UUID.test(inquiryId) || !Array.isArray(photos))
         throw new PhotoRequestError('Invalid photo attachment request.');
+      if (photos.length > MAX_ESTIMATE_PHOTOS)
+        throw new PhotoRequestError(ESTIMATE_PHOTO_LIMIT_MESSAGE);
       // No-session requests may only reconcile inquiries that never had uploads.
       // An empty retry after removal must retain its original session capability.
       // Expired signatures may only confirm an exact, already-finalized result.

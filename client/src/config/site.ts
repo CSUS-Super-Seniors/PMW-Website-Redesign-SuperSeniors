@@ -1,4 +1,5 @@
-import { businessContact } from '@pmw/validation';
+import { businessContact, inquiryListPath } from '@pmw/validation';
+export { inquiryDetailPath } from '@pmw/validation';
 
 /**
  * Business details and site navigation in one place, so a client answer
@@ -35,13 +36,8 @@ export const routes = {
   staffResetPassword: '/staff/reset-password',
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
-  portalInquiries: '/portal/inquiries',
+  portalInquiries: inquiryListPath,
 } as const;
-
-/** Inquiry detail page (SSPMW-144). The list rows link here. */
-export function inquiryDetailPath(id: string): string {
-  return `${routes.portalInquiries}/${encodeURIComponent(id)}`;
-}
 
 export type NavLinkItem = { label: string; to: string };
 

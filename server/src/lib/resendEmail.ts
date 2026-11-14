@@ -1,3 +1,5 @@
+import { EmailDeliveryError } from './emailDeliveryError.js';
+
 /**
  * One @, no spaces or angle brackets, and a domain with at least one dot. Dots
  * separate non-empty parts on both sides, so "a@b..co", ".a@b.co" and "a@b.co."
@@ -19,8 +21,10 @@ export interface ResendCredentials {
 export interface ResendMessage {
   to: string[];
   subject: string;
-  /** Plain text only, so customer text never becomes email HTML. */
+  /** Plain-text body, also used as the fallback when HTML is supplied. */
   text: string;
+  /** Optional template HTML; the caller must escape all customer text. */
+  html?: string;
   replyTo?: string | string[];
   /** Within 24 hours, a request with the same key never sends a second email. */
   idempotencyKey: string;
@@ -52,6 +56,7 @@ export async function sendResendEmail(
       to: message.to,
       subject: message.subject,
       text: message.text,
+      ...(message.html ? { html: message.html } : {}),
       ...(message.replyTo?.length ? { reply_to: message.replyTo } : {}),
     }),
   });
@@ -60,7 +65,8 @@ export async function sendResendEmail(
     const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined;
     if (name === 'invalid_idempotent_request') return 'already_sent';
   }
-  if (!response.ok) throw new Error(`${label} could not be sent.`);
+  if (!response.ok)
+    throw new EmailDeliveryError('http_error', response.status, `${label} could not be sent.`);
   const result: unknown = await response.json();
   if (
     !result ||
@@ -69,7 +75,11 @@ export async function sendResendEmail(
     typeof result.id !== 'string' ||
     !result.id.trim()
   ) {
-    throw new Error(`${label} was not acknowledged.`);
+    throw new EmailDeliveryError(
+      'invalid_response',
+      response.status,
+      `${label} was not acknowledged.`,
+    );
   }
   return 'sent';
 }

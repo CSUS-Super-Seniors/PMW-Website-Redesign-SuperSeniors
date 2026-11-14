@@ -16,6 +16,7 @@ import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import type { StaffBackend } from './staff.js';
+import type { AcceptInquiryBackend } from './acceptInquiry.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
@@ -23,11 +24,12 @@ import {
   type ServiceAreaLocals,
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
-import { parseInquiryListQuery, type InquiryBackend } from './inquiries.js';
+import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inquiries.js';
+import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
-/** Where the estimate request form submits (SSPMW-70 adds the handler). */
+/** Where the final estimate request submits. */
 export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */
@@ -40,6 +42,24 @@ export interface AppOptions {
   inquiries?: InquiryBackend;
   /** Reads the owner's staff accounts list (SSPMW-121). */
   staff?: StaffBackend;
+  /** Accepts an estimate request and turns it into a job (SSPMW-156). */
+  acceptInquiry?: AcceptInquiryBackend;
+  /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
+  declineEmail?: DeclineEmailSender;
+}
+
+/** `skipped` means the owner chose not to email the customer. */
+export type DeclineEmailOutcome = Awaited<ReturnType<typeof notifyCustomerOfDecline>> | 'skipped';
+
+/** The decline body is `{ "notifyCustomer": true | false }` and nothing else. */
+function readDeclineBody(body: unknown): { notifyCustomer: boolean } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const keys = Object.keys(body);
+  const { notifyCustomer } = body as { notifyCustomer?: unknown };
+  if (keys.length !== 1 || keys[0] !== 'notifyCustomer' || typeof notifyCustomer !== 'boolean') {
+    return null;
+  }
+  return { notifyCustomer };
 }
 
 /**
@@ -59,7 +79,15 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, inquiries, staff }: AppOptions = {},
+  {
+    serviceArea,
+    estimateSubmit,
+    photos,
+    inquiries,
+    acceptInquiry: acceptBackend,
+    declineEmail,
+    staff,
+  }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -306,6 +334,128 @@ export function createApp(
     } catch {
       res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
     }
+  });
+  api.post('/inquiries/:inquiryId/accept', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const inquiryId = String(req.params.inquiryId);
+    // Anything that is not a UUID can't be an inquiry, and would only make the database error.
+    if (!UUID_PATTERN.test(inquiryId)) {
+      res.status(404).json({ error: 'Estimate request not found.' });
+      return;
+    }
+    if (!acceptBackend) {
+      res.status(503).json({ error: 'Accepting requests is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await acceptBackend.acceptInquiry(inquiryId);
+      if (result.outcome === 'not-found') {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      if (result.outcome === 'not-acceptable') {
+        res.status(409).json({ error: 'This estimate request was already accepted or declined.' });
+        return;
+      }
+      res.json({ job: result.job });
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details, so this is safe to log.
+      console.error('Accept inquiry failed', {
+        inquiryId,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'The request could not be accepted. Please try again.' });
+    }
+  });
+  // One estimate request with its photo ids (SSPMW-144). Read-only, so loading or
+  // prefetching it never changes the status; the page marks it Reviewed with a POST.
+  api.get('/inquiries/:inquiryId', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const inquiry = await inquiries.getInquiry(id);
+      if (!inquiry) {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      res.json(inquiry);
+    } catch {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  // Opening a New request marks it Reviewed. Other statuses are left as they are.
+  api.post('/inquiries/:inquiryId/review', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const status = await inquiries.markReviewed(id);
+      if (status === null) {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      res.json({ status });
+    } catch {
+      res.status(503).json({ error: 'Could not update the estimate request. Please retry.' });
+    }
+  });
+  // Declines a New or Reviewed request and, when the owner asks, emails the customer
+  // (SSPMW-172). The decline is saved first; a failed email never undoes it, and the
+  // answer says whether the customer was emailed. Declining again resends safely:
+  // the email's idempotency key stops a second copy within 24 hours.
+  api.post('/inquiries/:inquiryId/decline', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    const body = readDeclineBody(req.body);
+    if (!body) {
+      res.status(400).json({ error: 'notifyCustomer must be true or false.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    let outcome;
+    try {
+      outcome = await inquiries.decline(id);
+    } catch {
+      res.status(503).json({ error: 'Could not decline the estimate request. Please retry.' });
+      return;
+    }
+    if (outcome.result === 'not_found') {
+      res.status(404).json({ error: 'Estimate request not found.' });
+      return;
+    }
+    if (outcome.result === 'not_declinable') {
+      res.status(409).json({
+        error: 'This estimate request was accepted, so it cannot be declined.',
+        status: outcome.status,
+      });
+      return;
+    }
+    const email: DeclineEmailOutcome = body.notifyCustomer
+      ? await notifyCustomerOfDecline(declineEmail, outcome.inquiry)
+      : 'skipped';
+    res.json({ status: 'closed', email });
   });
   app.use('/api', api);
   app.use((_req, res) => {

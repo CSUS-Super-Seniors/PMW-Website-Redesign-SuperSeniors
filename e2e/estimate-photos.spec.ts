@@ -138,12 +138,14 @@ for (const viewport of [
     await page.setViewportSize(viewport);
     let carmichaelChecks = 0;
     const requests: string[] = [];
+    const validatedLeadSources: string[] = [];
     await page.route(
       (url) => url.pathname.startsWith('/api/'),
       async (route) => {
         const path = new URL(route.request().url()).pathname;
         requests.push(path);
         if (path === '/api/estimates/validate-step-1') {
+          validatedLeadSources.push(route.request().postDataJSON().lead_source);
           await route.fulfill({ json: { valid: true } });
         } else if (path === '/api/estimates/service-area') {
           const { city } = route.request().postDataJSON();
@@ -188,11 +190,29 @@ for (const viewport of [
     ])
       await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel('What happened?').selectOption('other');
+    const leadSource = page.getByLabel('How did you hear about us?', { exact: true });
+    await expect(leadSource).toHaveValue('');
+    await expect(leadSource.getByRole('option')).toHaveText([
+      'Select an option',
+      'Google',
+      'Referral',
+      'Social media',
+      'Yelp',
+      'Other',
+    ]);
     const honeypot = page.locator('[name="pmw_extra"]');
     await honeypot.evaluate((input) => {
       (input as HTMLInputElement).value = 'bot-filled-value';
     });
     const advance = () => page.getByRole('button', { name: 'Continue to photos' }).click();
+    await advance();
+    await expect(leadSource).toBeFocused();
+    await expect(leadSource).toHaveAccessibleDescription(
+      'Select how you heard about us from the list.',
+    );
+    expect(requests).toEqual([]);
+    await leadSource.selectOption('referral');
+    await expect(leadSource).not.toHaveAttribute('aria-invalid', 'true');
     await advance();
     await expect(page.getByText('Outside our service area', { exact: true })).toBeVisible();
     await expect(page.getByRole('alert').getByRole('link')).toHaveAttribute(
@@ -229,7 +249,9 @@ for (const viewport of [
     await expect(page.getByLabel('City', { exact: true })).toHaveValue('Carmichael');
     await expect(page.getByLabel('Email address', { exact: true })).toHaveValue('ana@example.com');
     await expect(honeypot).toHaveValue('bot-filled-value');
+    await expect(leadSource).toHaveValue('referral');
     await page.getByLabel('Item', { exact: true }).fill('Table');
+    await leadSource.selectOption('yelp');
     await advance();
     await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
@@ -238,18 +260,65 @@ for (const viewport of [
       fullPage: true,
     });
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('1 photo(s) uploaded privately');
-    await expect(page.getByText(/Your estimate request has not been submitted/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Review your request' })).toBeFocused();
+    await expect(page.getByRole('list', { name: 'Request photos' }).getByRole('img')).toHaveCount(
+      1,
+    );
+    await expect(page.getByRole('button', { name: 'Submit request' })).toBeEnabled();
     expect(requests).not.toContain('/api/estimates');
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.screenshot({
-      path: testInfo.outputPath(`estimate-handoff-${viewport.width}.png`),
+      path: testInfo.outputPath(`estimate-review-${viewport.width}.png`),
       fullPage: true,
     });
+    await expect(page.getByRole('button', { name: 'Submit request' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Edit contact details' }).click();
+    await expect(page.getByLabel('First name', { exact: true })).toBeFocused();
+    await page.getByLabel('First name', { exact: true }).fill('Anita');
+    await expect(page.getByLabel('Email address', { exact: true })).toHaveValue('ana@example.com');
+    await expect(honeypot).toHaveValue('bot-filled-value');
+    await page.getByRole('button', { name: 'Return to review' }).click();
+    await expect(
+      page.getByRole('region', { name: 'Contact details' }).getByText('Anita', { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toBeVisible();
+    expect(requests.filter((path) => /\/photos\/[0-9a-f-]+$/.test(path))).toHaveLength(1);
+    await page.getByRole('button', { name: 'Edit repair details' }).click();
+    await expect(page.getByLabel('Item', { exact: true })).toBeFocused();
+    await page
+      .getByLabel('Describe the problem', { exact: true })
+      .fill('Loose leg and a cracked joint');
+    await page.getByRole('button', { name: 'Return to review' }).click();
+    await expect(page.getByText('Loose leg and a cracked joint', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Edit service address' }).click();
+    await expect(page.getByLabel('Service address', { exact: true })).toBeFocused();
+    await page.getByLabel('City', { exact: true }).fill('Davis');
+    await page.getByRole('button', { name: 'Return to review' }).click();
+    await expect(page.getByText('Outside our service area', { exact: true })).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`estimate-review-edit-error-${viewport.width}.png`),
+      fullPage: true,
+    });
+    await page.getByLabel('City', { exact: true }).fill('Carmichael');
+    await page.getByRole('button', { name: 'Return to review' }).click();
+    await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toBeVisible();
     await page.getByRole('button', { name: 'Back to photos' }).click();
     await page.getByRole('button', { name: 'Remove chair.png' }).click();
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('0 photo(s) uploaded privately');
+    await expect(page.getByText('No photos selected.', { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('region', { name: 'Contact details' }).getByText('Anita', { exact: true }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: testInfo.outputPath(`estimate-review-no-photos-${viewport.width}.png`),
+      fullPage: true,
+    });
+    await page.getByRole('button', { name: 'Back to photos' }).click();
+    await page.getByRole('button', { name: 'Back', exact: true }).click();
+    expect(validatedLeadSources.at(-1)).toBe('yelp');
+    await expect(leadSource).toHaveValue('yelp');
+    await expect(page.getByLabel('Item', { exact: true })).toHaveValue('Table');
+    await expect(honeypot).toHaveValue('bot-filled-value');
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);

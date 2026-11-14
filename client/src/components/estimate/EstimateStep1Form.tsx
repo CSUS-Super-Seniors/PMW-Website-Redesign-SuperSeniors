@@ -6,6 +6,7 @@ import {
   ESTIMATE_HONEYPOT_FIELD,
   estimateStep1Schema,
   issueOptions,
+  leadSourceOptions,
   mapEstimateStep1Errors,
   type EstimateStep1Data,
   type EstimateStep1Errors,
@@ -34,15 +35,19 @@ export interface EstimateStep1FormProps {
   initialValues?: EstimateStep1Input;
   initialSpamCheck?: EstimateSpamCheck;
   onEdit?: () => void;
+  /** Focus the section selected from Step 3 after this form mounts. */
+  initialFocusField?: keyof EstimateStep1Input;
+  continueLabel?: string;
   /** Reports current visible form data, including incomplete or invalid entries. */
   onHasDataChange?: (hasData: boolean) => void;
   /** Replaced in tests. Defaults to the server check against `service_cities`. */
   checkServiceArea?: CheckServiceArea;
 }
 
-// The empty select placeholder is a draft value, never a validated issue value.
-type Draft = Omit<EstimateStep1Input, 'issue_type' | 'text_ok'> & {
+// Empty select placeholders are draft values, never validated option values.
+type Draft = Omit<EstimateStep1Input, 'issue_type' | 'lead_source' | 'text_ok'> & {
   issue_type: string;
+  lead_source: string;
   text_ok: boolean;
 };
 
@@ -57,6 +62,7 @@ const fieldOrder = [
   'item',
   'issue_type',
   'description',
+  'lead_source',
 ] as const satisfies readonly (keyof EstimateStep1Input)[];
 
 export default function EstimateStep1Form({
@@ -64,6 +70,8 @@ export default function EstimateStep1Form({
   initialValues,
   initialSpamCheck,
   onEdit,
+  initialFocusField,
+  continueLabel = 'Continue to photos',
   onHasDataChange,
   checkServiceArea = checkEstimateServiceArea,
 }: EstimateStep1FormProps) {
@@ -77,6 +85,7 @@ export default function EstimateStep1Form({
     item: '',
     issue_type: '',
     description: '',
+    lead_source: '',
     ...initialValues,
     text_ok: initialValues?.text_ok ?? false,
   }));
@@ -100,6 +109,15 @@ export default function EstimateStep1Form({
   }, [hasData, onHasDataChange]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!initialFocusField) return;
+    const target = formRef.current?.elements.namedItem(initialFocusField);
+    if (target instanceof HTMLElement) {
+      target.focus();
+      target.scrollIntoView?.({ block: 'center' });
+    }
+  }, [initialFocusField]);
 
   useEffect(() => {
     if (pending || !focusRequest) return;
@@ -201,7 +219,7 @@ export default function EstimateStep1Form({
           showErrors({
             fieldErrors: {},
             formErrors: [
-              'We could not continue to photos. Your request has not been sent. Please try again.',
+              'We could not continue. Your request has not been sent. Please try again.',
             ],
           });
         }
@@ -221,7 +239,8 @@ export default function EstimateStep1Form({
         Your details
       </h2>
       <p className="type-body-sm mt-4 text-neutral-600">
-        We only use this information to respond to your estimate request.
+        We use your contact and repair details to respond to your estimate request. How you heard
+        about us helps us understand where our customers find us.
       </p>
       <p id="estimate-required" className="type-body-sm mt-2 text-neutral-600">
         All fields are required except text message permission.
@@ -388,6 +407,23 @@ export default function EstimateStep1Form({
               error={fieldErrors.description}
             />
           </div>
+          <div className="sm:col-span-2">
+            <Select
+              label="How did you hear about us?"
+              name="lead_source"
+              value={draft.lead_source}
+              onChange={(event) => updateField('lead_source', event.target.value)}
+              required
+              error={fieldErrors.lead_source}
+            >
+              <option value="">Select an option</option>
+              {leadSourceOptions.map(({ value, label }) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </Select>
+          </div>
         </fieldset>
         <p className="type-body-sm mt-6 text-neutral-600">
           We’ll check that we serve your city before you continue.
@@ -400,7 +436,7 @@ export default function EstimateStep1Form({
             Cancel
           </Link>
           <Button type="submit" variant="secondary" disabled={pending} className="w-full sm:w-auto">
-            {pending ? 'Checking details…' : 'Continue to photos'}
+            {pending ? 'Checking details…' : continueLabel}
           </Button>
         </div>
         <p role="status" className="sr-only">

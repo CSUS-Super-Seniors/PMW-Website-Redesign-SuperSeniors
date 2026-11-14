@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { formatSubmittedAt, inquiryStatusLabels } from './inquiryFormat';
+import { issueOptions } from '@pmw/validation';
+import { formatIssueType, formatSubmittedAt, inquiryStatusLabels } from './inquiryFormat';
 
 // Built from local-time parts so the text is the same in any time zone.
 const now = new Date(2026, 9, 1, 15, 0);
@@ -13,6 +14,19 @@ describe('inquiryStatusLabels', () => {
       converted: 'Accepted',
       closed: 'Declined',
     });
+  });
+});
+
+describe('formatIssueType', () => {
+  it('shows the label for each value the estimate form can store', () => {
+    for (const { value, label } of issueOptions) {
+      expect(formatIssueType(value)).toBe(label);
+    }
+    expect(formatIssueType('water_heat_fire_damage')).toBe('Water, heat, or fire damage');
+  });
+
+  it('shows text that is not a known value as it was stored', () => {
+    expect(formatIssueType('Loose joint / wobbling')).toBe('Loose joint / wobbling');
   });
 });
 

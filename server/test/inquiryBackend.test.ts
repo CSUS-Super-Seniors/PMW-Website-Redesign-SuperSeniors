@@ -20,11 +20,17 @@ function row(n: number, createdAt: string, overrides: Row = {}): Row {
 
 // Applies order() and range() to the rows the way PostgREST would, so the
 // tests check which rows come back, not only which calls were made.
-function fakeDatabase(rows: Row[], failWith: { code: string; message: string } | null = null) {
-  const calls: { select: unknown[][]; order: unknown[][]; range: unknown[][] } = {
+function fakeDatabase(allRows: Row[], failWith: { code: string; message: string } | null = null) {
+  const calls: {
+    select: unknown[][];
+    order: unknown[][];
+    range: unknown[][];
+    neq: unknown[][];
+  } = {
     select: [],
     order: [],
     range: [],
+    neq: [],
   };
 
   const from = vi.fn((table: string) => {
@@ -32,9 +38,13 @@ function fakeDatabase(rows: Row[], failWith: { code: string; message: string } |
     const orders: { column: string; ascending: boolean }[] = [];
     let head = false;
     let window: [number, number] | null = null;
+    const excluded: [string, string][] = [];
 
     const result = () => {
       if (failWith) return { data: null, error: failWith, count: null };
+      const rows = allRows.filter((row) =>
+        excluded.every(([column, value]) => row[column] !== value),
+      );
       if (head) return { data: null, error: null, count: rows.length };
       const sorted = [...rows].sort((a, b) => {
         for (const { column, ascending } of orders) {
@@ -64,6 +74,11 @@ function fakeDatabase(rows: Row[], failWith: { code: string; message: string } |
       order(column: string, options: { ascending: boolean }) {
         calls.order.push([column, options]);
         orders.push({ column, ascending: options.ascending });
+        return builder;
+      },
+      neq(column: string, value: string) {
+        calls.neq.push([column, value]);
+        excluded.push([column, value]);
         return builder;
       },
       range(start: number, end: number) {
@@ -181,6 +196,28 @@ describe('inquiry database adapter', () => {
       total: 7,
     });
     expect(calls.select[1]).toEqual(['id', { count: 'exact', head: true }]);
+  });
+
+  it('leaves declined requests out of the active list and its total', async () => {
+    const { backend, calls } = fakeDatabase([
+      row(1, '2026-10-01T09:00:00+00:00', { status: 'closed' }),
+      row(2, '2026-10-02T09:00:00+00:00', { status: 'new' }),
+      row(3, '2026-10-03T09:00:00+00:00', { status: 'contacted' }),
+      row(4, '2026-10-04T09:00:00+00:00', { status: 'converted' }),
+    ]);
+    const { inquiries, total } = await backend.listInquiries({ page: 1, pageSize: 10 });
+
+    expect(inquiries.map((inquiry) => inquiry.status)).toEqual(['converted', 'contacted', 'new']);
+    expect(total).toBe(3);
+    expect(calls.neq).toEqual([['status', 'closed']]);
+  });
+
+  it('counts only active requests for a page past the end', async () => {
+    const { backend } = fakeDatabase([
+      ...rows,
+      row(8, '2026-10-03T09:00:00+00:00', { status: 'closed' }),
+    ]);
+    expect((await backend.listInquiries({ page: 9, pageSize: 5 })).total).toBe(7);
   });
 
   it('throws without leaking the database error', async () => {

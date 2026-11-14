@@ -22,6 +22,8 @@ export interface Config {
   supabaseUrl: string;
   supabaseServiceRoleKey: string;
   contactEmail?: ContactEmailConfig;
+  /** Exact origin of the site hosting the owner inquiry detail page. */
+  ownerPortalOrigin?: string;
 }
 function wholeNumberSetting(
   env: NodeJS.ProcessEnv,
@@ -97,5 +99,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     supabaseUrl,
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
     contactEmail,
+    ownerPortalOrigin: env.OWNER_PORTAL_ORIGIN?.trim() || undefined,
   };
 }
