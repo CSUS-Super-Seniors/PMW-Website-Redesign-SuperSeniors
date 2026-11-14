@@ -72,6 +72,7 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp('/estimate');
 
+    // Form tests cover typing; seed this draft without per-key input events.
     for (const [label, value] of [
       ['First name', 'Ana'],
       ['Last name', 'García'],
@@ -82,9 +83,10 @@ describe('App', () => {
       ['Item', 'Chair'],
       ['Describe the problem', 'One leg is loose.'],
     ]) {
-      await user.type(screen.getByLabelText(label), value);
+      fireEvent.change(screen.getByLabelText(label), { target: { value } });
     }
     await user.selectOptions(screen.getByLabelText('What happened?'), 'other');
+    await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'referral');
     const honeypot = () => document.querySelector<HTMLInputElement>('[name="pmw_extra"]')!;
     fireEvent.change(honeypot(), { target: { value: 'bot-filled-value' } });
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
@@ -98,10 +100,15 @@ describe('App', () => {
       '/api/estimates/service-area',
     ]);
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByLabelText('Email address')).toHaveValue('ana+chair@example.com');
+    expect(await screen.findByLabelText('Email address')).toHaveValue('ana+chair@example.com');
+    expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string)).toMatchObject({
+      lead_source: 'referral',
+    });
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('referral');
     expect(screen.getByLabelText('City')).toHaveValue('Carmichael');
     expect(honeypot()).toHaveValue('bot-filled-value');
     await user.type(screen.getByLabelText('Item'), ' repair');
+    await user.selectOptions(screen.getByLabelText('How did you hear about us?'), 'yelp');
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
     await screen.findByLabelText('Choose photos');
     await user.click(screen.getByRole('button', { name: 'Next' }));
@@ -113,6 +120,15 @@ describe('App', () => {
       '/api/estimates/validate-step-1',
       '/api/estimates/service-area',
     ]);
+    expect(JSON.parse(fetchMock.mock.calls[2][1]!.body as string)).toMatchObject({
+      item: 'Chair repair',
+      lead_source: 'yelp',
+    });
+    await user.click(screen.getByRole('button', { name: 'Back to photos' }));
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(await screen.findByLabelText('Item')).toHaveValue('Chair repair');
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('yelp');
+    expect(honeypot()).toHaveValue('bot-filled-value');
   });
   it('blocks outside-area and unavailable checks before photos, then allows retry', async () => {
     const area = vi
@@ -139,6 +155,9 @@ describe('App', () => {
     ])
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     fireEvent.change(screen.getByLabelText('What happened?'), { target: { value: 'other' } });
+    fireEvent.change(screen.getByLabelText('How did you hear about us?'), {
+      target: { value: 'referral' },
+    });
     const advance = () => user.click(screen.getByRole('button', { name: 'Continue to photos' }));
     await advance();
     await screen.findByText('Outside our service area');
@@ -155,7 +174,7 @@ describe('App', () => {
     await advance();
     await screen.findByLabelText('Choose photos');
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    fireEvent.change(screen.getByLabelText('City'), { target: { value: 'Davis' } });
+    fireEvent.change(await screen.findByLabelText('City'), { target: { value: 'Davis' } });
     await advance();
     await screen.findByText('Outside our service area');
     expect(screen.queryByLabelText('Choose photos')).not.toBeInTheDocument();

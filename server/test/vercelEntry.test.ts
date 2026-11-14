@@ -6,10 +6,11 @@ const db = vi.hoisted(() => ({
   insert: vi.fn(),
   select: vi.fn(),
   single: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock('../src/supabase.js', () => ({
-  createSupabaseAdmin: () => ({ from: db.from }),
+  createSupabaseAdmin: () => ({ from: db.from, rpc: db.rpc }),
   createAuthBackend: () => ({
     verifyToken: vi.fn(),
     loadProfile: vi.fn(),
@@ -31,6 +32,7 @@ beforeEach(() => {
   vi.stubEnv('RESEND_API_KEY', 'test-email-key');
   vi.stubEnv('RESEND_FROM_EMAIL', 'contact@example.com');
   vi.stubEnv('CONTACT_OWNER_EMAILS', 'owner@example.com');
+  vi.stubEnv('OWNER_PORTAL_ORIGIN', 'https://owner-preview.example');
   db.from.mockReturnValue({ insert: db.insert });
   db.insert.mockReturnValue({ select: db.select });
   db.select.mockReturnValue({ single: db.single });
@@ -43,9 +45,87 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Vercel startup contact wiring', () => {
+  it.each(['', 'http://portal.example', 'https://user:PRIVATE_PASSWORD@portal.example'])(
+    'warns at production startup for an unusable owner portal setting and keeps health available: %s',
+    async (origin) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('OWNER_PORTAL_ORIGIN', origin);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { default: app } = await import('../../api/index.js');
+      await request(app).get('/api/health').expect(200);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        'Owner estimate notices are unavailable: OWNER_PORTAL_ORIGIN must be an exact HTTPS origin; HTTP is allowed only for localhost, 127.0.0.1 or [::1].',
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PASSWORD');
+    },
+  );
+
+  it('starts without an owner notice warning when its portal origin is valid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { default: app } = await import('../../api/index.js');
+    await request(app).get('/api/health').expect(200);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('wires final estimate saving and both emails through the exported app', async () => {
+    db.from.mockImplementation((table: string) => ({
+      select: () => ({
+        eq: () =>
+          table === 'service_cities'
+            ? Promise.resolve({ data: [{ name: 'Carmichael' }], error: null })
+            : { maybeSingle: async () => ({ data: null, error: null }) },
+      }),
+    }));
+    db.rpc.mockResolvedValue({
+      data: {
+        id: '60000000-0000-4000-8000-000000000002',
+        inquiry_number: 'INQ-1049',
+        created_at: '2026-11-11T12:00:00Z',
+        created: true,
+      },
+      error: null,
+    });
+    const email = vi.fn<typeof fetch>(async () => Response.json({ id: 'email-id' }));
+    vi.stubGlobal('fetch', email);
+    const { default: app } = await import('../../api/index.js');
+    await request(app)
+      .post('/api/estimates')
+      .set('Host', 'untrusted.example')
+      .send({
+        submission_id: '60000000-0000-4000-8000-000000000001',
+        first_name: 'Test',
+        last_name: 'Visitor',
+        email: 'visitor@example.com',
+        phone: '9165550142',
+        address: '123 Main St',
+        city: 'Carmichael',
+        item: 'Chair',
+        issue_type: 'loose_joints',
+        description: 'Loose leg',
+        lead_source: 'google',
+        pmw_extra: '',
+      })
+      .expect(201, { success: true, inquiry_number: 'INQ-1049' });
+    expect(db.rpc).toHaveBeenCalledWith(
+      'submit_estimate_request',
+      expect.objectContaining({
+        p_details: expect.objectContaining({ lead_source: 'google' }),
+        p_storage_paths: [],
+      }),
+    );
+    expect(email).toHaveBeenCalledTimes(2);
+    const owner = JSON.parse(String(email.mock.calls[1][1]?.body));
+    expect(owner.to).toEqual(['owner@example.com']);
+    expect(owner.text).toContain(
+      'https://owner-preview.example/portal/inquiries/60000000-0000-4000-8000-000000000002',
+    );
+    expect(owner.text).not.toContain('untrusted.example');
+    expect(owner.attachments).toBeUndefined();
+  });
   it('saves and emails a valid submission through the exported app', async () => {
     const email = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'email-1' })));
     vi.stubGlobal('fetch', email);
@@ -111,9 +191,9 @@ describe('Vercel startup contact wiring', () => {
     const from = (ip: string) =>
       request(app).post('/api/estimates').set('X-Forwarded-For', ip).send({ item: 'Chair' });
 
-    await from('203.0.113.1').expect(501);
+    await from('203.0.113.1').expect(400);
     await from('203.0.113.1').expect(429);
-    await from('203.0.113.2').expect(501);
+    await from('203.0.113.2').expect(400);
   });
 });
 

@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { issueOptions, type EstimateStep1Input } from '@pmw/validation';
+import { issueOptions, leadSourceOptions, type EstimateStep1Input } from '@pmw/validation';
 import EstimateStep1Form, { type EstimateStep1Continuation } from './EstimateStep1Form';
 import {
   ServiceAreaRateLimitedError,
@@ -19,6 +19,7 @@ const details: EstimateStep1Input = {
   item: 'Dining chair',
   issue_type: 'loose_joints',
   description: 'The back leg wobbles.',
+  lead_source: 'referral',
 };
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -54,6 +55,87 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('EstimateStep1Form', () => {
+  it('starts with an empty lead source and shows the shared choices in ticket order', () => {
+    renderForm();
+    const select = screen.getByLabelText('How did you hear about us?');
+    expect(select).toHaveValue('');
+    expect(select).toBeRequired();
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Select an option', 'Google', 'Referral', 'Social media', 'Yelp', 'Other']);
+  });
+
+  it('focuses an unanswered lead source and blocks validation and continuation', async () => {
+    const { user, onContinue } = renderForm(details);
+    const select = screen.getByLabelText('How did you hear about us?');
+    await user.selectOptions(select, '');
+    await user.click(continueButton());
+    expect(select).toHaveFocus();
+    expect(select).toHaveAttribute('aria-invalid', 'true');
+    expect(select).toHaveAccessibleDescription('Select how you heard about us from the list.');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(checkServiceArea).not.toHaveBeenCalled();
+    expect(onContinue).not.toHaveBeenCalled();
+    await user.selectOptions(select, 'google');
+    expect(select).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it.each(leadSourceOptions)(
+    'posts $value and preserves it in the validated handoff',
+    async ({ value }) => {
+      fetchMock.mockResolvedValue(reply({ valid: true }));
+      const { user, onContinue } = renderForm(details);
+      await user.selectOptions(screen.getByLabelText('How did you hear about us?'), value);
+      await user.click(continueButton());
+      await waitFor(() =>
+        expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+          { ...details, text_ok: false, lead_source: value },
+          { pmw_extra: '' },
+        ),
+      );
+      expect(JSON.parse(fetchMock.mock.calls[0][1]!.body as string).lead_source).toBe(value);
+      expect(checkServiceArea).toHaveBeenCalledExactlyOnceWith(
+        'Carmichael',
+        expect.any(AbortSignal),
+      );
+    },
+  );
+
+  it('shows a server lead-source error and allows correction and retry', async () => {
+    fetchMock.mockResolvedValueOnce(
+      reply(
+        {
+          valid: false,
+          fieldErrors: { lead_source: 'Please select a lead source again.' },
+          formErrors: [],
+        },
+        400,
+      ),
+    );
+    const { user, onContinue } = renderForm(details);
+    await user.click(continueButton());
+    expect(await screen.findByText('Please select a lead source again.')).toBeInTheDocument();
+    const select = screen.getByLabelText('How did you hear about us?');
+    await waitFor(() => expect(select).toHaveFocus());
+    expect(select).toHaveAccessibleDescription('Please select a lead source again.');
+    expect(select).toHaveValue('referral');
+    expect(checkServiceArea).not.toHaveBeenCalled();
+    expect(onContinue).not.toHaveBeenCalled();
+    await user.selectOptions(select, 'yelp');
+    expect(screen.queryByText('Please select a lead source again.')).not.toBeInTheDocument();
+    fetchMock.mockResolvedValueOnce(reply({ valid: true }));
+    await user.click(continueButton());
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenCalledExactlyOnceWith(
+        { ...details, lead_source: 'yelp', text_ok: false },
+        { pmw_extra: '' },
+      ),
+    );
+  });
+
   it('starts without errors, permits submission, and uses the shared issue options', async () => {
     const { user } = renderForm();
     const select = screen.getByLabelText('What happened?');
@@ -62,10 +144,11 @@ describe('EstimateStep1Form', () => {
     expect(continueButton()).toBeEnabled();
     expect(screen.getByLabelText('Contact me by text message')).not.toBeChecked();
     expect(select).toHaveValue('');
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Select a problem',
-      ...issueOptions.map((option) => option.label),
-    ]);
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual(['Select a problem', ...issueOptions.map((option) => option.label)]);
     await user.selectOptions(select, 'other');
     expect(select).toHaveValue('other');
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -75,7 +158,7 @@ describe('EstimateStep1Form', () => {
     const { user, onContinue } = renderForm();
     await user.click(continueButton());
 
-    expect(screen.getAllByRole('alert')).toHaveLength(9);
+    expect(screen.getAllByRole('alert')).toHaveLength(10);
     const firstName = screen.getByLabelText('First name');
     expect(firstName).toHaveAttribute('aria-invalid', 'true');
     expect(firstName).toHaveAccessibleDescription('First name is required.');
@@ -85,6 +168,9 @@ describe('EstimateStep1Form', () => {
     );
     expect(screen.getByLabelText('What happened?')).toHaveAccessibleDescription(
       'Select a problem from the list.',
+    );
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveAccessibleDescription(
+      'Select how you heard about us from the list.',
     );
     expect(screen.getByLabelText('City')).toHaveAccessibleDescription('City is required.');
     expect(fetchMock).not.toHaveBeenCalled();
@@ -134,6 +220,7 @@ describe('EstimateStep1Form', () => {
 
     expect(screen.getByRole('button', { name: 'Checking details…' })).toBeDisabled();
     expect(screen.getByLabelText('First name')).toBeDisabled();
+    expect(screen.getByLabelText('How did you hear about us?')).toBeDisabled();
     expect(form).toHaveAttribute('aria-busy', 'true');
     expect(onContinue).not.toHaveBeenCalled();
     fireEvent.submit(form);
@@ -193,6 +280,7 @@ describe('EstimateStep1Form', () => {
       'Item',
       'What happened?',
       'Describe the problem',
+      'How did you hear about us?',
     ]) {
       await user.tab();
       expect(screen.getByLabelText(label)).toHaveFocus();
@@ -390,6 +478,7 @@ describe('EstimateStep1Form', () => {
     );
     expect(screen.getByLabelText('Email address')).toHaveValue(details.email);
     expect(screen.getByLabelText('What happened?')).toHaveValue(details.issue_type);
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue(details.lead_source);
     expect(continueButton()).toBeEnabled();
     expect(message.closest('[tabindex="-1"]')).toHaveFocus();
     expect(onContinue).not.toHaveBeenCalled();

@@ -31,6 +31,16 @@ npm run dev:server   # API on http://localhost:3001 (check /api/health)
 npm run dev:client   # site on http://localhost:5173 (proxies /api to the server)
 ```
 
+### Playwright in CI
+
+The Playwright smoke-test job uses the official
+`mcr.microsoft.com/playwright:v1.64.1-noble` container, which includes the browsers
+and Linux browser dependencies. This avoids installing Ubuntu packages during
+each run. The job still runs `npm ci` and the full `npm run test:e2e` suite, and
+uploads failure reports. When updating Playwright, update the image tag in
+`.github/workflows/ci.yml` to match the locked Playwright version. The other CI
+jobs and local development commands are unchanged.
+
 ## Scripts (run from the repo root)
 
 | Script                           | What it does                                                                                        |
@@ -128,7 +138,7 @@ handler (SSPMW-70) runs. `createApp(config, auth, contact, { serviceArea, estima
 mounts `POST /api/estimates` (`ESTIMATE_SUBMIT_PATH`) in this order: rate limit, JSON body,
 honeypot, service-area check (`requireServiceArea`, SSPMW-24), then the handler. The handler is
 typed as `EstimateSubmitHandler`, so `res.locals.inServiceArea` is known to be `true` there.
-Until the handler is passed in, the route answers 501.
+Both Express and Vercel now install the SSPMW-70 handler. A test app that omits it still answers 501.
 
 - **Rate limit:** each visitor gets `ESTIMATE_RATE_LIMIT_MAX` submissions per
   `ESTIMATE_RATE_LIMIT_WINDOW_MINUTES` (default 5 per hour). A visitor is one IPv4 address, or
@@ -165,27 +175,26 @@ JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using 
 Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
 Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
 The current screen is only a handoff, not submission; SSPMW-44 owns review and SSPMW-70 owns saving/emails.
-SSPMW-31 is partial for inquiry attachment: `attachPhotos` currently has no application caller,
-so this flow does not create `inquiry_photos` rows. Removal from previews and the handoff is
-implemented; attachment and exclusion of removed photos on the saved inquiry remain deferred
-to SSPMW-70 and are not verified end to end here.
+The SSPMW-70 backend now verifies uploads and saves the inquiry plus its retained photo
+links in one transaction. A photo conflict rolls the inquiry back; removed photos never
+appear in the saved set. The page still stops at the handoff until SSPMW-44 connects review.
 
 `useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
-After applying both photo reconciliation/confirmation migrations, trusted submission code verifies inquiry ownership and calls:
+Final submission uses `prepareSubmission` to verify live capabilities and stored bytes,
+then `submit_estimate_request` calls `reconcile_estimate_photos` within the inquiry transaction.
+The older `attachPhotos` API remains available for draft reconciliation; the final route does
+not create a draft inquiry first.
 
-```ts
-const backend = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
-await backend.attachPhotos(inquiryId, photoSession?.token ?? '', photos, { finalize: true });
-```
-
-Keep tokens/receipts private, including the session when removing all photos. Draft links are replaced atomically; finalized sets cannot change.
-After a lost submit response, retry the same inquiry ID and **original handoff before renewing/reuploading**; exact finalized retries work after expiry, but expired credentials cannot finalize drafts.
-SSPMW-70 must retain stable request/results, deduplicate inquiry creation/emails, and wait for attachment success before notification; photo confirmation is not proof of email delivery.
+Keep tokens/receipts private, including the session when removing all photos. Finalized sets
+cannot change. After a lost submit response, retry the same `submission_id` and exact original
+payload before renewing/reuploading. The stored payload hash authorizes only that exact retry,
+which returns the original INQ number without creating rows or sending emails again. Initial
+submissions always require live photo capabilities; expiration never authorizes a new write.
 Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
 Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; SSPMW-95 protects the submit route, and its file checks are connected to the photo backend.
 The page retains `{ details, spamCheck, photoSession, photos }` for the later review/submission flow.
-SSPMW-70 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`,
-provide `estimateSubmit` in the app options, and persist the server-approved service-area result.
+SSPMW-44 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`.
+Both server entry points provide `estimateSubmit`; the database saves server-approved service-area membership.
 
 - Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
 - Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
@@ -219,6 +228,48 @@ overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
+### Lead source collection and handoff (SSPMW-92 / SSPMW-87)
+
+Step 1 collects a required "How did you hear about us?" selection. It starts empty;
+the customer must choose a source rather than inheriting a default. Requiring the
+field is an implementation assumption consistent with the current form; the Jira
+description does not explicitly state whether it is required.
+
+`shared/src/leadSource.ts` exports `leadSourceOptions`, `leadSourceSchema`, and
+`LeadSource` from `@pmw/validation`. Use this configuration for manual jobs
+(SSPMW-311) and lead source reports (SSPMW-145) too.
+
+| Stored value   | Display label |
+| -------------- | ------------- |
+| `google`       | Google        |
+| `referral`     | Referral      |
+| `social_media` | Social media  |
+| `yelp`         | Yelp          |
+| `other`        | Other         |
+
+The shared Step 1 schema requires `lead_source`. The existing public validation
+endpoint returns HTTP 400 with `fieldErrors.lead_source` for missing values,
+unknown values, display labels, and incorrect JSON types. On acceptance, the
+form's `onContinue(details, spamCheck)` includes the selected value unchanged in
+`details`. The page retains it through the service-area check, photos, and Back
+navigation. The endpoint only validates; it does not save an inquiry.
+
+**Remaining acceptance criteria:** SSPMW-44 must show the corresponding
+`leadSourceOptions` label on Step 3, preserve edits when navigating between steps,
+and connect final submission to the API below. SSPMW-70 now revalidates the source
+and inserts it into `public.inquiries.lead_source`. Backend tests cover rejection of
+tampered/missing sources; the database tests cover all five stored source values.
+SSPMW-92 remains pending review, integrated UI verification, or an approved scope change.
+
+For UI verification, check `/estimate` at desktop and phone widths: empty
+selection, missing-selection error, correction, checking/disabled state, server
+field error, network failure and retry, and successful validation with the source
+retained after going to photos and back. Check that an edited source survives
+another trip through photos and Back navigation. Continuing from photos with
+zero photos reaches the current "Your photos are ready" handoff notice; review
+and final submission remain unavailable. Capture desktop and phone screenshots
+for the PR.
+
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 
 The estimate page uses the existing shared `ConfirmationDialog` when a customer
@@ -251,6 +302,199 @@ into the real submission flow remains pending SSPMW-53/70.
 Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
 The spec captures desktop and phone versions of the dialog in `test-results/`.
 
+## Final estimate submission (SSPMW-70 / SSPMW-75 / SSPMW-77 / SSPMW-80)
+
+Apply `20261111000000_submit_estimate_request.sql` after the existing photo migrations.
+It adds nullable submission ID/hash columns (legacy/sample rows need no changes) and a
+service-role-only transaction function. Existing RLS and owner-only signed photo viewing
+remain in force. No customer record is created.
+
+`POST /api/estimates` accepts a flat JSON body:
+
+```ts
+const payload = {
+  ...handoff.details,
+  ...handoff.spamCheck,
+  submission_id: crypto.randomUUID(),
+  photoSession: handoff.photoSession,
+  photos: handoff.photos,
+};
+```
+
+The caller must retain this exact payload and ID through network failures and retries.
+Create a new ID only for a new request or edited details, never automatically on timeout.
+Do not log the payload, session token or receipts. `photoSession` defaults to `null` and
+`photos` to `[]`; keep any existing session even if every photo was removed.
+
+A final request accepts at most **10 photos**, using shared `MAX_ESTIMATE_PHOTOS`.
+`estimateSubmissionSchema` refuses an oversized array with HTTP 400 before inquiry
+lookup, photo verification, saving, or emails. `prepareSubmission` also checks the
+count before session verification or any storage call; the older `attachPhotos`
+entry point enforces the same bound. For accepted 1 MiB uploads, normal verification reads
+at most 10 MiB for a submission. The future review UI should use the shared constant
+for immediate selection feedback; the server remains authoritative.
+
+The server runs the IP limiter, honeypot, current service-area check, shared final schema,
+and signed photo/byte checks. It stores all validated customer strings as submitted,
+`lead_source`, `in_service_area = true`, and `status = 'new'` (displayed as New).
+The existing database sequence and unique constraint assign INQ numbers; gaps are normal.
+Inquiry creation and photo finalization commit together. Duplicate submission IDs are
+serialized in Postgres across server instances, not held in an in-memory map.
+
+| HTTP      | Result                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| 201       | `{ success: true, inquiry_number: "INQ-1049" }`; same response for exact saved retries                             |
+| 400       | Shared validation errors, including `fieldErrors` for Step 1 fields and `formErrors` for submission/photo metadata |
+| 401 / 403 | Invalid/expired photo capability or another session's receipt                                                      |
+| 409       | Same submission ID with a different payload, a missing/changed uploaded object, or conflicting photo links         |
+| 422       | Outside service area, with `code: "outside_service_area"`                                                          |
+| 429       | Existing IP limit; respect `Retry-After`                                                                           |
+| 503       | Area lookup, storage or database unavailable; retry the exact payload                                              |
+
+A filled honeypot retains SSPMW-95's fake `{ success: true }` response, with no save/email.
+No browser-provided status, customer ID, INQ number or service-area flag is accepted.
+
+After a newly committed inquiry, Resend receives separate messages:
+**Estimate request received** to the customer and **New estimate request: INQ-…** to
+`CONTACT_OWNER_EMAILS`. Both reuse `RESEND_API_KEY` and `RESEND_FROM_EMAIL` from the
+existing contact setup. Keep all three valid settings together, or leave all three blank.
+With all three blank, estimates still save and each unsent notification is logged;
+the contact endpoint retains its existing 503 behavior.
+
+Each email has an inquiry-specific idempotency key and a ten-second timeout. Both sends
+are awaited together so serverless execution can finish them; "non-blocking" means an
+email error cannot fail or undo the save. Failure logs include inquiry ID/number,
+notification kind, a fixed `reason`, and a numeric `httpStatus` when available.
+Reasons are `http_error`, `not_configured`, `invalid_response`, `timeout`,
+`request_error`, or `unknown_error`. Request errors can include network failures;
+provider bodies, exception messages/stacks, arbitrary error names, customer fields,
+credentials, and tokens are never logged. Exact submission retries never resend mail, including after
+the provider's idempotency window. Delivery is best effort: a crash after commit or an
+email failure has no automatic retry worker in this story. Resend acknowledgement is
+not proof of inbox delivery. SSPMW-197 supplies the filtered customer receipt below;
+SSPMW-206 supplies the owner summary and its inquiry detail link.
+
+The customer receipt includes only the filtered first name and item, saved INQ number,
+fixed confirmation/next-step wording, and business contact information. It omits other
+submitted fields and photo credentials. Keep the photo cap and bounded failure-log
+context when integrating dependencies; the shared Resend sender preserves HTTP status
+in `EmailDeliveryError`.
+
+PRs #56, #65, #66, and #68 have merged into main, and PR #69 now targets main.
+This integration retains the inquiry and decline-email options, estimate submission
+wiring, shared exports, customer receipt, and owner notice. Complete local checks,
+Actions CI on the integration head, and reviewer re-approval before merging this PR.
+
+Run the ordinary checks plus database tests against local Supabase with all migrations:
+
+```sh
+npm run lint
+npm run format:check
+npm run typecheck
+npm test
+npm run db:migrate
+npm run db:test
+```
+
+The concurrency tests use real, separate Postgres connections. Set
+`SUBMISSION_TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres`
+in the shell, then run `npm run test:submission-db`. They refuse hosted databases, remove
+only their own test rows, and leave normal number-sequence gaps. A missing URL fails the
+explicit command; ordinary `npm test` skips this suite when no URL is provided. CI runs
+it after the existing RLS and seed checks.
+
+Manual acceptance still requires a test request on dev/staging: confirm one New inquiry,
+its source and photos through an owner signed view; verify both emails arrive. Repeat
+with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized logs.
+Retry the original request and confirm the same INQ number with no duplicate inquiry or
+emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
+and its success/error presentation, including desktop/phone screenshots.
+
+### Customer receipt (SSPMW-197 / SSPMW-201)
+
+`server/src/estimateReceiptEmail.ts` builds the receipt sent to the trimmed email
+address on the submitted form. It confirms the first name, saved INQ number and
+item, explains that the request will be reviewed, and includes the shared business
+phone number. The HTML version uses 18px body text, a fluid single-column layout
+and a tappable phone link. A complete plain-text fallback is included. The footer
+shows Carmichael, CA, with no business street address.
+
+The receipt reuses `server/src/lib/resendEmail.ts` and the same server-only Resend
+settings as contact messages. Replies go to `CONTACT_OWNER_EMAILS`. Customer text
+is HTML-escaped, and link-like names/items use neutral fallback wording through
+the same filter as decline emails. The receipt omits service addresses, contact
+details, descriptions, internal notes and photo credentials. N9 (SSPMW-173) will
+supply the shared branded layout once available; the receipt layout is provisional.
+
+No new environment settings or database migrations are required. The existing
+submission handler sends only after a newly committed inquiry, isolates receipt
+failure from the owner notice, and returns the saved INQ number with HTTP 201 even
+when sending fails. Exact submission retries never send a second receipt.
+
+Focused checks: `npm run test -w server -- test/estimateReceiptEmail.test.ts test/estimateSubmission.test.ts test/declineEmail.test.ts test/contactBackend.test.ts`.
+Run the repository lint, format, typecheck and unit-test checks as well.
+
+For staging acceptance, submit a new estimate through `POST /api/estimates`
+(SSPMW-44 still owns the review-screen connection). Verify one saved inquiry and
+the customer's receipt, including the actual name, INQ number, item and business
+phone. Inspect the email at phone and desktop widths and retain screenshots for
+review. Force the receipt send to fail in an isolated test environment: confirm
+HTTP 201, the saved inquiry, the independent owner notice attempt and a sanitized
+receipt-failure log. Retry the exact submission and confirm no duplicate inquiry
+or emails. Tests cover these paths with a mocked provider; they do not establish
+staging delivery.
+
+### Owner estimate notice (SSPMW-206 / SSPMW-211)
+
+`server/src/ownerNoticeEmail.ts` builds the plain-text summary sent to
+`CONTACT_OWNER_EMAILS` after a new estimate is committed. It includes the saved INQ
+number, customer name, item, city, a readable label for what happened, and a direct
+link to `/portal/inquiries/<saved inquiry UUID>`. The summary omits contact fields,
+service addresses, free-form descriptions, internal notes and photo credentials.
+Photos are never attached. Full details and private photo viewing stay in the
+owner-only portal. N9 (SSPMW-173) will provide the shared branded layout once available.
+
+Set `OWNER_PORTAL_ORIGIN` in `server/.env` and in the intended Vercel environment.
+Use the exact HTTPS origin that hosts the SSPMW-144 detail page, with no path,
+trailing slash, query, fragment or credentials. For local testing, use
+`http://localhost:5173`; HTTP is restricted to `localhost`, `127.0.0.1` and `[::1]`.
+Each preview, staging, or production environment must use the origin that hosts
+its integrated inquiry detail route. Restart the server after changing this setting.
+
+The origin comes only from server configuration, never a request header or submitted
+field. The portal and sender share `shared/src/inquiryLinks.ts` so both use the same
+encoded inquiry path. The link contains the inquiry ID, with no login token or signed
+photo URL. A signed-out owner goes through staff login and returns to that inquiry;
+an employee remains blocked by the owner-role check.
+
+The notice uses the shared Resend sender, the existing verified From address, and a
+per-inquiry `estimate/<UUID>/owner` idempotency key. Missing or invalid portal settings
+produce a fixed warning at startup in both the local and Vercel entry points, without
+echoing the configured value. They fail only the owner send after saving, with reason
+`not_configured`; they do not stop startup, undo the inquiry, block the independent
+customer receipt, or change the successful HTTP 201 response.
+The server logs inquiry identifiers, the failed notification kind, a fixed reason and
+an HTTP status when available, without provider response bodies or customer fields.
+The existing exact-payload retry path never sends either email again, including after a send failure.
+
+Focused server checks:
+`npm run test -w server -- test/ownerNoticeEmail.test.ts test/estimateSubmission.test.ts test/vercelEntry.test.ts test/inquiries.test.ts test/inquiryDetailBackend.test.ts`.
+The client check is `npm run test -w client -- src/pages/InquiryEmailLink.test.tsx`.
+Also run the ordinary repository checks and Playwright smoke tests. The inherited
+leave-guard test selects SSPMW-92's required lead source before advancing to photos.
+
+For manual acceptance, submit to the integrated API using test recipients, confirm
+one New inquiry and the owner summary, and open its link both signed in and signed out.
+Verify the exact INQ number and item after login, and verify an employee cannot view
+it. Opening a New inquiry can mark it Reviewed (`contacted`) through SSPMW-144's
+existing behavior; check initial `new` status before visiting the detail page.
+Repeat the exact payload and confirm the original INQ number and no extra emails.
+With only the portal setting absent in an isolated development run, submit a new ID
+and confirm HTTP 201, the saved inquiry, an owner-failure log, and the independent
+customer receipt. Restore the setting and restart afterward. Staging delivery and
+link navigation require the deployed inquiry detail route and intended Resend
+configuration; local tests do not establish staging acceptance.
+
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
 Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),
@@ -275,27 +519,42 @@ does not prove inbox delivery. N9 branding will be adopted when available.
 
 `server/src/declineEmail.ts` builds and sends the email a customer gets when an owner declines their
 estimate request: a short plain-text message with their first name, inquiry number, item and the
-business phone number. Internal notes are never included. Nothing sends it yet: the decline action
-(SSPMW-172) will call it, and until that ships no decline emails go out.
+business phone number. Internal notes are never included. The decline action (SSPMW-172, below)
+sends it.
 
 Because the form doesn't verify email addresses, a name or item that looks like a link, an email
 address, a domain or a phone number (or runs long) is replaced with a plain word, so spam text isn't
 resent from the business's domain. Words joined by a dot only count as a domain when the ending is a
 real top-level domain, so names like "Mr.Smith" are kept. The check also catches phone numbers written with other dashes,
 `~` or non-ASCII digits, and links hidden with invisible characters, which are dropped from the text
-that is sent. SSPMW-172 should also offer declining spam without emailing. The email uses the same
+that is sent. The decline dialog lets the owner decline spam without emailing. The email uses the same
 Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and replies go to
 `CONTACT_OWNER_EMAILS`. Both emails send through `server/src/lib/resendEmail.ts`. The wording is a
 draft until Girlie and Todd approve it.
 
-For SSPMW-172: save the inquiry's status as `closed` first, then call
-`notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws, so
-a failed email can't undo the decline. It returns `sent`, `already_sent`, `no_email` (no address, or
-not a usable one), `unavailable` (email not configured) or `failed`, so the screen can tell the owner
-whether the customer was emailed. Each send uses a Resend idempotency key made from the inquiry and
-the address, so within 24 hours a retried decline doesn't email the customer twice (`sent` or
-`already_sent`), while a decline sent again after the address was corrected reaches the new address.
-If another send for the same decline is still running, the result is `failed`, and retrying is safe.
+Each send uses a Resend idempotency key made from the inquiry and the address, so within 24 hours a
+retried decline doesn't email the customer twice (`sent` or `already_sent`), while a decline sent
+again after the address was corrected reaches the new address. If another send for the same decline
+is still running, the result is `failed`, and retrying is safe.
+
+## Declining an estimate request (SSPMW-172)
+
+On an estimate request's detail page, an owner can decline a New or Reviewed request. The dialog
+asks for confirmation and has an "Email the customer" box, ticked by default, so spam can be declined
+without emailing. Cancel, the close button and Escape change nothing.
+
+`POST /api/inquiries/:inquiryId/decline` (owners only) takes `{ "notifyCustomer": true | false }`
+and nothing else. It saves the status as `closed` (shown as Declined) first, then calls
+`notifyCustomerOfDecline`, so a failed email never undoes the decline. The answer is
+`{ "status": "closed", "email": ... }`, where `email` is `sent`, `already_sent`, `no_email`,
+`unavailable`, `failed`, or `skipped` (the owner unticked the box). The page shows the owner whether
+the customer was emailed, and offers "Try sending the email again" for `failed` and `unavailable`.
+Declining an already declined request saves nothing new and only resends, which the idempotency key
+keeps to one email. An accepted request answers 409 and is never declined.
+
+Declined requests no longer appear in the estimate requests list (`GET /api/inquiries`) or its
+total. There is no view of declined requests yet; a declined request can still be opened by its
+link.
 
 ## Database
 
