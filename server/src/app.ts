@@ -15,6 +15,7 @@ import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
+import type { AcceptInquiryBackend } from './acceptInquiry.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
@@ -38,6 +39,8 @@ export interface AppOptions {
   estimateSubmit?: EstimateSubmitHandler;
   /** Reads the owner's estimate request list (SSPMW-130). */
   inquiries?: InquiryBackend;
+  /** Accepts an estimate request and turns it into a job (SSPMW-156). */
+  acceptInquiry?: AcceptInquiryBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
   declineEmail?: DeclineEmailSender;
 }
@@ -73,7 +76,14 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, inquiries, declineEmail }: AppOptions = {},
+  {
+    serviceArea,
+    estimateSubmit,
+    photos,
+    inquiries,
+    acceptInquiry: acceptBackend,
+    declineEmail,
+  }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -307,6 +317,38 @@ export function createApp(
       res.json({ ...result, page, pageSize });
     } catch {
       res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  api.post('/inquiries/:inquiryId/accept', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const inquiryId = String(req.params.inquiryId);
+    // Anything that is not a UUID can't be an inquiry, and would only make the database error.
+    if (!UUID_PATTERN.test(inquiryId)) {
+      res.status(404).json({ error: 'Estimate request not found.' });
+      return;
+    }
+    if (!acceptBackend) {
+      res.status(503).json({ error: 'Accepting requests is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await acceptBackend.acceptInquiry(inquiryId);
+      if (result.outcome === 'not-found') {
+        res.status(404).json({ error: 'Estimate request not found.' });
+        return;
+      }
+      if (result.outcome === 'not-acceptable') {
+        res.status(409).json({ error: 'This estimate request was already accepted or declined.' });
+        return;
+      }
+      res.json({ job: result.job });
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details, so this is safe to log.
+      console.error('Accept inquiry failed', {
+        inquiryId,
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'The request could not be accepted. Please try again.' });
     }
   });
   // One estimate request with its photo ids (SSPMW-144). Read-only, so loading or

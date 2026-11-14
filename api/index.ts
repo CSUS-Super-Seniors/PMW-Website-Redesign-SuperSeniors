@@ -6,6 +6,7 @@ import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
+import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
 import {
@@ -29,6 +30,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
   photos,
   inquiries: createInquiryBackend(supabase),
+  acceptInquiry: createAcceptInquiryBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
     createEstimateSubmissionBackend(supabase, config.contactEmail, {
       ownerPortalOrigin: config.ownerPortalOrigin,

@@ -3,6 +3,7 @@ import { loadConfig } from './config.js';
 import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
+import { createAcceptInquiryBackend } from './acceptInquiry.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
@@ -29,6 +30,7 @@ try {
     serviceArea: createServiceAreaBackend(supabase),
     photos,
     inquiries: createInquiryBackend(supabase),
+    acceptInquiry: createAcceptInquiryBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
       createEstimateSubmissionBackend(supabase, config.contactEmail, {
         ownerPortalOrigin: config.ownerPortalOrigin,
