@@ -9,7 +9,9 @@ import {
 import type { EstimateSubmitHandler } from './app.js';
 import type { ContactEmailConfig } from './config.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
+import { buildEstimateReceiptEmail } from './estimateReceiptEmail.js';
 import { EmailDeliveryError, emailFailureLogContext } from './lib/emailDeliveryError.js';
+import { sendResendEmail } from './lib/resendEmail.js';
 
 export interface SavedEstimate {
   id: string;
@@ -56,65 +58,40 @@ export function createEstimateSubmissionBackend(
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
     if (!email) throw new EmailDeliveryError('not_configured');
     const receipt = kind === 'receipt';
-    const response = await fetchEmail('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${email.apiKey}`,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': `estimate/${saved.id}/${kind}`,
-      },
-      signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({
-        from: email.from,
+    await sendResendEmail(
+      email,
+      {
         to: receipt ? [details.email.trim()] : email.to,
-        subject: receipt
-          ? 'Estimate request received'
-          : `New estimate request: ${saved.inquiry_number}`,
-        ...(!receipt ? { reply_to: details.email.trim() } : {}),
-        // The public form does not prove ownership of the entered email. Keep
-        // the interim receipt free of submitted text; SSPMW-197 adds its filtered
-        // personalized template separately. Owner recipients are server-configured.
-        text: (receipt
-          ? [
-              'Estimate request received',
-              '',
-              'We received your estimate request. We will review it and contact you.',
-              '',
-              `Inquiry: ${saved.inquiry_number}`,
-              `Received: ${saved.created_at}`,
-            ]
-          : [
-              'New estimate request',
-              '',
-              `Inquiry: ${saved.inquiry_number}`,
-              `Received: ${saved.created_at}`,
-              `Name: ${details.first_name} ${details.last_name}`,
-              `Email: ${details.email}`,
-              `Phone: ${details.phone}`,
-              `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
-              `Address: ${details.address}`,
-              `City: ${details.city}`,
-              `Item: ${details.item}`,
-              `Issue: ${details.issue_type}`,
-              `Lead source: ${details.lead_source}`,
-              '',
-              details.description,
-              '',
-              'View this inquiry and its private photos in the owner Inquiries list.',
-            ]
-        ).join('\n'),
-      }),
-    });
-    if (!response.ok) throw new EmailDeliveryError('http_error', response.status);
-    const result: unknown = await response.json();
-    if (
-      !result ||
-      typeof result !== 'object' ||
-      !('id' in result) ||
-      typeof result.id !== 'string' ||
-      !result.id.trim()
-    )
-      throw new EmailDeliveryError('invalid_response', response.status);
+        replyTo: receipt ? email.to : details.email.trim(),
+        idempotencyKey: `estimate/${saved.id}/${kind}`,
+        ...(receipt
+          ? buildEstimateReceiptEmail(saved, details)
+          : {
+              subject: `New estimate request: ${saved.inquiry_number}`,
+              text: [
+                'New estimate request',
+                '',
+                `Inquiry: ${saved.inquiry_number}`,
+                `Received: ${saved.created_at}`,
+                `Name: ${details.first_name} ${details.last_name}`,
+                `Email: ${details.email}`,
+                `Phone: ${details.phone}`,
+                `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
+                `Address: ${details.address}`,
+                `City: ${details.city}`,
+                `Item: ${details.item}`,
+                `Issue: ${details.issue_type}`,
+                `Lead source: ${details.lead_source}`,
+                '',
+                details.description,
+                '',
+                'View this inquiry and its private photos in the owner Inquiries list.',
+              ].join('\n'),
+            }),
+      },
+      'Estimate email',
+      fetchEmail,
+    );
   }
   return {
     async findSaved(submissionId, hash) {

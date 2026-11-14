@@ -354,7 +354,7 @@ serialized in Postgres across server instances, not held in an in-memory map.
 A filled honeypot retains SSPMW-95's fake `{ success: true }` response, with no save/email.
 No browser-provided status, customer ID, INQ number or service-area flag is accepted.
 
-After a newly committed inquiry, Resend receives separate plain-text messages:
+After a newly committed inquiry, Resend receives separate messages:
 **Estimate request received** to the customer and **New estimate request: INQ-…** to
 `CONTACT_OWNER_EMAILS`. Both reuse `RESEND_API_KEY` and `RESEND_FROM_EMAIL` from the
 existing contact setup. Keep all three valid settings together, or leave all three blank.
@@ -371,7 +371,8 @@ provider bodies, exception messages/stacks, arbitrary error names, customer fiel
 credentials, and tokens are never logged. Exact submission retries never resend mail, including after
 the provider's idempotency window. Delivery is best effort: a crash after commit or an
 email failure has no automatic retry worker in this story. Resend acknowledgement is
-not proof of inbox delivery. N1/N2's separate stories may refine message content.
+not proof of inbox delivery. SSPMW-197 supplies the customer receipt below; SSPMW-206
+will refine the owner notice and add its inquiry detail link.
 
 The interim customer receipt contains only fixed confirmation text and saved inquiry
 metadata. It never relays submitted names, items, descriptions, addresses, contact
@@ -411,6 +412,40 @@ with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized 
 Retry the original request and confirm the same INQ number with no duplicate inquiry or
 emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
 and its success/error presentation, including desktop/phone screenshots.
+
+### Customer receipt (SSPMW-197 / SSPMW-201)
+
+`server/src/estimateReceiptEmail.ts` builds the receipt sent to the trimmed email
+address on the submitted form. It confirms the first name, saved INQ number and
+item, explains that the request will be reviewed, and includes the shared business
+phone number. The HTML version uses 18px body text, a fluid single-column layout
+and a tappable phone link. A complete plain-text fallback is included. The footer
+shows Carmichael, CA, with no business street address.
+
+The receipt reuses `server/src/lib/resendEmail.ts` and the same server-only Resend
+settings as contact messages. Replies go to `CONTACT_OWNER_EMAILS`. Customer text
+is HTML-escaped, and link-like names/items use neutral fallback wording through
+the same filter as decline emails. The receipt omits service addresses, contact
+details, descriptions, internal notes and photo credentials. N9 (SSPMW-173) will
+supply the shared branded layout once available; the receipt layout is provisional.
+
+No new environment settings or database migrations are required. The existing
+submission handler sends only after a newly committed inquiry, isolates receipt
+failure from the owner notice, and returns the saved INQ number with HTTP 201 even
+when sending fails. Exact submission retries never send a second receipt.
+
+Focused checks: `npm run test -w server -- test/estimateReceiptEmail.test.ts test/estimateSubmission.test.ts test/declineEmail.test.ts test/contactBackend.test.ts`.
+Run the repository lint, format, typecheck and unit-test checks as well.
+
+For staging acceptance, submit a new estimate through `POST /api/estimates`
+(SSPMW-44 still owns the review-screen connection). Verify one saved inquiry and
+the customer's receipt, including the actual name, INQ number, item and business
+phone. Inspect the email at phone and desktop widths and retain screenshots for
+review. Force the receipt send to fail in an isolated test environment: confirm
+HTTP 201, the saved inquiry, the independent owner notice attempt and a sanitized
+receipt-failure log. Retry the exact submission and confirm no duplicate inquiry
+or emails. Tests cover these paths with a mocked provider; they do not establish
+staging delivery.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
