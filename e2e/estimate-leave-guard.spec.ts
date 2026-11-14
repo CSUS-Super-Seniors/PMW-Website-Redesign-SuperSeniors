@@ -110,9 +110,12 @@ for (const viewport of [
     await expect(dialog()).toBeVisible();
     await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toBeVisible();
-    // The photo handoff is still unfinished, even after uploads succeed.
+    // Review stays protected until the request is successfully submitted.
     await page.getByRole('button', { name: 'Next', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('1 photo(s) uploaded privately');
+    await expect(page.getByRole('heading', { name: 'Review your request' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Request photos' }).getByRole('img')).toHaveCount(
+      1,
+    );
     await contactLink().click();
     await expect(dialog()).toBeVisible();
     await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();

@@ -520,7 +520,7 @@ describe('EstimateStep1Form', () => {
     expect(screen.getByRole('button', { name: 'Checking details…' })).toBeDisabled();
     reject(new Error('Next step unavailable'));
     expect(
-      await screen.findByText(/We could not continue to photos. Your request has not been sent/),
+      await screen.findByText(/We could not continue. Your request has not been sent/),
     ).toBeInTheDocument();
     expect(continueButton()).toBeEnabled();
     expect(screen.getByLabelText('Item')).toHaveValue(details.item);
