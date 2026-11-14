@@ -270,6 +270,38 @@ zero photos reaches the current "Your photos are ready" handoff notice; review
 and final submission remain unavailable. Capture desktop and phone screenshots
 for the PR.
 
+### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
+
+The estimate page uses the existing shared `ConfirmationDialog` when a customer
+tries to leave through site links, Cancel, or browser Back/Forward with entered
+details or selected photos. Incomplete and invalid entries count as data; the
+hidden honeypot does not. Clearing all entered values and removing photos turns
+the guard off. Moving between estimate steps or same-page anchors does not prompt.
+
+**Cancel**, Escape, and closing the dialog keep the current step and all data.
+**Discard** resumes the intended navigation. Leaving unmounts the request page,
+clearing its in-memory details, photos, upload session, and handoff. Uploaded,
+unattached files remain subject to the existing abandoned-upload cleanup.
+
+Refresh, tab closing, and full document navigation use the browser's native
+`beforeunload` warning while data exists. Its wording and availability are
+browser-controlled, especially on mobile. No draft is persisted across a confirmed reload.
+
+`client/src/main.tsx` uses `createBrowserRouter` / `RouterProvider` so the existing
+App route tree supports `useBlocker`. Tests mounting the estimate page must likewise
+use a data router, such as `createMemoryRouter`.
+
+`useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
+SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
+before navigating to Thanks. It permits immediate navigation and disables both
+warnings. A new request must clear the old draft/photos and call `startNewRequest()`
+if reusing the same mounted page. The current photo handoff is not submission and
+remains protected. The success/reset contract is covered in hook tests; wiring it
+into the real submission flow remains pending SSPMW-53/70.
+
+Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
+The spec captures desktop and phone versions of the dialog in `test-results/`.
+
 ## Final estimate submission (SSPMW-70 / SSPMW-75 / SSPMW-77 / SSPMW-80)
 
 Apply `20261111000000_submit_estimate_request.sql` after the existing photo migrations.
@@ -350,10 +382,11 @@ omits descriptions/contact details and uses the decline-email link-like-text fil
 When integrating #68/#69, retain this branch's photo cap and failure-log context;
 the shared Resend sender must preserve HTTP status in `EmailDeliveryError`.
 
-The merge hold remains: merge PR #56 into main first, integrate main into #66 and
-retarget #66 to main, then rerun CI before merging #66, #68, and #69 in that order.
-Preserve main's `inquiries:` application option and `business.js` validation export
-alongside estimate submission wiring when resolving integration conflicts.
+PR #56 has merged into main, and PR #66 now targets main. This integration preserves
+main's `inquiries:` application option, `business.js` validation export, and estimate
+leave guard alongside estimate submission wiring. Keep PR #66 on hold until local
+checks and Actions CI pass on the integration commit and the reviewer re-approves it.
+Merge #66, #68, and #69 in that order after their required reviews and checks.
 
 Run the ordinary checks plus database tests against local Supabase with all migrations:
 
@@ -414,38 +447,6 @@ receipt-failure log. Retry the exact submission and confirm no duplicate inquiry
 or emails. Tests cover these paths with a mocked provider; they do not establish
 staging delivery.
 
-### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
-
-The estimate page uses the existing shared `ConfirmationDialog` when a customer
-tries to leave through site links, Cancel, or browser Back/Forward with entered
-details or selected photos. Incomplete and invalid entries count as data; the
-hidden honeypot does not. Clearing all entered values and removing photos turns
-the guard off. Moving between estimate steps or same-page anchors does not prompt.
-
-**Cancel**, Escape, and closing the dialog keep the current step and all data.
-**Discard** resumes the intended navigation. Leaving unmounts the request page,
-clearing its in-memory details, photos, upload session, and handoff. Uploaded,
-unattached files remain subject to the existing abandoned-upload cleanup.
-
-Refresh, tab closing, and full document navigation use the browser's native
-`beforeunload` warning while data exists. Its wording and availability are
-browser-controlled, especially on mobile. No draft is persisted across a confirmed reload.
-
-`client/src/main.tsx` uses `createBrowserRouter` / `RouterProvider` so the existing
-App route tree supports `useBlocker`. Tests mounting the estimate page must likewise
-use a data router, such as `createMemoryRouter`.
-
-`useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
-SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
-before navigating to Thanks. It permits immediate navigation and disables both
-warnings. A new request must clear the old draft/photos and call `startNewRequest()`
-if reusing the same mounted page. The current photo handoff is not submission and
-remains protected. The success/reset contract is covered in hook tests; wiring it
-into the real submission flow remains pending SSPMW-53/70.
-
-Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
-The spec captures desktop and phone versions of the dialog in `test-results/`.
-
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
 Public `POST /api/contact-messages` accepts `name`, `message` (up to 500 characters),
@@ -470,27 +471,42 @@ does not prove inbox delivery. N9 branding will be adopted when available.
 
 `server/src/declineEmail.ts` builds and sends the email a customer gets when an owner declines their
 estimate request: a short plain-text message with their first name, inquiry number, item and the
-business phone number. Internal notes are never included. Nothing sends it yet: the decline action
-(SSPMW-172) will call it, and until that ships no decline emails go out.
+business phone number. Internal notes are never included. The decline action (SSPMW-172, below)
+sends it.
 
 Because the form doesn't verify email addresses, a name or item that looks like a link, an email
 address, a domain or a phone number (or runs long) is replaced with a plain word, so spam text isn't
 resent from the business's domain. Words joined by a dot only count as a domain when the ending is a
 real top-level domain, so names like "Mr.Smith" are kept. The check also catches phone numbers written with other dashes,
 `~` or non-ASCII digits, and links hidden with invisible characters, which are dropped from the text
-that is sent. SSPMW-172 should also offer declining spam without emailing. The email uses the same
+that is sent. The decline dialog lets the owner decline spam without emailing. The email uses the same
 Resend settings as contact messages (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`), and replies go to
 `CONTACT_OWNER_EMAILS`. Both emails send through `server/src/lib/resendEmail.ts`. The wording is a
 draft until Girlie and Todd approve it.
 
-For SSPMW-172: save the inquiry's status as `closed` first, then call
-`notifyCustomerOfDecline(createDeclineEmailFromConfig(config), inquiry)`. That call never throws, so
-a failed email can't undo the decline. It returns `sent`, `already_sent`, `no_email` (no address, or
-not a usable one), `unavailable` (email not configured) or `failed`, so the screen can tell the owner
-whether the customer was emailed. Each send uses a Resend idempotency key made from the inquiry and
-the address, so within 24 hours a retried decline doesn't email the customer twice (`sent` or
-`already_sent`), while a decline sent again after the address was corrected reaches the new address.
-If another send for the same decline is still running, the result is `failed`, and retrying is safe.
+Each send uses a Resend idempotency key made from the inquiry and the address, so within 24 hours a
+retried decline doesn't email the customer twice (`sent` or `already_sent`), while a decline sent
+again after the address was corrected reaches the new address. If another send for the same decline
+is still running, the result is `failed`, and retrying is safe.
+
+## Declining an estimate request (SSPMW-172)
+
+On an estimate request's detail page, an owner can decline a New or Reviewed request. The dialog
+asks for confirmation and has an "Email the customer" box, ticked by default, so spam can be declined
+without emailing. Cancel, the close button and Escape change nothing.
+
+`POST /api/inquiries/:inquiryId/decline` (owners only) takes `{ "notifyCustomer": true | false }`
+and nothing else. It saves the status as `closed` (shown as Declined) first, then calls
+`notifyCustomerOfDecline`, so a failed email never undoes the decline. The answer is
+`{ "status": "closed", "email": ... }`, where `email` is `sent`, `already_sent`, `no_email`,
+`unavailable`, `failed`, or `skipped` (the owner unticked the box). The page shows the owner whether
+the customer was emailed, and offers "Try sending the email again" for `failed` and `unavailable`.
+Declining an already declined request saves nothing new and only resends, which the idempotency key
+keeps to one email. An accepted request answers 409 and is never declined.
+
+Declined requests no longer appear in the estimate requests list (`GET /api/inquiries`) or its
+total. There is no view of declined requests yet; a declined request can still be opened by its
+link.
 
 ## Database
 

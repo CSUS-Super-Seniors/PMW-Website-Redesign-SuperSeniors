@@ -3,6 +3,8 @@ import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
+import { createInquiryBackend } from '../server/src/inquiries.js';
+import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import {
@@ -28,6 +30,8 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
     createEstimateSubmissionBackend(supabase, config.contactEmail),
     photos,
   ),
+  inquiries: createInquiryBackend(supabase),
+  declineEmail: createDeclineEmailFromConfig(config),
 });
 
 export default app;

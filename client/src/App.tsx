@@ -7,6 +7,8 @@ import { business, routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
+import InquiriesPage from './pages/InquiriesPage';
+import InquiryDetailPage from './pages/InquiryDetailPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -39,7 +41,8 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>
-            <Route path="inquiries/*" element={<PlaceholderPage />} />
+            <Route path="inquiries" element={<InquiriesPage />} />
+            <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="customers/*" element={<PlaceholderPage />} />
             <Route path="reports/*" element={<PlaceholderPage />} />
             <Route path="staff-accounts/*" element={<PlaceholderPage />} />
