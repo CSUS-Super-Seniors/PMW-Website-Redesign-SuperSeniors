@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner } from '../components/ui';
+import { InquiryDecision } from '../components/inquiry/InquiryDecision';
 import { InquiryPhotos } from '../components/inquiry/InquiryPhotos';
+import type { InquiryStatus } from '../api/inquiries';
 import type { InquiryDetail } from '../api/inquiryDetail';
 import { useInquiryDetail } from '../api/useInquiryDetail';
 import { routes } from '../config/site';
@@ -52,7 +54,15 @@ function BackLink() {
   );
 }
 
-function Details({ inquiry, accessToken }: { inquiry: InquiryDetail; accessToken?: string }) {
+function Details({
+  inquiry,
+  accessToken,
+  onStatusChange,
+}: {
+  inquiry: InquiryDetail;
+  accessToken?: string;
+  onStatusChange: (status: InquiryStatus) => void;
+}) {
   return (
     <>
       <header className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -136,18 +146,11 @@ function Details({ inquiry, accessToken }: { inquiry: InquiryDetail; accessToken
           </Section>
 
           <Section title="Decision">
-            {/* Accept is SSPMW-156 (G3) and Decline is SSPMW-172 (G4). */}
-            <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" disabled aria-describedby="decision-note">
-                Accept
-              </Button>
-              <Button variant="outline" disabled aria-describedby="decision-note">
-                Decline
-              </Button>
-            </div>
-            <p id="decision-note" className="type-body-sm mt-3 text-neutral-600">
-              Accepting and declining requests is coming soon.
-            </p>
+            <InquiryDecision
+              inquiry={inquiry}
+              accessToken={accessToken}
+              onStatusChange={onStatusChange}
+            />
           </Section>
         </div>
       </div>
@@ -157,7 +160,7 @@ function Details({ inquiry, accessToken }: { inquiry: InquiryDetail; accessToken
 
 export default function InquiryDetailPage() {
   const { inquiryId = '' } = useParams();
-  const { state, retry, accessToken } = useInquiryDetail(inquiryId);
+  const { state, retry, setStatus, accessToken } = useInquiryDetail(inquiryId);
 
   if (state.status === 'no-access') return <NoPermissionPage />;
 
@@ -195,7 +198,9 @@ export default function InquiryDetailPage() {
       </div>
     );
   } else {
-    content = <Details inquiry={state.inquiry} accessToken={accessToken} />;
+    content = (
+      <Details inquiry={state.inquiry} accessToken={accessToken} onStatusChange={setStatus} />
+    );
   }
 
   return (

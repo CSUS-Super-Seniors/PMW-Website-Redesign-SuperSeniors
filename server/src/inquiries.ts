@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { DeclinedInquiry } from './declineEmail.js';
 
 export const INQUIRY_PAGE_SIZE_MIN = 5;
 export const INQUIRY_PAGE_SIZE_MAX = 20;
@@ -51,7 +52,21 @@ export interface InquiryBackend {
    * status after the call, or null when no inquiry has this id.
    */
   markReviewed(id: string): Promise<string | null>;
+  /**
+   * Declines a New or Reviewed inquiry (status `closed`, SSPMW-172). An inquiry
+   * that is already declined is reported as such, so a retry can resend the email.
+   * An accepted inquiry is never declined.
+   */
+  decline(id: string): Promise<DeclineOutcome>;
 }
+
+/** The statuses an owner can decline from. Accepted (`converted`) already has a job. */
+export const DECLINABLE_STATUSES = ['new', 'contacted'] as const;
+
+export type DeclineOutcome =
+  | { result: 'declined' | 'already_declined'; inquiry: DeclinedInquiry }
+  | { result: 'not_declinable'; status: string }
+  | { result: 'not_found' };
 
 /** Inquiry and photo ids are uuids; anything else is refused before the database. */
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -120,6 +135,9 @@ export function createInquiryBackend(client: Pick<SupabaseClient, 'from'>): Inqu
         .select('id,inquiry_number,first_name,last_name,item,city,status,created_at', {
           count: 'exact',
         })
+        // The active list leaves declined requests out (SSPMW-172). There is no
+        // view of declined requests yet.
+        .neq('status', 'closed')
         // Newest first. The id breaks ties so rows never move between pages.
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -130,7 +148,8 @@ export function createInquiryBackend(client: Pick<SupabaseClient, 'from'>): Inqu
         // real total so the client can move back to the last page.
         const { count: total, error: countError } = await client
           .from('inquiries')
-          .select('id', { count: 'exact', head: true });
+          .select('id', { count: 'exact', head: true })
+          .neq('status', 'closed');
         if (countError || total === null) throw new Error('Inquiry count failed');
         return { inquiries: [], total };
       }
@@ -176,6 +195,48 @@ export function createInquiryBackend(client: Pick<SupabaseClient, 'from'>): Inqu
       if (current.error) throw new Error('Inquiry status lookup failed');
       return (current.data as { status: string } | null)?.status ?? null;
     },
+
+    async decline(id) {
+      // The status filter makes this one atomic step: a request accepted in another
+      // tab is never declined, and two declines save only once.
+      const updated = await client
+        .from('inquiries')
+        .update({ status: 'closed', updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .in('status', [...DECLINABLE_STATUSES])
+        .select(DECLINE_COLUMNS);
+      if (updated.error || !updated.data) throw new Error('Inquiry decline update failed');
+      const saved = (updated.data as DeclineRow[])[0];
+      if (saved) return { result: 'declined', inquiry: toDeclined(saved) };
+
+      const current = await client
+        .from('inquiries')
+        .select(DECLINE_COLUMNS)
+        .eq('id', id)
+        .maybeSingle();
+      if (current.error) throw new Error('Inquiry status lookup failed');
+      const row = current.data as DeclineRow | null;
+      if (!row) return { result: 'not_found' };
+      if (row.status === 'closed') return { result: 'already_declined', inquiry: toDeclined(row) };
+      return { result: 'not_declinable', status: row.status };
+    },
+  };
+}
+
+// Only what the decline email may use, plus the status. Never internal notes.
+const DECLINE_COLUMNS = 'id,inquiry_number,first_name,item,email,status';
+
+interface DeclineRow extends DeclinedInquiry {
+  status: string;
+}
+
+function toDeclined(row: DeclineRow): DeclinedInquiry {
+  return {
+    id: row.id,
+    inquiry_number: row.inquiry_number,
+    first_name: row.first_name,
+    item: row.item,
+    email: row.email,
   };
 }
 

@@ -23,6 +23,7 @@ import {
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inquiries.js';
+import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
@@ -37,6 +38,22 @@ export interface AppOptions {
   estimateSubmit?: EstimateSubmitHandler;
   /** Reads the owner's estimate request list (SSPMW-130). */
   inquiries?: InquiryBackend;
+  /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
+  declineEmail?: DeclineEmailSender;
+}
+
+/** `skipped` means the owner chose not to email the customer. */
+export type DeclineEmailOutcome = Awaited<ReturnType<typeof notifyCustomerOfDecline>> | 'skipped';
+
+/** The decline body is `{ "notifyCustomer": true | false }` and nothing else. */
+function readDeclineBody(body: unknown): { notifyCustomer: boolean } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const keys = Object.keys(body);
+  const { notifyCustomer } = body as { notifyCustomer?: unknown };
+  if (keys.length !== 1 || keys[0] !== 'notifyCustomer' || typeof notifyCustomer !== 'boolean') {
+    return null;
+  }
+  return { notifyCustomer };
 }
 
 /**
@@ -56,7 +73,7 @@ export function createApp(
   config: Config,
   backend: AuthBackend,
   contact?: ContactBackend,
-  { serviceArea, estimateSubmit, photos, inquiries }: AppOptions = {},
+  { serviceArea, estimateSubmit, photos, inquiries, declineEmail }: AppOptions = {},
 ) {
   const app = express();
   app.disable('x-powered-by');
@@ -338,6 +355,49 @@ export function createApp(
     } catch {
       res.status(503).json({ error: 'Could not update the estimate request. Please retry.' });
     }
+  });
+  // Declines a New or Reviewed request and, when the owner asks, emails the customer
+  // (SSPMW-172). The decline is saved first; a failed email never undoes it, and the
+  // answer says whether the customer was emailed. Declining again resends safely:
+  // the email's idempotency key stops a second copy within 24 hours.
+  api.post('/inquiries/:inquiryId/decline', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const id = String(req.params.inquiryId);
+    if (!UUID_PATTERN.test(id)) {
+      res.status(400).json({ error: 'Invalid estimate request id.' });
+      return;
+    }
+    const body = readDeclineBody(req.body);
+    if (!body) {
+      res.status(400).json({ error: 'notifyCustomer must be true or false.' });
+      return;
+    }
+    if (!inquiries) {
+      res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+      return;
+    }
+    let outcome;
+    try {
+      outcome = await inquiries.decline(id);
+    } catch {
+      res.status(503).json({ error: 'Could not decline the estimate request. Please retry.' });
+      return;
+    }
+    if (outcome.result === 'not_found') {
+      res.status(404).json({ error: 'Estimate request not found.' });
+      return;
+    }
+    if (outcome.result === 'not_declinable') {
+      res.status(409).json({
+        error: 'This estimate request was accepted, so it cannot be declined.',
+        status: outcome.status,
+      });
+      return;
+    }
+    const email: DeclineEmailOutcome = body.notifyCustomer
+      ? await notifyCustomerOfDecline(declineEmail, outcome.inquiry)
+      : 'skipped';
+    res.json({ status: 'closed', email });
   });
   app.use('/api', api);
   app.use((_req, res) => {

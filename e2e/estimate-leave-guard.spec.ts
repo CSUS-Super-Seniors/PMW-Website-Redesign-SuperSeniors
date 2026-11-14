@@ -102,6 +102,7 @@ for (const viewport of [
     await page.getByRole('button', { name: 'Back', exact: true }).click();
     await expect(dialog()).toHaveCount(0);
     await expect(page.getByLabel('Email address', { exact: true })).toHaveValue('ana@example.com');
+    await expect(page.getByLabel('How did you hear about us?')).toHaveValue('referral');
     await page.getByRole('button', { name: 'Continue to photos' }).click();
     await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toBeVisible();
 
@@ -130,6 +131,7 @@ for (const viewport of [
     await requestLink().click();
     await expect(page.getByLabel('First name', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('City', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('How did you hear about us?')).toHaveValue('');
     await expect(page.getByRole('img', { name: 'Preview of chair.png' })).toHaveCount(0);
 
     // Reload uses the browser's native warning rather than the custom modal.

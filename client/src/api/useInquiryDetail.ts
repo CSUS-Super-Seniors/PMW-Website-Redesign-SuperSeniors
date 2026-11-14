@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import type { InquiryStatus } from './inquiries';
 import { fetchInquiry, markInquiryReviewed, type InquiryDetailResult } from './inquiryDetail';
 
 export type InquiryDetailState = { status: 'loading' } | InquiryDetailResult;
@@ -11,6 +12,8 @@ export type InquiryDetailState = { status: 'loading' } | InquiryDetailResult;
 export function useInquiryDetail(id: string): {
   state: InquiryDetailState;
   retry: () => void;
+  /** Shows a status the server reported after a change, such as a decline. */
+  setStatus: (status: InquiryStatus) => void;
   accessToken: string | undefined;
 } {
   const { session } = useAuth();
@@ -44,12 +47,27 @@ export function useInquiryDetail(id: string): {
       // page keeps showing New and the next visit tries again.
       const status = await markInquiryReviewed(token, id);
       if (cancelled || status === null) return;
-      setResult({ key: requestKey, value: { ...value, inquiry: { ...value.inquiry, status } } });
+      // Only replace New: a decline saved while this call ran must stay shown.
+      setResult((current) =>
+        current?.key === requestKey &&
+        current.value.status === 'ok' &&
+        current.value.inquiry.status === 'new'
+          ? { key: requestKey, value: { ...value, inquiry: { ...value.inquiry, status } } }
+          : current,
+      );
     });
     return () => {
       cancelled = true;
     };
   }, [userId, id, attempt]);
 
-  return { state, retry: () => setAttempt((n) => n + 1), accessToken };
+  function setStatus(status: InquiryStatus) {
+    setResult((current) =>
+      current?.key === key && current.value.status === 'ok'
+        ? { key, value: { ...current.value, inquiry: { ...current.value.inquiry, status } } }
+        : current,
+    );
+  }
+
+  return { state, retry: () => setAttempt((n) => n + 1), setStatus, accessToken };
 }

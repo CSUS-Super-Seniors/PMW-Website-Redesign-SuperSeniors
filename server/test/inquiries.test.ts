@@ -36,6 +36,7 @@ function inquiryBackend(
     listInquiries: vi.fn(list),
     getInquiry: vi.fn(overrides.getInquiry ?? (async () => null)),
     markReviewed: vi.fn(overrides.markReviewed ?? (async () => null)),
+    decline: vi.fn(overrides.decline ?? (async () => ({ result: 'not_found' as const }))),
   };
 }
 

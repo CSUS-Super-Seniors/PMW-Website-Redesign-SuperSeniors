@@ -4,6 +4,7 @@ import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
+import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
@@ -34,6 +35,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
     }),
     photos,
   ),
+  declineEmail: createDeclineEmailFromConfig(config),
 });
 
 export default app;

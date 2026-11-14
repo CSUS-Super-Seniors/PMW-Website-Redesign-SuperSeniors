@@ -11,6 +11,7 @@ import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
 } from './estimateSubmission.js';
+import { createDeclineEmailFromConfig } from './declineEmail.js';
 try {
   const config = loadConfig();
   warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
@@ -34,6 +35,7 @@ try {
       }),
       photos,
     ),
+    declineEmail: createDeclineEmailFromConfig(config),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });

@@ -104,6 +104,72 @@ export async function markInquiryReviewed(
   }
 }
 
+/**
+ * What happened to the decline email (SSPMW-172). `skipped` means the owner chose
+ * not to email; `no_email` means the request has no usable address; `unavailable`
+ * means email is not set up on the server; `failed` means Resend did not send it.
+ */
+export type DeclineEmailOutcome =
+  'sent' | 'already_sent' | 'skipped' | 'no_email' | 'unavailable' | 'failed';
+
+export type DeclineResult =
+  | { status: 'declined'; email: DeclineEmailOutcome }
+  /** Accepted in the meantime. `current` is the status the server reports. */
+  | { status: 'not-declinable'; current: InquiryStatus | null }
+  | { status: 'not-found' }
+  | { status: 'unauthenticated' }
+  | { status: 'no-access' }
+  | { status: 'error' };
+
+const emailOutcomes: readonly string[] = [
+  'sent',
+  'already_sent',
+  'skipped',
+  'no_email',
+  'unavailable',
+  'failed',
+];
+
+/**
+ * Declines the request and, when `notifyCustomer` is true, emails the customer.
+ * Calling it again for a declined request resends safely, so it also retries a
+ * failed email.
+ */
+export async function declineInquiry(
+  accessToken: string,
+  id: string,
+  notifyCustomer: boolean,
+): Promise<DeclineResult> {
+  try {
+    const response = await fetch(`/api/inquiries/${encodeURIComponent(id)}/decline`, {
+      method: 'POST',
+      headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notifyCustomer }),
+    });
+    if (response.status === 401) return { status: 'unauthenticated' };
+    if (response.status === 403) return { status: 'no-access' };
+    if (response.status === 404) return { status: 'not-found' };
+    if (response.status === 409) {
+      const body: unknown = await response.json().catch(() => null);
+      const current = (body as { status?: unknown } | null)?.status;
+      return {
+        status: 'not-declinable',
+        current:
+          typeof current === 'string' && statuses.includes(current)
+            ? (current as InquiryStatus)
+            : null,
+      };
+    }
+    if (!response.ok) return { status: 'error' };
+    const body = (await response.json()) as { status?: unknown; email?: unknown } | null;
+    if (body?.status !== 'closed' || typeof body.email !== 'string') return { status: 'error' };
+    if (!emailOutcomes.includes(body.email)) return { status: 'error' };
+    return { status: 'declined', email: body.email as DeclineEmailOutcome };
+  } catch {
+    return { status: 'error' };
+  }
+}
+
 /** Asks the owner-only route for a signed URL. Returns null when it cannot be had. */
 export async function fetchPhotoViewUrl(
   accessToken: string,
