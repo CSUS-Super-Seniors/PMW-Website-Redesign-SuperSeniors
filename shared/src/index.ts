@@ -5,3 +5,5 @@ export * from './serviceArea.js';
 export * from './estimateSpam.js';
 export * from './estimatePhotos.js';
 export * from './business.js';
+export * from './estimateSubmission.js';
+export * from './inquiryLinks.js';

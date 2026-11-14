@@ -27,7 +27,7 @@ import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
 
-/** Where the estimate request form submits (SSPMW-70 adds the handler). */
+/** Where the final estimate request submits. */
 export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */

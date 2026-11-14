@@ -82,7 +82,7 @@ for (const viewport of [
     ])
       await page.getByLabel(label, { exact: true }).fill(value);
     await page.getByLabel('What happened?').selectOption('other');
-    await page.getByLabel('How did you hear about us?').selectOption('referral');
+    await page.getByLabel('How did you hear about us?', { exact: true }).selectOption('referral');
     await page.getByRole('button', { name: 'Continue to photos' }).click();
     await expect(page.getByLabel('Choose photos')).toBeVisible();
     const base64 = await page.evaluate(() => {
@@ -140,6 +140,18 @@ for (const viewport of [
     // Reload uses the browser's native warning rather than the custom modal.
     await page.getByLabel('First name', { exact: true }).click();
     await page.getByLabel('First name', { exact: true }).fill('Ana');
+    // Wait for the app's effect to attach its unload protection.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+          }),
+        { message: 'The dirty estimate should register its unload protection before reloading' },
+      )
+      .toBe(true);
     const cancelReloadDialog = page.waitForEvent('dialog');
     // Trigger reload without waiting for a navigation that Cancel prevents.
     const canceledReload = page.evaluate(() => window.location.reload());
