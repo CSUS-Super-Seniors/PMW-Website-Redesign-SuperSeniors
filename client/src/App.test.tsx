@@ -72,6 +72,7 @@ describe('App', () => {
     const user = userEvent.setup();
     renderApp('/estimate');
 
+    // Form tests cover typing; seed this draft without per-key input events.
     for (const [label, value] of [
       ['First name', 'Ana'],
       ['Last name', 'García'],

@@ -10,6 +10,7 @@ import type { EstimateSubmitHandler } from './app.js';
 import type { ContactEmailConfig } from './config.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { buildEstimateReceiptEmail } from './estimateReceiptEmail.js';
+import { buildOwnerNoticeEmail } from './ownerNoticeEmail.js';
 import { EmailDeliveryError, emailFailureLogContext } from './lib/emailDeliveryError.js';
 import { sendResendEmail } from './lib/resendEmail.js';
 
@@ -50,10 +51,15 @@ function savedEstimate(value: unknown): SavedEstimate {
   return { id: value.id, inquiry_number: value.inquiry_number, created_at: value.created_at };
 }
 
+export interface EstimateSubmissionOptions {
+  fetchEmail?: typeof fetch;
+  ownerPortalOrigin?: string;
+}
+
 export function createEstimateSubmissionBackend(
   client: Pick<SupabaseClient, 'from' | 'rpc'>,
   email?: ContactEmailConfig,
-  fetchEmail: typeof fetch = fetch,
+  { fetchEmail = fetch, ownerPortalOrigin }: EstimateSubmissionOptions = {},
 ): EstimateSubmissionBackend {
   async function send(kind: 'receipt' | 'owner', saved: SavedEstimate, details: EstimateStep1Data) {
     if (!email) throw new EmailDeliveryError('not_configured');
@@ -66,28 +72,7 @@ export function createEstimateSubmissionBackend(
         idempotencyKey: `estimate/${saved.id}/${kind}`,
         ...(receipt
           ? buildEstimateReceiptEmail(saved, details)
-          : {
-              subject: `New estimate request: ${saved.inquiry_number}`,
-              text: [
-                'New estimate request',
-                '',
-                `Inquiry: ${saved.inquiry_number}`,
-                `Received: ${saved.created_at}`,
-                `Name: ${details.first_name} ${details.last_name}`,
-                `Email: ${details.email}`,
-                `Phone: ${details.phone}`,
-                `Text permission: ${details.text_ok ? 'Yes' : 'No'}`,
-                `Address: ${details.address}`,
-                `City: ${details.city}`,
-                `Item: ${details.item}`,
-                `Issue: ${details.issue_type}`,
-                `Lead source: ${details.lead_source}`,
-                '',
-                details.description,
-                '',
-                'View this inquiry and its private photos in the owner Inquiries list.',
-              ].join('\n'),
-            }),
+          : buildOwnerNoticeEmail(saved, details, ownerPortalOrigin)),
       },
       'Estimate email',
       fetchEmail,

@@ -1,12 +1,13 @@
 import { createEstimatePhotosBackend } from '../server/src/estimatePhotos.js';
+import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
-import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
+import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
   createEstimateSubmitHandler,
@@ -17,6 +18,7 @@ const config = withVercelOrigins(
   loadConfig({ ...process.env, TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS?.trim() || '1' }),
   process.env,
 );
+warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
 const supabase = createSupabaseAdmin(config);
 const contact = config.contactEmail
   ? createContactBackend(supabase, config.contactEmail)
@@ -26,11 +28,13 @@ const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleK
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
   photos,
+  inquiries: createInquiryBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
-    createEstimateSubmissionBackend(supabase, config.contactEmail),
+    createEstimateSubmissionBackend(supabase, config.contactEmail, {
+      ownerPortalOrigin: config.ownerPortalOrigin,
+    }),
     photos,
   ),
-  inquiries: createInquiryBackend(supabase),
   declineEmail: createDeclineEmailFromConfig(config),
 });
 

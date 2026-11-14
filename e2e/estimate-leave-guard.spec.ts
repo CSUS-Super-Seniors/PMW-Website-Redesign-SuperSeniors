@@ -137,6 +137,18 @@ for (const viewport of [
     // Reload uses the browser's native warning rather than the custom modal.
     await page.getByLabel('First name', { exact: true }).click();
     await page.getByLabel('First name', { exact: true }).fill('Ana');
+    // Wait for the app's effect to attach its unload protection.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+          }),
+        { message: 'The dirty estimate should register its unload protection before reloading' },
+      )
+      .toBe(true);
     const cancelReloadDialog = page.waitForEvent('dialog');
     // Trigger reload without waiting for a navigation that Cancel prevents.
     const canceledReload = page.evaluate(() => window.location.reload());

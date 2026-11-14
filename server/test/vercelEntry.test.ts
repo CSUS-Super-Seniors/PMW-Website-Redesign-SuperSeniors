@@ -32,6 +32,7 @@ beforeEach(() => {
   vi.stubEnv('RESEND_API_KEY', 'test-email-key');
   vi.stubEnv('RESEND_FROM_EMAIL', 'contact@example.com');
   vi.stubEnv('CONTACT_OWNER_EMAILS', 'owner@example.com');
+  vi.stubEnv('OWNER_PORTAL_ORIGIN', 'https://owner-preview.example');
   db.from.mockReturnValue({ insert: db.insert });
   db.insert.mockReturnValue({ select: db.select });
   db.select.mockReturnValue({ single: db.single });
@@ -44,9 +45,32 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Vercel startup contact wiring', () => {
+  it.each(['', 'http://portal.example', 'https://user:PRIVATE_PASSWORD@portal.example'])(
+    'warns at production startup for an unusable owner portal setting and keeps health available: %s',
+    async (origin) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('OWNER_PORTAL_ORIGIN', origin);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { default: app } = await import('../../api/index.js');
+      await request(app).get('/api/health').expect(200);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        'Owner estimate notices are unavailable: OWNER_PORTAL_ORIGIN must be an exact HTTPS origin; HTTP is allowed only for localhost, 127.0.0.1 or [::1].',
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('PRIVATE_PASSWORD');
+    },
+  );
+
+  it('starts without an owner notice warning when its portal origin is valid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { default: app } = await import('../../api/index.js');
+    await request(app).get('/api/health').expect(200);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it('wires final estimate saving and both emails through the exported app', async () => {
     db.from.mockImplementation((table: string) => ({
       select: () => ({
@@ -70,6 +94,7 @@ describe('Vercel startup contact wiring', () => {
     const { default: app } = await import('../../api/index.js');
     await request(app)
       .post('/api/estimates')
+      .set('Host', 'untrusted.example')
       .send({
         submission_id: '60000000-0000-4000-8000-000000000001',
         first_name: 'Test',
@@ -93,6 +118,13 @@ describe('Vercel startup contact wiring', () => {
       }),
     );
     expect(email).toHaveBeenCalledTimes(2);
+    const owner = JSON.parse(String(email.mock.calls[1][1]?.body));
+    expect(owner.to).toEqual(['owner@example.com']);
+    expect(owner.text).toContain(
+      'https://owner-preview.example/portal/inquiries/60000000-0000-4000-8000-000000000002',
+    );
+    expect(owner.text).not.toContain('untrusted.example');
+    expect(owner.attachments).toBeUndefined();
   });
   it('saves and emails a valid submission through the exported app', async () => {
     const email = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ id: 'email-1' })));

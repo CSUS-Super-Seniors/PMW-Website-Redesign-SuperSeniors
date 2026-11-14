@@ -371,22 +371,19 @@ provider bodies, exception messages/stacks, arbitrary error names, customer fiel
 credentials, and tokens are never logged. Exact submission retries never resend mail, including after
 the provider's idempotency window. Delivery is best effort: a crash after commit or an
 email failure has no automatic retry worker in this story. Resend acknowledgement is
-not proof of inbox delivery. SSPMW-197 supplies the customer receipt below; SSPMW-206
-will refine the owner notice and add its inquiry detail link.
+not proof of inbox delivery. SSPMW-197 supplies the filtered customer receipt below;
+SSPMW-206 supplies the owner summary and its inquiry detail link.
 
-The interim customer receipt contains only fixed confirmation text and saved inquiry
-metadata. It never relays submitted names, items, descriptions, addresses, contact
-details, or photo credentials to the unverified recipient address. SSPMW-197 / PR #68
-adds the filtered personalized receipt. Its current reviewed snapshot (`c1439bd`)
-omits descriptions/contact details and uses the decline-email link-like-text filter.
-When integrating #68/#69, retain this branch's photo cap and failure-log context;
-the shared Resend sender must preserve HTTP status in `EmailDeliveryError`.
+The customer receipt includes only the filtered first name and item, saved INQ number,
+fixed confirmation/next-step wording, and business contact information. It omits other
+submitted fields and photo credentials. Keep the photo cap and bounded failure-log
+context when integrating dependencies; the shared Resend sender preserves HTTP status
+in `EmailDeliveryError`.
 
-PR #56 has merged into main, and PR #66 now targets main. This integration preserves
-main's `inquiries:` application option, `business.js` validation export, and estimate
-leave guard alongside estimate submission wiring. Keep PR #66 on hold until local
-checks and Actions CI pass on the integration commit and the reviewer re-approves it.
-Merge #66, #68, and #69 in that order after their required reviews and checks.
+PRs #56, #65, #66, and #68 have merged into main, and PR #69 now targets main.
+This integration retains the inquiry and decline-email options, estimate submission
+wiring, shared exports, customer receipt, and owner notice. Complete local checks,
+Actions CI on the integration head, and reviewer re-approval before merging this PR.
 
 Run the ordinary checks plus database tests against local Supabase with all migrations:
 
@@ -446,6 +443,57 @@ HTTP 201, the saved inquiry, the independent owner notice attempt and a sanitize
 receipt-failure log. Retry the exact submission and confirm no duplicate inquiry
 or emails. Tests cover these paths with a mocked provider; they do not establish
 staging delivery.
+
+### Owner estimate notice (SSPMW-206 / SSPMW-211)
+
+`server/src/ownerNoticeEmail.ts` builds the plain-text summary sent to
+`CONTACT_OWNER_EMAILS` after a new estimate is committed. It includes the saved INQ
+number, customer name, item, city, a readable label for what happened, and a direct
+link to `/portal/inquiries/<saved inquiry UUID>`. The summary omits contact fields,
+service addresses, free-form descriptions, internal notes and photo credentials.
+Photos are never attached. Full details and private photo viewing stay in the
+owner-only portal. N9 (SSPMW-173) will provide the shared branded layout once available.
+
+Set `OWNER_PORTAL_ORIGIN` in `server/.env` and in the intended Vercel environment.
+Use the exact HTTPS origin that hosts the SSPMW-144 detail page, with no path,
+trailing slash, query, fragment or credentials. For local testing, use
+`http://localhost:5173`; HTTP is restricted to `localhost`, `127.0.0.1` and `[::1]`.
+Each preview, staging, or production environment must use the origin that hosts
+its integrated inquiry detail route. Restart the server after changing this setting.
+
+The origin comes only from server configuration, never a request header or submitted
+field. The portal and sender share `shared/src/inquiryLinks.ts` so both use the same
+encoded inquiry path. The link contains the inquiry ID, with no login token or signed
+photo URL. A signed-out owner goes through staff login and returns to that inquiry;
+an employee remains blocked by the owner-role check.
+
+The notice uses the shared Resend sender, the existing verified From address, and a
+per-inquiry `estimate/<UUID>/owner` idempotency key. Missing or invalid portal settings
+produce a fixed warning at startup in both the local and Vercel entry points, without
+echoing the configured value. They fail only the owner send after saving, with reason
+`not_configured`; they do not stop startup, undo the inquiry, block the independent
+customer receipt, or change the successful HTTP 201 response.
+The server logs inquiry identifiers, the failed notification kind, a fixed reason and
+an HTTP status when available, without provider response bodies or customer fields.
+The existing exact-payload retry path never sends either email again, including after a send failure.
+
+Focused server checks:
+`npm run test -w server -- test/ownerNoticeEmail.test.ts test/estimateSubmission.test.ts test/vercelEntry.test.ts test/inquiries.test.ts test/inquiryDetailBackend.test.ts`.
+The client check is `npm run test -w client -- src/pages/InquiryEmailLink.test.tsx`.
+Also run the ordinary repository checks and Playwright smoke tests. The inherited
+leave-guard test selects SSPMW-92's required lead source before advancing to photos.
+
+For manual acceptance, submit to the integrated API using test recipients, confirm
+one New inquiry and the owner summary, and open its link both signed in and signed out.
+Verify the exact INQ number and item after login, and verify an employee cannot view
+it. Opening a New inquiry can mark it Reviewed (`contacted`) through SSPMW-144's
+existing behavior; check initial `new` status before visiting the detail page.
+Repeat the exact payload and confirm the original INQ number and no extra emails.
+With only the portal setting absent in an isolated development run, submit a new ID
+and confirm HTTP 201, the saved inquiry, an owner-failure log, and the independent
+customer receipt. Restore the setting and restart afterward. Staging delivery and
+link navigation require the deployed inquiry detail route and intended Resend
+configuration; local tests do not establish staging acceptance.
 
 ## Contact messages (SSPMW-268 / SSPMW-364)
 
