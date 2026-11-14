@@ -5,6 +5,10 @@ import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
+import {
+  createEstimateSubmissionBackend,
+  createEstimateSubmitHandler,
+} from './estimateSubmission.js';
 import { createInquiryBackend } from './inquiries.js';
 import { createDeclineEmailFromConfig } from './declineEmail.js';
 try {
@@ -18,9 +22,14 @@ try {
       'Contact messaging is unavailable: configure the contact email environment variables.',
     );
   }
+  const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
     serviceArea: createServiceAreaBackend(supabase),
-    photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
+    photos,
+    estimateSubmit: createEstimateSubmitHandler(
+      createEstimateSubmissionBackend(supabase, config.contactEmail),
+      photos,
+    ),
     inquiries: createInquiryBackend(supabase),
     declineEmail: createDeclineEmailFromConfig(config),
   }).listen(config.port, '0.0.0.0', () => {

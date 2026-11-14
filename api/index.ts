@@ -7,6 +7,10 @@ import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
+import {
+  createEstimateSubmissionBackend,
+  createEstimateSubmitHandler,
+} from '../server/src/estimateSubmission.js';
 
 // Vercel puts one proxy in front of the function and sets X-Forwarded-For itself.
 const config = withVercelOrigins(
@@ -18,9 +22,14 @@ const contact = config.contactEmail
   ? createContactBackend(supabase, config.contactEmail)
   : undefined;
 
+const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
   serviceArea: createServiceAreaBackend(supabase),
-  photos: createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey),
+  photos,
+  estimateSubmit: createEstimateSubmitHandler(
+    createEstimateSubmissionBackend(supabase, config.contactEmail),
+    photos,
+  ),
   inquiries: createInquiryBackend(supabase),
   declineEmail: createDeclineEmailFromConfig(config),
 });
