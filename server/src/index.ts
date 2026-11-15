@@ -7,6 +7,7 @@ import { createAcceptInquiryBackend } from './acceptInquiry.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
+import { createStaffBackend } from './staff.js';
 import { warnIfOwnerNoticeUnavailable } from './ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
@@ -38,6 +39,7 @@ try {
       photos,
     ),
     declineEmail: createDeclineEmailFromConfig(config),
+    staff: createStaffBackend(supabase),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });

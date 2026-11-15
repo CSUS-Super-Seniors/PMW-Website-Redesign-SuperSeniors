@@ -8,6 +8,7 @@ import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
+import { createStaffBackend } from '../server/src/staff.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
@@ -38,6 +39,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
     photos,
   ),
   declineEmail: createDeclineEmailFromConfig(config),
+  staff: createStaffBackend(supabase),
 });
 
 export default app;

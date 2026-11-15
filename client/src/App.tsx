@@ -14,6 +14,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
+import StaffAccountsPage from './pages/StaffAccountsPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 import SessionExpiredPage from './components/layout/SessionExpiredPage';
 import { lazy, Suspense } from 'react';
@@ -45,7 +46,7 @@ export default function App() {
             <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="customers/*" element={<PlaceholderPage />} />
             <Route path="reports/*" element={<PlaceholderPage />} />
-            <Route path="staff-accounts/*" element={<PlaceholderPage />} />
+            <Route path="staff-accounts" element={<StaffAccountsPage />} />
             <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
           <Route path="*" element={<PlaceholderPage />} />
