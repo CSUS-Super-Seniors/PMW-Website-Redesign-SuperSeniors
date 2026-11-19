@@ -14,6 +14,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
+import TestimonialsPage from './pages/TestimonialsPage';
 import StaffAccountsPage from './pages/StaffAccountsPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 import SessionExpiredPage from './components/layout/SessionExpiredPage';
@@ -60,18 +61,14 @@ export default function App() {
         <Route path={routes.requestEstimate} element={<EstimateRequestPage />} />
         <Route path={routes.services} element={<ServicesPage />} />
         <Route path={routes.contact} element={<ContactPage />} />
+        <Route path={routes.testimonials} element={<TestimonialsPage />} />
 
         {/* Planned pages that are not implemented yet */}
-        {[
-          routes.gallery,
-          routes.serviceArea,
-          routes.testimonials,
-          routes.about,
-          routes.privacy,
-          routes.terms,
-        ].map((path) => (
-          <Route key={path} path={path} element={<PlaceholderPage />} />
-        ))}
+        {[routes.gallery, routes.serviceArea, routes.about, routes.privacy, routes.terms].map(
+          (path) => (
+            <Route key={path} path={path} element={<PlaceholderPage />} />
+          ),
+        )}
 
         {/* Unknown URLs display the helpful 404 page */}
         <Route path="*" element={<NotFoundPage />} />
