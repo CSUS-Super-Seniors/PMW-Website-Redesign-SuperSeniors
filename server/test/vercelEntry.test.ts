@@ -150,6 +150,34 @@ describe('Vercel startup contact wiring', () => {
     expect(body.reply_to).toBe(input.email);
   });
 
+  it('wires the anonymous testimonial endpoint through the Vercel app', async () => {
+    const { default: app } = await import('../../api/index.js');
+    const response = await request(app)
+      .post('/api/public/testimonials')
+      .set('Origin', 'https://site.example')
+      .send({
+        name: 'Visitor',
+        email: 'visitor@example.com',
+        body: 'Great service.',
+        city: ' Carmichael ',
+        service: ' Refinishing ',
+        can_publish: true,
+      })
+      .expect(201, { success: true });
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(db.from).toHaveBeenCalledWith('testimonials');
+    expect(db.insert).toHaveBeenCalledWith({
+      name: 'Visitor',
+      email: 'visitor@example.com',
+      body: 'Great service.',
+      city: 'Carmichael',
+      service: 'Refinishing',
+      can_publish: true,
+      photo_contact_ok: false,
+      status: 'pending',
+    });
+  });
+
   it('keeps health available and contact disabled when email is not configured', async () => {
     for (const key of ['RESEND_API_KEY', 'RESEND_FROM_EMAIL', 'CONTACT_OWNER_EMAILS']) {
       vi.stubEnv(key, '');

@@ -3,6 +3,7 @@ import { createInquiryBackend } from '../server/src/inquiries.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
+import { createTestimonialsBackend } from '../server/src/testimonials.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
@@ -40,6 +41,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   ),
   declineEmail: createDeclineEmailFromConfig(config),
   staff: createStaffBackend(supabase),
+  testimonials: createTestimonialsBackend(supabase),
 });
 
 export default app;
