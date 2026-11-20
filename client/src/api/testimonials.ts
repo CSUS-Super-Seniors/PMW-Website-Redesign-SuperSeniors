@@ -38,7 +38,15 @@ export async function submitTestimonial(input: TestimonialSubmission): Promise<v
       result && typeof result === 'object' ? Reflect.get(result, 'fieldErrors') : null;
     if (fieldErrors && typeof fieldErrors === 'object') {
       const recognized: TestimonialFieldErrors = {};
-      for (const field of ['name', 'email', 'body', 'can_publish', 'photo_contact_ok'] as const) {
+      for (const field of [
+        'name',
+        'email',
+        'city',
+        'service',
+        'body',
+        'can_publish',
+        'photo_contact_ok',
+      ] as const) {
         const message: unknown = Reflect.get(fieldErrors, field);
         if (typeof message === 'string') recognized[field] = message;
       }

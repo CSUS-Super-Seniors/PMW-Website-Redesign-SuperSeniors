@@ -9,6 +9,7 @@ const entry: PublicTestimonial = {
   name: 'Alex',
   city: null,
   service: null,
+  rating: null,
   body: 'Wonderful work.',
   submitted_at: '2026-11-19T00:00:00Z',
 };
@@ -30,9 +31,14 @@ function renderPage(
 
 describe('TestimonialsPage', () => {
   it('shows approved entries and a helpful empty state', async () => {
-    renderPage();
+    renderPage({
+      loadTestimonials: async () => [
+        { ...entry, city: 'Carmichael', service: 'Dining table restoration' },
+      ],
+    });
     expect(await screen.findByText(/Wonderful work\./)).toBeInTheDocument();
     expect(screen.getByText('Alex')).toBeInTheDocument();
+    expect(screen.getByText('Carmichael · Dining table restoration')).toBeInTheDocument();
     renderPage({ loadTestimonials: async () => [] });
     expect(await screen.findByText(/No testimonials have been published yet/)).toBeInTheDocument();
   });
@@ -45,6 +51,12 @@ describe('TestimonialsPage', () => {
     const card = quote.closest('li');
     expect(card).toHaveClass('[overflow-wrap:anywhere]');
     expect(screen.getByText(longEntry.name).closest('li')).toBe(card);
+  });
+
+  it('shows stored ratings and hides the stars for unrated entries', async () => {
+    renderPage({ loadTestimonials: async () => [entry, { ...entry, id: '2', rating: 3 }] });
+    expect(await screen.findByRole('img', { name: '3 out of 5 stars' })).toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(1);
   });
 
   it('shows a retry action after a public-list error', async () => {
@@ -65,11 +77,11 @@ describe('TestimonialsPage', () => {
     expect(screen.getByText('Enter your email address.')).toBeInTheDocument();
     expect(screen.getByText('Enter your testimonial.')).toBeInTheDocument();
     expect(screen.getByText('Permission to publish is required.')).toBeInTheDocument();
-    const publishConsent = screen.getByRole('checkbox', { name: /I give permission/ });
+    const publishConsent = screen.getByRole('checkbox', { name: /You may publish my testimonial/ });
     expect(publishConsent).toBeRequired();
     expect(publishConsent).toHaveAttribute('aria-invalid', 'true');
     expect(publishConsent).toHaveAttribute('aria-describedby', 'testimonial-consent-error');
-    expect(screen.getByRole('region', { name: 'Share your experience' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Share your story' })).toBeInTheDocument();
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByText('0 / 500 characters')).toBeInTheDocument();
   });
@@ -78,24 +90,35 @@ describe('TestimonialsPage', () => {
     const send = vi.fn(async () => {});
     renderPage({ sendTestimonial: send });
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText('Your name'), 'Alex Example');
+    await user.type(screen.getByLabelText('Full name'), 'Alex Example');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
     await user.type(screen.getByLabelText('Your testimonial'), 'Lovely repair.');
-    await user.click(screen.getByLabelText(/I give permission/));
-    await user.click(screen.getByLabelText(/You may contact me/));
+    await user.click(screen.getByLabelText(/You may publish my testimonial/));
+    await user.click(screen.getByLabelText(/Contact me about adding a photo/));
     await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
     await waitFor(() =>
       expect(send).toHaveBeenCalledWith({
         name: 'Alex Example',
         email: 'alex@example.com',
+        city: '',
+        service: '',
         body: 'Lovely repair.',
         can_publish: true,
         photo_contact_ok: true,
       }),
     );
-    expect(await screen.findByText(/received and is waiting for review/)).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Thank you for sharing' })).toBeInTheDocument();
+    const confirmation = await screen.findByText('Thank you. Your testimonial was sent.');
+    const heading = screen.getByRole('heading', { name: 'Testimonials' });
+    expect(
+      confirmation.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole('region', { name: 'Share your story' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Full name')).toHaveValue('');
+    expect(screen.getByLabelText('Your testimonial')).toHaveValue('');
+    expect(screen.getByLabelText(/You may publish my testimonial/)).not.toBeChecked();
     expect(screen.getByText(/Wonderful work\./)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss message' }));
+    expect(screen.queryByText('Thank you. Your testimonial was sent.')).not.toBeInTheDocument();
   });
 
   it('retains input and exposes server errors after a failed submission', async () => {
@@ -104,20 +127,54 @@ describe('TestimonialsPage', () => {
     });
     renderPage({ sendTestimonial: send });
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText('Your name'), 'Alex');
+    await user.type(screen.getByLabelText('Full name'), 'Alex');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
     await user.type(screen.getByLabelText('Your testimonial'), 'Still here');
-    await user.click(screen.getByLabelText(/I give permission/));
+    await user.click(screen.getByLabelText(/You may publish my testimonial/));
     await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not be submitted/);
-    expect(screen.getByLabelText('Your name')).toHaveValue('Alex');
-    expect(screen.getByLabelText(/I give permission/)).toBeChecked();
+    expect(screen.getByLabelText('Full name')).toHaveValue('Alex');
+    expect(screen.getByLabelText(/You may publish my testimonial/)).toBeChecked();
   });
 
-  it('does not allow more than 500 characters in the browser', async () => {
-    renderPage();
+  it('keeps over-limit text visible with an error and blocks submission until corrected', async () => {
+    const send = vi.fn(async () => {});
+    renderPage({ sendTestimonial: send });
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Full name'), 'Alex');
+    await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await user.click(screen.getByLabelText(/You may publish my testimonial/));
     const field = screen.getByLabelText('Your testimonial');
     fireEvent.change(field, { target: { value: 'x'.repeat(501) } });
-    expect(field).toHaveValue('x'.repeat(500));
+    expect(field).toHaveValue('x'.repeat(501));
+    expect(screen.getByRole('alert')).toHaveTextContent('500 characters or fewer');
+    await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+    expect(send).not.toHaveBeenCalled();
+    fireEvent.change(field, { target: { value: 'x'.repeat(500) } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+    await waitFor(() => expect(send).toHaveBeenCalledOnce());
+  });
+
+  it('submits optional city and service and clears them after success', async () => {
+    const send = vi.fn(async () => {});
+    renderPage({ sendTestimonial: send });
+    const user = userEvent.setup();
+    expect(screen.getByLabelText('City (optional)')).not.toBeRequired();
+    expect(screen.getByLabelText('Service (optional)')).not.toBeRequired();
+    await user.type(screen.getByLabelText('Full name'), 'Alex');
+    await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await user.type(screen.getByLabelText('City (optional)'), ' Carmichael ');
+    await user.type(screen.getByLabelText('Service (optional)'), ' Refinishing ');
+    await user.type(screen.getByLabelText('Your testimonial'), 'Great work.');
+    await user.click(screen.getByLabelText(/You may publish my testimonial/));
+    await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ city: 'Carmichael', service: 'Refinishing' }),
+      ),
+    );
+    expect(screen.getByLabelText('City (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('Service (optional)')).toHaveValue('');
   });
 });

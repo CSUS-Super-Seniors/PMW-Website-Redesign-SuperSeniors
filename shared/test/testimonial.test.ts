@@ -29,6 +29,19 @@ describe('testimonial submission contract', () => {
       expect(mapTestimonialErrors(result.error).fieldErrors.body).toContain('500 characters');
   });
 
+  it('allows blank optional details and trims provided city and service', () => {
+    expect(testimonialSubmissionSchema.safeParse({ ...valid, city: '', service: '' }).success).toBe(
+      true,
+    );
+    expect(
+      testimonialSubmissionSchema.parse({
+        ...valid,
+        city: ' Carmichael ',
+        service: ' Refinishing ',
+      }),
+    ).toMatchObject({ city: 'Carmichael', service: 'Refinishing' });
+  });
+
   it.each([
     { name: ' ' },
     { email: 'bad' },

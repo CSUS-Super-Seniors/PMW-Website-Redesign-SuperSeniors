@@ -159,6 +159,8 @@ describe('Vercel startup contact wiring', () => {
         name: 'Visitor',
         email: 'visitor@example.com',
         body: 'Great service.',
+        city: ' Carmichael ',
+        service: ' Refinishing ',
         can_publish: true,
       })
       .expect(201, { success: true });
@@ -168,6 +170,8 @@ describe('Vercel startup contact wiring', () => {
       name: 'Visitor',
       email: 'visitor@example.com',
       body: 'Great service.',
+      city: 'Carmichael',
+      service: 'Refinishing',
       can_publish: true,
       photo_contact_ok: false,
       status: 'pending',

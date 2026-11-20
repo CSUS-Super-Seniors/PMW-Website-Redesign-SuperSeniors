@@ -37,6 +37,10 @@ describe('public testimonial API', () => {
     { ...valid, can_publish: false },
     { ...valid, email: 'bad' },
     { ...valid, status: 'approved' },
+    { ...valid, city: 42 },
+    { ...valid, service: false },
+    { ...valid, city: 'x'.repeat(101) },
+    { ...valid, service: 'x'.repeat(201) },
   ])('rejects invalid input without saving: %j', async (body) => {
     const submit = vi.fn();
     const app = createApp(config, auth, undefined, {
@@ -52,6 +56,7 @@ describe('public testimonial API', () => {
       name: 'Alex',
       city: null,
       service: null,
+      rating: 4,
       body: 'Good',
       submitted_at: '2026-11-19',
     };
@@ -83,7 +88,7 @@ describe('public testimonial API', () => {
     const backend = createTestimonialsBackend({ from } as unknown as Pick<SupabaseClient, 'from'>);
     await backend.listApproved();
     expect(from).toHaveBeenCalledWith('testimonials');
-    expect(select).toHaveBeenCalledWith('id,name,city,service,body,submitted_at');
+    expect(select).toHaveBeenCalledWith('id,name,city,service,rating,body,submitted_at');
     expect(eq).toHaveBeenCalledWith('status', 'approved');
   });
 
@@ -92,6 +97,12 @@ describe('public testimonial API', () => {
     const from = vi.fn().mockReturnValue({ insert });
     const backend = createTestimonialsBackend({ from } as unknown as Pick<SupabaseClient, 'from'>);
     await backend.submit({ ...valid, photo_contact_ok: true });
-    expect(insert).toHaveBeenCalledWith({ ...valid, photo_contact_ok: true, status: 'pending' });
+    expect(insert).toHaveBeenCalledWith({
+      ...valid,
+      city: null,
+      service: null,
+      photo_contact_ok: true,
+      status: 'pending',
+    });
   });
 });

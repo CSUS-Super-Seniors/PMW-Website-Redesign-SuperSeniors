@@ -14,6 +14,8 @@ export const testimonialSubmissionSchema = z.strictObject({
     .min(1, 'Enter your email address.')
     .max(254, 'Email must be 254 characters or fewer.')
     .pipe(z.email('Enter a valid email address.')),
+  city: z.string().trim().max(100, 'City must be 100 characters or fewer.').optional(),
+  service: z.string().trim().max(200, 'Service must be 200 characters or fewer.').optional(),
   body: z
     .string()
     .max(TESTIMONIAL_BODY_LIMIT, 'Testimonial must be 500 characters or fewer.')
@@ -32,6 +34,7 @@ export type PublicTestimonial = {
   name: string;
   city: string | null;
   service: string | null;
+  rating: number | null;
   body: string;
   submitted_at: string;
 };

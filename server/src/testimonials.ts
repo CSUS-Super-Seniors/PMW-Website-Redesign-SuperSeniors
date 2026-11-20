@@ -6,7 +6,7 @@ export interface TestimonialsBackend {
   submit(input: TestimonialSubmission): Promise<void>;
 }
 
-const publicColumns = 'id,name,city,service,body,submitted_at';
+const publicColumns = 'id,name,city,service,rating,body,submitted_at';
 
 export function createTestimonialsBackend(
   client: Pick<SupabaseClient, 'from'>,
@@ -27,6 +27,8 @@ export function createTestimonialsBackend(
       const { error } = await client.from('testimonials').insert({
         name: input.name,
         email: input.email,
+        city: input.city || null,
+        service: input.service || null,
         body: input.body,
         can_publish: input.can_publish,
         photo_contact_ok: input.photo_contact_ok,
