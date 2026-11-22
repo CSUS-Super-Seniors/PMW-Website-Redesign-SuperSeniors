@@ -29,12 +29,20 @@ export function createServiceAreaBackend(
       .select('name, display_order')
       .eq('is_active', true);
     if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
-    const rows: { name: string; display_order: number | null }[] = data.map((row) => {
-      if (!row || !cityField.safeParse(row.name).success) {
-        throw new Error('Service cities could not be loaded.');
+    const rows: { name: string; display_order: number | null }[] = [];
+    let rejectedRows = 0;
+    for (const row of data) {
+      const name = cityField.safeParse(row?.name);
+      if (!name.success) {
+        rejectedRows++;
+        continue;
       }
-      return { name: row.name, display_order: row.display_order ?? null };
-    });
+      rows.push({ name: name.data, display_order: row.display_order ?? null });
+    }
+    if (rejectedRows > 0) {
+      // One bounded warning per read; never include row data or database details.
+      console.warn('Service cities: skipped invalid rows; rejected-row count:', rejectedRows);
+    }
     // Database-owned ranks; no city-name priority list. Unranked cities always
     // appear, and ties are deterministic without relying on database row order.
     rows.sort((a, b) => {

@@ -16,7 +16,7 @@ Validated locally with Node 22.23.4 and npm 10.9.9. Dependencies installed using
 | Full Playwright, `npm run test:e2e -- --workers=1` | 13 passed                                                                               |
 | `git diff --check`                                 | Pass                                                                                    |
 | Local database migrations                          | Pass with `npm run db:migrate -- --include-all`; no reset                               |
-| Local database/RLS tests                           | Pass: `npm run db:test`, 7 files / 98 assertions                                        |
+| Local database/RLS tests                           | Pass: latest `npm run db:test`, 8 files / 102 assertions                                |
 | Local seed tests                                   | Pass: `npm run test:seed`, 5 tests, explicit loopback database URL                      |
 | Local API database freshness                       | Pass: absent → active → inactive; same API process, no rebuild; temporary row deleted   |
 
@@ -43,6 +43,24 @@ All stages used the same API process/backend with no rebuild or restart. List re
 The remaining local formatting failures concern CRLF checkout line endings, not preexisting code-style defects. `git ls-files --eol client/src/pages/ServicesPage.tsx` returned `i/lf w/crlf`: the Git index contains LF while the working-tree checkout contains CRLF. `npx prettier --check . --end-of-line auto` passed. This command was a diagnostic override only; Git configuration, Prettier settings, CI, and ignore rules were not changed.
 
 The earlier comparison with a temporary `origin/main` checkout reproduced the line-ending-sensitive failures but did not establish preexisting code-style defects. That interpretation and the redundant per-file failure report have been removed. Modified and untracked story files passed the scoped formatting check; unsupported asset/SQL formats were left unchanged. Standard CI formatting has not yet been verified for this branch; the diagnostic pass does not establish that the standard CI formatting check passes.
+
+## PR #74 automated-review follow-up
+
+The shared active-city reader now skips individual names rejected by `cityField`, preserving valid display names, database ordering, and existing eligibility normalization. Public listing and estimate eligibility still use that same reader. Each successful read that rejects rows emits one fixed-format server warning containing only the rejected-row count; no names, raw rows, credentials, or database error details are logged. Invalid-only arrays return an empty public list and false eligibility. Database errors (even alongside array data) and non-array responses still throw and return sanitized 503 responses, not empty successful lists.
+
+Regression coverage includes Carmichael alongside blank, whitespace-only, overlength, non-string, missing-name, and null rows; Davis remains outside. Tests verify valid-name preservation, ordering, normalization, invalid-only behavior, exact count-only warning arguments, no warnings for valid reads or failed database responses, and both endpoints' failure behavior.
+
+Added transactional pgTAP coverage in `supabase/tests/service_city_display_order.test.sql`: NULL, zero, and positive ranks are accepted; negative ranks fail with SQLSTATE `23514`. Fixtures roll back. The ordering migration changed only to add its missing final newline; SQL semantics and migration history were not changed or reapplied.
+
+| Follow-up check                                                             | Actual result                                                                                         |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `npm test -w server -- test/serviceCities.test.ts test/serviceArea.test.ts` | Pass: 27 tests across 2 files                                                                         |
+| `npm run db:test`                                                           | Pass against local Supabase: 102 assertions across 8 files, including all 4 new constraint assertions |
+| `npm run lint`                                                              | Pass                                                                                                  |
+| `npm run typecheck`                                                         | Pass across workspaces                                                                                |
+| Installed Prettier `--check . --end-of-line auto`                           | Pass; CRLF-aware diagnostic only, no configuration changes                                            |
+
+Earlier seed and live API freshness results above remain valid historical checks; those checks were not rerun for this follow-up. Only local database services were used. Standard CI formatting remains unverified for this branch. Deploy the ordering migration before the updated backend through the approved release process.
 
 ## Outstanding acceptance/release work
 
