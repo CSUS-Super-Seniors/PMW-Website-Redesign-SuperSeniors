@@ -1,28 +1,59 @@
 import type { RequestHandler } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { OUTSIDE_SERVICE_AREA_MESSAGE, cityField, isCityInServiceArea } from '@pmw/validation';
+import {
+  OUTSIDE_SERVICE_AREA_MESSAGE,
+  cityField,
+  isCityInServiceArea,
+  type ServiceCity,
+} from '@pmw/validation';
 
 export interface ServiceAreaBackend {
   /** Rejects when the city list can't be read. Unavailable never means approved. */
   isInServiceArea(city: string): Promise<boolean>;
 }
 
+export interface ServiceCitiesBackend {
+  listActiveCities(): Promise<ServiceCity[]>;
+}
+
 /**
  * Reads the active cities on every check, so adding or turning off a city in
  * `service_cities` changes the result with no code change or redeploy.
  */
-export function createServiceAreaBackend(client: Pick<SupabaseClient, 'from'>): ServiceAreaBackend {
+export function createServiceAreaBackend(
+  client: Pick<SupabaseClient, 'from'>,
+): ServiceAreaBackend & ServiceCitiesBackend {
+  async function listActiveCities(): Promise<ServiceCity[]> {
+    const { data, error } = await client
+      .from('service_cities')
+      .select('name, display_order')
+      .eq('is_active', true);
+    if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
+    const rows: { name: string; display_order: number | null }[] = data.map((row) => {
+      if (!row || !cityField.safeParse(row.name).success) {
+        throw new Error('Service cities could not be loaded.');
+      }
+      return { name: row.name, display_order: row.display_order ?? null };
+    });
+    // Database-owned ranks; no city-name priority list. Unranked cities always
+    // appear, and ties are deterministic without relying on database row order.
+    rows.sort((a, b) => {
+      const rank = (a.display_order ?? Infinity) - (b.display_order ?? Infinity);
+      return (
+        (Number.isNaN(rank) ? 0 : rank) ||
+        a.name.localeCompare(b.name, 'en') ||
+        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+      );
+    });
+    return rows.map(({ name }) => ({ name }));
+  }
   return {
+    listActiveCities,
     async isInServiceArea(city) {
-      const { data, error } = await client
-        .from('service_cities')
-        .select('name')
-        .eq('is_active', true);
-      if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
-      const names = data
-        .map((row: { name?: unknown }) => row.name)
-        .filter((name): name is string => typeof name === 'string');
-      return isCityInServiceArea(city, names);
+      return isCityInServiceArea(
+        city,
+        (await listActiveCities()).map(({ name }) => name),
+      );
     },
   };
 }

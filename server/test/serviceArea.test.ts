@@ -47,7 +47,7 @@ describe('createServiceAreaBackend', () => {
     await expect(backend.isInServiceArea('Davis')).resolves.toBe(false);
     await expect(backend.isInServiceArea('Placerville')).resolves.toBe(false);
     expect(table.from).toHaveBeenCalledWith('service_cities');
-    expect(table.select).toHaveBeenCalledWith('name');
+    expect(table.select).toHaveBeenCalledWith('name, display_order');
     expect(table.eq).toHaveBeenCalledWith('is_active', true);
   });
 
@@ -100,9 +100,10 @@ describe('POST /api/estimates/service-area', () => {
     expect(auth.verifyToken).not.toHaveBeenCalled();
   });
 
-  it('never sends the city list to the browser', async () => {
+  it('never includes the city list in the estimate-check response', async () => {
     const backend = createServiceAreaBackend(fakeCitiesTable(sampleRows()).client);
     const response = await request(app(backend)).post(path).send({ city: 'Davis' });
+    expect(response.body).toEqual({ inServiceArea: false });
     expect(response.text).not.toContain('Carmichael');
     expect(response.text).not.toContain('Fair Oaks');
   });

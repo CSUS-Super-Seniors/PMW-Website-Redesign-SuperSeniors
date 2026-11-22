@@ -25,6 +25,13 @@ export interface ServiceAreaCheckResponse {
   inServiceArea: boolean;
 }
 
+/** Public display data only; no addresses, coordinates or eligibility overrides. */
+export const serviceCitiesResponseSchema = z.object({
+  cities: z.array(z.object({ name: cityField })),
+});
+
+export type ServiceCity = z.infer<typeof serviceCitiesResponseSchema>['cities'][number];
+
 /**
  * Compares cities the way a customer types them: capitalization, extra spaces and a
  * trailing state, ZIP code or country ("Carmichael, CA 95608, USA") do not matter.

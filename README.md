@@ -120,7 +120,7 @@ customer also can't continue and is asked to try again.
 
 - Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
   `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
-  active cities aren't secret; the Service Area page will show them). Bad input returns 400, an
+  active cities aren't secret; the Service Area page shows them). Bad input returns 400, an
   unreadable city list returns 503, and too many checks return 429 (see spam protection below).
 - The submit route runs `requireServiceArea` (see spam protection below). It checks only the
   city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
@@ -130,6 +130,40 @@ customer also can't continue and is asked to try again.
 - The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
   Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
   for local, dev and staging. Production cities come from the client's Q7 answer.
+
+## Public Service Area (SSPMW-234/240/243)
+
+`GET /api/service-cities` is public and returns `{ "cities": [{ "name": "…" }] }`.
+Only active `service_cities` rows are included, ordered by `display_order ASC NULLS LAST`,
+then name. Unranked active rows are not dropped. Empty data returns 200 with an empty
+array; unavailable data returns a safe 503 error, never fallback cities.
+Responses use `Cache-Control: no-store`. Each page mount/retry reads fresh data;
+changes appear on refresh/remount without a rebuild. A page already showing a successful
+list does not subscribe to live database updates.
+
+The estimate endpoint `POST /api/estimates/service-area` **still returns only**
+`{ "inServiceArea": boolean }`, never city names. Its normalization, rate limits,
+validation and submit-time blocking remain unchanged. Both endpoints use the same
+active-city repository; the public list is not a separate eligibility configuration.
+
+Apply the nullable ordering migration through the normal reviewed migration process
+before deploying the API. It changes no existing city names, active flags or ordering
+values. **Final Q7 production cities are still unconfirmed. Preserve production rows.**
+The development seed provisionally orders Carmichael, Fair Oaks, Citrus Heights,
+Orangevale, Sacramento and Rancho Cordova. Rancho Cordova is provisional and becomes
+estimate-eligible wherever that development seed is applied. The seed preserves unrelated
+city rows. Never seed production. Carmichael is confirmed inside; Davis outside.
+
+The page uses a self-contained static draft Census regional SVG, not a runtime map
+provider. See `docs/service-area-map/README.md` for source, reuse terms, transformation,
+manual `node scripts/generate-service-area-map.mjs` reproduction, and required artwork
+review. No paid API, runtime map keys, external map scripts or new environment variables.
+The map is orientation only, not a boundary/radius or authoritative coverage list.
+
+Browser coverage lives in `e2e/service-area.spec.ts` and captures desktop/phone screenshots
+in Playwright's test output. Run with `npm run test:e2e -- e2e/service-area.spec.ts` after
+the usual dependency/browser setup. Database seed tests require local Supabase with all
+migrations applied; no live database is needed for page/API unit tests.
 
 ## Estimate form spam protection (SSPMW-95)
 

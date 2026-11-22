@@ -201,15 +201,22 @@ on conflict (id) do update set
 
 -- Service area (SSPMW-24): the sample inquiries' cities, so the estimate form's city
 -- check works in local, dev and staging. Placeholder list until the client answers Q7.
+-- SSPMW-240: provisional Figma ordering, NOT an approved production list.
+-- Rancho Cordova is provisional too: applying this seed makes it eligible for
+-- estimates in local/dev/staging. Carmichael is confirmed inside; Davis outside.
 -- Production cities are entered from the client's answer, never from this file.
-insert into public.service_cities (name, is_active)
+-- Unrelated city rows are deliberately left unchanged.
+insert into public.service_cities (name, is_active, display_order)
 values
-  ('Carmichael', true),
-  ('Fair Oaks', true),
-  ('Sacramento', true),
-  ('Orangevale', true),
-  ('Citrus Heights', true)
-on conflict (name) do update set is_active = true;
+  ('Carmichael', true, 1),
+  ('Fair Oaks', true, 2),
+  ('Citrus Heights', true, 3),
+  ('Orangevale', true, 4),
+  ('Sacramento', true, 5),
+  ('Rancho Cordova', true, 6)
+on conflict (name) do update set
+  is_active = true,
+  display_order = excluded.display_order;
 
 -- The seed sets job and inquiry numbers itself, so move the number sequences past
 -- the highest number in use. Otherwise the next job created in the app would get J-1001.

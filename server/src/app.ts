@@ -21,6 +21,7 @@ import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
   type ServiceAreaBackend,
+  type ServiceCitiesBackend,
   type ServiceAreaLocals,
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
@@ -35,6 +36,7 @@ export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */
 export interface AppOptions {
   serviceArea?: ServiceAreaBackend;
+  serviceCities?: ServiceCitiesBackend;
   photos?: EstimatePhotosBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
   estimateSubmit?: EstimateSubmitHandler;
@@ -81,6 +83,7 @@ export function createApp(
   contact?: ContactBackend,
   {
     serviceArea,
+    serviceCities,
     estimateSubmit,
     photos,
     inquiries,
@@ -198,8 +201,19 @@ export function createApp(
       res.json({ valid: true });
     },
   );
-  // Step 1 asks this before the customer can continue. It only answers yes or no,
-  // so the city list itself is never sent to the browser.
+  // Public display endpoint; unlike the estimate check it intentionally lists cities.
+  app.get('/api/service-cities', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      if (!serviceCities) throw new Error('Missing service cities backend');
+      res.json({ cities: await serviceCities.listActiveCities() });
+    } catch {
+      res
+        .status(503)
+        .json({ error: 'We could not load the cities we serve. Please try again or call us.' });
+    }
+  });
+  // Step 1 still answers only yes/no; its response never includes the city list.
   app.post(
     '/api/estimates/service-area',
     // Generous for a customer who corrects their city, but each check reads the database.
