@@ -199,6 +199,18 @@ on conflict (id) do update set
   is_done = false,
   updated_at = now();
 
+-- Service area (SSPMW-24): the sample inquiries' cities, so the estimate form's city
+-- check works in local, dev and staging. Placeholder list until the client answers Q7.
+-- Production cities are entered from the client's answer, never from this file.
+insert into public.service_cities (name, is_active)
+values
+  ('Carmichael', true),
+  ('Fair Oaks', true),
+  ('Sacramento', true),
+  ('Orangevale', true),
+  ('Citrus Heights', true)
+on conflict (name) do update set is_active = true;
+
 -- The seed sets job and inquiry numbers itself, so move the number sequences past
 -- the highest number in use. Otherwise the next job created in the app would get J-1001.
 select setval(

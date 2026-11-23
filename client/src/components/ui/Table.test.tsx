@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Table, type TableColumn } from './Table';
 
 interface Customer {
@@ -110,5 +110,37 @@ describe('Table', () => {
     expect(screen.getByText('Taylor Brown')).toBeInTheDocument();
     expect(screen.getByText('Morgan Davis')).toBeInTheDocument();
     expect(screen.queryByText('Alex Smith')).not.toBeInTheDocument();
+  });
+  it('calls onRowClick with the clicked row', () => {
+    const onRowClick = vi.fn();
+    render(<Table columns={columns} rows={customers} rowKey="id" onRowClick={onRowClick} />);
+
+    fireEvent.click(screen.getByText('Pending'));
+
+    expect(onRowClick).toHaveBeenCalledExactlyOnceWith(customers[1]);
+  });
+
+  it('leaves clicks on links and buttons inside a row to those controls', () => {
+    const onRowClick = vi.fn();
+    const linkColumns: TableColumn<Customer>[] = [
+      {
+        key: 'name',
+        header: 'Customer',
+        render: (value) => <a href="#customer">{String(value)}</a>,
+      },
+      { key: 'status', header: 'Status', render: () => <button type="button">Edit</button> },
+    ];
+    render(<Table columns={linkColumns} rows={customers} rowKey="id" onRowClick={onRowClick} />);
+
+    fireEvent.click(screen.getByRole('link', { name: 'Alex Smith' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('does not mark rows as clickable without onRowClick', () => {
+    render(<Table columns={columns} rows={customers} rowKey="id" />);
+
+    expect(screen.getByText('Alex Smith').closest('tr')).not.toHaveClass('cursor-pointer');
   });
 });

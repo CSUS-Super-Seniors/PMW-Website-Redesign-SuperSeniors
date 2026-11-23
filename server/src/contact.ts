@@ -1,6 +1,7 @@
 import type { ContactMessageData } from '@pmw/validation';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ContactEmailConfig } from './config.js';
+import { sendResendEmail } from './lib/resendEmail.js';
 
 export interface SavedContactMessage extends ContactMessageData {
   id: string;
@@ -32,19 +33,13 @@ export function createContactBackend(
       return { ...message, id: data.id, created_at: data.created_at };
     },
     async sendNotification(message) {
-      const response = await fetchEmail('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${email.apiKey}`,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': `contact-message/${message.id}`,
-        },
-        signal: AbortSignal.timeout(10000),
-        body: JSON.stringify({
-          from: email.from,
+      await sendResendEmail(
+        email,
+        {
           to: email.to,
           subject: 'New contact message',
-          ...(message.email ? { reply_to: message.email } : {}),
+          replyTo: message.email ?? undefined,
+          idempotencyKey: `contact-message/${message.id}`,
           text: [
             'New contact message',
             '',
@@ -56,19 +51,10 @@ export function createContactBackend(
             '',
             message.message,
           ].join('\n'),
-        }),
-      });
-      if (!response.ok) throw new Error('Contact notification could not be sent.');
-      const result: unknown = await response.json();
-      if (
-        !result ||
-        typeof result !== 'object' ||
-        !('id' in result) ||
-        typeof result.id !== 'string' ||
-        !result.id.trim()
-      ) {
-        throw new Error('Contact notification was not acknowledged.');
-      }
+        },
+        'Contact notification',
+        fetchEmail,
+      );
     },
   };
 }

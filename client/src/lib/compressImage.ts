@@ -7,7 +7,7 @@ export const MAX_PHOTO_SIZE_BYTES = 1024 * 1024;
 // Accepted file types (photos only)
 type PhotoType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/heic';
 
-async function detectPhotoType(file: File): Promise<PhotoType | undefined> {
+export async function detectPhotoType(file: File): Promise<PhotoType | undefined> {
   // MIME types and extensions are only hints. Inspect the container before
   // accepting a photo, including HEIC files reported as application/octet-stream.
   const bytes = new Uint8Array(await file.slice(0, 64 * 1024).arrayBuffer());

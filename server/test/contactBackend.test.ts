@@ -130,6 +130,27 @@ describe('Resend contact notification', () => {
     await expect(backend.sendNotification(message)).rejects.toBeInstanceOf(SyntaxError);
   });
 
+  it('counts a 409 for a key already used (invalid_idempotent_request) as sent', async () => {
+    // Resend only answers this when an email with this message's key was already sent.
+    const { backend, fetchEmail } = setup();
+    fetchEmail.mockResolvedValueOnce(
+      Response.json({ name: 'invalid_idempotent_request' }, { status: 409 }),
+    );
+    await expect(backend.sendNotification(message)).resolves.toBeUndefined();
+  });
+
+  it.each([
+    () => Response.json({ name: 'concurrent_idempotent_requests' }, { status: 409 }),
+    () => Response.json({ name: 'validation_error' }, { status: 409 }),
+    () => new Response('not json', { status: 409 }),
+  ])('rejects any other 409, including a send still running', async (response) => {
+    const { backend, fetchEmail } = setup();
+    fetchEmail.mockResolvedValueOnce(response());
+    await expect(backend.sendNotification(message)).rejects.toThrow(
+      'Contact notification could not be sent.',
+    );
+  });
+
   it('propagates network errors, including timeouts, to the route failure handler', async () => {
     const { backend, fetchEmail } = setup();
     fetchEmail.mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError'));
@@ -157,7 +178,14 @@ describe('contact email configuration', () => {
     expect(() => loadConfig({ ...env, RESEND_API_KEY: 'test-key' })).toThrow(
       'Missing contact email',
     );
-    for (const bad of ['not-email', ', ,', 'a@example.com\r\nBcc: x@example.com']) {
+    for (const bad of [
+      'not-email',
+      ', ,',
+      'a@example.com\r\nBcc: x@example.com',
+      'a@example..com',
+      '.a@example.com',
+      'a@example.com.',
+    ]) {
       expect(() => loadConfig({ ...env, ...emailEnv, CONTACT_OWNER_EMAILS: bad })).toThrow(
         'bare email addresses',
       );

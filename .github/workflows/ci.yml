@@ -23,7 +23,11 @@ jobs:
 
   e2e:
     name: Playwright smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    container:
+      # Match the Playwright version pinned in package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -32,8 +36,6 @@ jobs:
           node-version: 22
       - name: Install npm dependencies
         run: npm ci
-      - name: Install Chromium and Linux browser dependencies
-        run: npx playwright install --with-deps chromium
       - name: Run Playwright smoke test
         run: npm run test:e2e
       - name: Upload Playwright report on failure
@@ -63,3 +65,7 @@ jobs:
       - run: npm run test:seed
         env:
           SEED_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - name: Test atomic estimate saves and concurrent INQ numbers
+        run: npm run test:submission-db
+        env:
+          SUBMISSION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres

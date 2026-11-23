@@ -28,6 +28,7 @@
     "test:e2e": "playwright test",
     "db:test": "supabase test db",
     "test:seed": "npm run test:seed -w server",
+    "test:submission-db": "npm run test:submission-db -w server",
     "verify:storage": "npm run verify:storage -w server",
     "verify:password-reset": "npm run verify:password-reset -w server"
   },

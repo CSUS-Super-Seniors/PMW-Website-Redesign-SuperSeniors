@@ -3,8 +3,20 @@ import { loadConfig } from './config.js';
 import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
+import { createAcceptInquiryBackend } from './acceptInquiry.js';
+import { createServiceAreaBackend } from './serviceArea.js';
+import { createEstimatePhotosBackend } from './estimatePhotos.js';
+import { createInquiryBackend } from './inquiries.js';
+import { createStaffBackend } from './staff.js';
+import { warnIfOwnerNoticeUnavailable } from './ownerNoticeEmail.js';
+import {
+  createEstimateSubmissionBackend,
+  createEstimateSubmitHandler,
+} from './estimateSubmission.js';
+import { createDeclineEmailFromConfig } from './declineEmail.js';
 try {
   const config = loadConfig();
+  warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
   const supabase = createSupabaseAdmin(config);
   const contact = config.contactEmail
     ? createContactBackend(supabase, config.contactEmail)
@@ -14,13 +26,23 @@ try {
       'Contact messaging is unavailable: configure the contact email environment variables.',
     );
   }
-  const server = createApp(config, createAuthBackend(config, supabase), contact).listen(
-    config.port,
-    '0.0.0.0',
-    () => {
-      console.log(`API listening on port ${config.port}`);
-    },
-  );
+  const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+  const server = createApp(config, createAuthBackend(config, supabase), contact, {
+    serviceArea: createServiceAreaBackend(supabase),
+    photos,
+    inquiries: createInquiryBackend(supabase),
+    acceptInquiry: createAcceptInquiryBackend(supabase),
+    estimateSubmit: createEstimateSubmitHandler(
+      createEstimateSubmissionBackend(supabase, config.contactEmail, {
+        ownerPortalOrigin: config.ownerPortalOrigin,
+      }),
+      photos,
+    ),
+    declineEmail: createDeclineEmailFromConfig(config),
+    staff: createStaffBackend(supabase),
+  }).listen(config.port, '0.0.0.0', () => {
+    console.log(`API listening on port ${config.port}`);
+  });
   server.on('error', () => {
     console.error('Unable to start API listener');
     process.exitCode = 1;

@@ -7,13 +7,21 @@ import { business, routes } from './config/site';
 import ContactPage from './pages/ContactPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
+import InquiriesPage from './pages/InquiriesPage';
+import InquiryDetailPage from './pages/InquiryDetailPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
+import StaffAccountsPage from './pages/StaffAccountsPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 import SessionExpiredPage from './components/layout/SessionExpiredPage';
+import { lazy, Suspense } from 'react';
+
+const EstimatePhotosPreviewPage = import.meta.env.DEV
+  ? lazy(() => import('./pages/EstimatePhotosPreviewPage'))
+  : null;
 
 function Home() {
   return (
@@ -34,10 +42,11 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>
-            <Route path="inquiries/*" element={<PlaceholderPage />} />
+            <Route path="inquiries" element={<InquiriesPage />} />
+            <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="customers/*" element={<PlaceholderPage />} />
             <Route path="reports/*" element={<PlaceholderPage />} />
-            <Route path="staff-accounts/*" element={<PlaceholderPage />} />
+            <Route path="staff-accounts" element={<StaffAccountsPage />} />
             <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
           <Route path="*" element={<PlaceholderPage />} />
@@ -69,6 +78,16 @@ export default function App() {
       </Route>
 
       {import.meta.env.DEV && <Route path="/design-tokens" element={<DesignTokensPage />} />}
+      {EstimatePhotosPreviewPage && (
+        <Route
+          path="/dev/estimate-photos"
+          element={
+            <Suspense fallback={<p role="status">Loading preview…</p>}>
+              <EstimatePhotosPreviewPage />
+            </Suspense>
+          }
+        />
+      )}
     </Routes>
   );
 }

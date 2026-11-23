@@ -12,7 +12,10 @@ export default function PortalTopBar({
   onLogout: () => void;
 }) {
   const { pathname } = useLocation();
-  const title = navItems.find((item) => item.path === pathname)?.label ?? '';
+  // Pages under a section (an inquiry's detail page) keep the section's title.
+  const title =
+    navItems.find((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
+      ?.label ?? '';
   const [menuOpen, setMenuOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
