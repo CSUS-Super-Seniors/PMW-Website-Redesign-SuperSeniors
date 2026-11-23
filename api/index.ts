@@ -1,5 +1,6 @@
 import { createEstimatePhotosBackend } from '../server/src/estimatePhotos.js';
 import { createInquiryBackend } from '../server/src/inquiries.js';
+import { createJobBackend } from '../server/src/jobs.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
@@ -40,6 +41,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   ),
   declineEmail: createDeclineEmailFromConfig(config),
   staff: createStaffBackend(supabase),
+  jobs: createJobBackend(supabase),
 });
 
 export default app;
