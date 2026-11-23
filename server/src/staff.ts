@@ -11,7 +11,18 @@ export interface StaffListItem {
 
 export interface StaffBackend {
   listStaff(): Promise<StaffListItem[]>;
+  changeRole(
+    actorId: string,
+    staffId: string,
+    role: 'owner' | 'employee',
+  ): Promise<StaffMutationResult>;
+  removeStaff(actorId: string, staffId: string): Promise<StaffMutationResult>;
 }
+
+export type StaffMutationResult =
+  | { outcome: 'updated'; role: 'owner' | 'employee' }
+  | { outcome: 'removed'; revokedSessions: number }
+  | { outcome: 'not_found' | 'forbidden' | 'self_lockout' | 'last_owner' | 'invalid' };
 
 const AUTH_PAGE_SIZE = 1000;
 
@@ -28,7 +39,56 @@ async function loadAuthUsers(client: Pick<SupabaseClient, 'auth'>): Promise<User
   return users;
 }
 
-export function createStaffBackend(client: Pick<SupabaseClient, 'from' | 'auth'>): StaffBackend {
+export function createStaffBackend(
+  client: Pick<SupabaseClient, 'from' | 'auth' | 'rpc'>,
+): StaffBackend {
+  async function mutateStaff(
+    actorId: string,
+    staffId: string,
+    role: 'owner' | 'employee' | null,
+    remove: boolean,
+  ): Promise<StaffMutationResult> {
+    const result = await client.rpc('manage_staff_profile', {
+      p_actor_id: actorId,
+      p_target_id: staffId,
+      p_new_role: role,
+      p_remove: remove,
+    });
+    if (result.error) throw new Error('Staff account change failed');
+
+    const data: unknown = result.data;
+    if (!data || typeof data !== 'object' || !('outcome' in data)) {
+      throw new Error('Staff account change returned an invalid response');
+    }
+
+    if (
+      data.outcome === 'updated' &&
+      'role' in data &&
+      (data.role === 'owner' || data.role === 'employee')
+    ) {
+      return { outcome: 'updated', role: data.role };
+    }
+    if (
+      data.outcome === 'removed' &&
+      'revoked_sessions' in data &&
+      typeof data.revoked_sessions === 'number' &&
+      Number.isInteger(data.revoked_sessions) &&
+      data.revoked_sessions >= 0
+    ) {
+      return { outcome: 'removed', revokedSessions: data.revoked_sessions };
+    }
+    if (
+      data.outcome === 'not_found' ||
+      data.outcome === 'forbidden' ||
+      data.outcome === 'self_lockout' ||
+      data.outcome === 'last_owner' ||
+      data.outcome === 'invalid'
+    ) {
+      return { outcome: data.outcome };
+    }
+    throw new Error('Staff account change returned an invalid response');
+  }
+
   return {
     async listStaff() {
       const { data: profiles, error } = await client
@@ -51,6 +111,12 @@ export function createStaffBackend(client: Pick<SupabaseClient, 'from' | 'auth'>
           status: profile.status,
         };
       });
+    },
+    changeRole(actorId, staffId, role) {
+      return mutateStaff(actorId, staffId, role, false);
+    },
+    removeStaff(actorId, staffId) {
+      return mutateStaff(actorId, staffId, null, true);
     },
   };
 }

@@ -179,6 +179,8 @@ function staffBackend(fail = false) {
       if (fail) throw new Error('database exploded: secret-detail');
       return staffRows;
     },
+    changeRole: async (_actorId, _staffId, role) => ({ outcome: 'updated', role }),
+    removeStaff: async () => ({ outcome: 'removed', revokedSessions: 0 }),
   };
   return { staff, calls };
 }
@@ -217,4 +219,148 @@ test('staff list failure returns 503 without leaking details', async () => {
     .set('Authorization', 'Bearer valid')
     .expect(503);
   assert.ok(!response.text.includes('secret-detail'));
+});
+
+const OWNER_ID = '00000000-0000-4000-8000-000000000001';
+const EMPLOYEE_ID = '00000000-0000-4000-8000-000000000002';
+
+function mutableStaffHarness(
+  mutationOutcome: 'updated' | 'removed' | 'last_owner' | 'self_lockout' = 'updated',
+) {
+  const profiles = new Map([
+    [OWNER_ID, { role: 'owner', status: 'active' }],
+    [EMPLOYEE_ID, { role: 'employee', status: 'active' }],
+  ]);
+  const calls: Array<{ operation: string; actorId: string; staffId: string; role?: string }> = [];
+  const authBackend: AuthBackend = {
+    verifyToken: async (token) =>
+      token === 'owner-token'
+        ? { id: OWNER_ID }
+        : token === 'employee-token'
+          ? { id: EMPLOYEE_ID }
+          : null,
+    loadProfile: async (userId) => profiles.get(userId) ?? null,
+  };
+  const staff: StaffBackend = {
+    listStaff: async () => [],
+    changeRole: async (actorId, staffId, role) => {
+      calls.push({ operation: 'role', actorId, staffId, role });
+      if (mutationOutcome !== 'updated') return { outcome: mutationOutcome };
+      const profile = profiles.get(staffId);
+      if (!profile) return { outcome: 'not_found' };
+      profile.role = role;
+      return { outcome: 'updated', role };
+    },
+    removeStaff: async (actorId, staffId) => {
+      calls.push({ operation: 'remove', actorId, staffId });
+      if (mutationOutcome !== 'removed') return { outcome: mutationOutcome };
+      const profile = profiles.get(staffId);
+      if (!profile) return { outcome: 'not_found' };
+      profile.status = 'inactive';
+      return { outcome: 'removed', revokedSessions: 2 };
+    },
+  };
+  return { app: createApp(config, authBackend, undefined, { staff }), profiles, calls };
+}
+
+test('owner can change roles and the new role is enforced on the next request', async () => {
+  const { app, calls } = mutableStaffHarness();
+  await request(app)
+    .patch(`/api/staff/${EMPLOYEE_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .send({ role: 'owner' })
+    .expect(200, { staff: { id: EMPLOYEE_ID, role: 'owner' } });
+
+  const ownerRequest = await request(app)
+    .get('/api/me')
+    .set('Authorization', 'Bearer employee-token')
+    .expect(200);
+  assert.equal(ownerRequest.body.role, 'owner');
+
+  await request(app)
+    .patch(`/api/staff/${EMPLOYEE_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .send({ role: 'employee' })
+    .expect(200, { staff: { id: EMPLOYEE_ID, role: 'employee' } });
+  const employeeRequest = await request(app)
+    .get('/api/me')
+    .set('Authorization', 'Bearer employee-token')
+    .expect(200);
+  assert.equal(employeeRequest.body.role, 'employee');
+  assert.deepEqual(
+    calls.map(({ role }) => role),
+    ['owner', 'employee'],
+  );
+});
+
+test('employees cannot change or remove staff accounts', async () => {
+  const { app, calls } = mutableStaffHarness();
+  await request(app)
+    .patch(`/api/staff/${OWNER_ID}`)
+    .set('Authorization', 'Bearer employee-token')
+    .send({ role: 'employee' })
+    .expect(403);
+  await request(app)
+    .delete(`/api/staff/${OWNER_ID}`)
+    .set('Authorization', 'Bearer employee-token')
+    .expect(403);
+  assert.deepEqual(calls, []);
+});
+
+test('staff mutation endpoints validate IDs and exact role payloads', async () => {
+  const { app, calls } = mutableStaffHarness();
+  for (const body of [{ role: 'admin' }, { role: 'employee', status: 'inactive' }, {}]) {
+    await request(app)
+      .patch(`/api/staff/${EMPLOYEE_ID}`)
+      .set('Authorization', 'Bearer owner-token')
+      .send(body)
+      .expect(400);
+  }
+  await request(app)
+    .patch('/api/staff/not-a-uuid')
+    .set('Authorization', 'Bearer owner-token')
+    .send({ role: 'employee' })
+    .expect(400);
+  await request(app)
+    .delete('/api/staff/not-a-uuid')
+    .set('Authorization', 'Bearer owner-token')
+    .expect(400);
+  assert.deepEqual(calls, []);
+});
+
+test('removal reports revoked sessions and blocks the existing token on its next API request', async () => {
+  const { app, calls } = mutableStaffHarness('removed');
+  await request(app)
+    .delete(`/api/staff/${EMPLOYEE_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .expect(200, { removed: true, revokedSessions: 2 });
+  await request(app)
+    .get('/api/me')
+    .set('Authorization', 'Bearer employee-token')
+    .expect(403, { error: 'Active staff access required' });
+  assert.deepEqual(calls, [{ operation: 'remove', actorId: OWNER_ID, staffId: EMPLOYEE_ID }]);
+});
+
+test('self-lockout and last-owner protections return conflict', async () => {
+  const selfDemotion = mutableStaffHarness('self_lockout');
+  await request(selfDemotion.app)
+    .patch(`/api/staff/${OWNER_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .send({ role: 'employee' })
+    .expect(409);
+  await request(selfDemotion.app)
+    .delete(`/api/staff/${OWNER_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .expect(409);
+
+  const lastOwner = mutableStaffHarness('last_owner');
+  await request(lastOwner.app)
+    .patch(`/api/staff/${EMPLOYEE_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .send({ role: 'employee' })
+    .expect(409);
+  await request(lastOwner.app)
+    .delete(`/api/staff/${EMPLOYEE_ID}`)
+    .set('Authorization', 'Bearer owner-token')
+    .expect(409);
 });

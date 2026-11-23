@@ -136,3 +136,56 @@ test('fails when the Auth lookup fails', async () => {
 
   await assert.rejects(createStaffBackend(client).listStaff(), /Staff email lookup failed/);
 });
+
+test('delegates role changes and removal to the transactional staff management function', async () => {
+  const calls: unknown[] = [];
+  const client = {
+    rpc: async (name: string, args: unknown) => {
+      calls.push({ name, args });
+      return calls.length === 1
+        ? { data: { outcome: 'updated', role: 'owner' }, error: null }
+        : { data: { outcome: 'removed', revoked_sessions: 3 }, error: null };
+    },
+  } as unknown as StaffClient;
+  const backend = createStaffBackend(client);
+
+  assert.deepEqual(await backend.changeRole('owner-id', 'employee-id', 'owner'), {
+    outcome: 'updated',
+    role: 'owner',
+  });
+  assert.deepEqual(await backend.removeStaff('owner-id', 'employee-id'), {
+    outcome: 'removed',
+    revokedSessions: 3,
+  });
+  assert.deepEqual(calls, [
+    {
+      name: 'manage_staff_profile',
+      args: {
+        p_actor_id: 'owner-id',
+        p_target_id: 'employee-id',
+        p_new_role: 'owner',
+        p_remove: false,
+      },
+    },
+    {
+      name: 'manage_staff_profile',
+      args: {
+        p_actor_id: 'owner-id',
+        p_target_id: 'employee-id',
+        p_new_role: null,
+        p_remove: true,
+      },
+    },
+  ]);
+});
+
+test('fails explicitly when the staff mutation RPC fails', async () => {
+  const client = {
+    rpc: async () => ({ data: null, error: new Error('database unavailable') }),
+  } as unknown as StaffClient;
+
+  await assert.rejects(
+    createStaffBackend(client).removeStaff('owner-id', 'employee-id'),
+    /Staff account change failed/,
+  );
+});
