@@ -593,6 +593,33 @@ Declined requests no longer appear in the estimate requests list (`GET /api/inqu
 total. There is no view of declined requests yet; a declined request can still be opened by its
 link.
 
+## Customer list (SSPMW-338)
+
+`/portal/customers` lists customers for owners, by last name. The search box matches part of a name
+(either order, any case) or, when the search is only phone characters, part of the phone number's
+digits, so `555-01` finds `(916) 555-0142`. Filters are the last job date range and the status (New or
+Repeat). The search, filters and page live in the URL, so a filtered list can be refreshed or shared.
+
+`GET /api/customers` (owners only) takes `page`, `pageSize` (10, 25 or 50), `search` (up to 100
+characters), `status` (`new` or `repeat`), and `from` / `to` (`YYYY-MM-DD`, last job date,
+inclusive). It answers `{ customers, total, page, pageSize }`, and 400 for anything else.
+
+The rules live in the database function `public.list_customers`
+(`supabase/migrations/20261123000000_list_customers.sql`):
+
+- Soft-deleted customers (`deleted_at` set) never appear.
+- **Jobs** counts jobs that are not cancelled. **Repeat** is two or more of them (K8, SSPMW-379);
+  anything less is **New**. Change it there and in `REPEAT_CUSTOMER_MIN_JOBS`
+  (`shared/src/customerList.ts`) together.
+- **Last job** is a job's completed date, else its scheduled date, else the day it was created, latest
+  across jobs that are not cancelled.
+- The function runs with the caller's rights, so Row Level Security applies: an employee or inactive
+  user calling it with their own token gets no rows. `supabase/tests/list_customers.test.sql` covers
+  this along with search, filters and paging.
+
+The sample data gives each customer one job, so every sample customer shows as New until more jobs
+are added.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).

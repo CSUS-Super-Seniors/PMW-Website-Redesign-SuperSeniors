@@ -365,7 +365,7 @@ describe('App', () => {
 
   it('lets an owner open an owner-only URL', async () => {
     fakeServerRole('owner');
-    renderApp('/portal/customers', { session: staffSession });
+    renderApp('/portal/reports', { session: staffSession });
 
     expect(
       await screen.findByRole('heading', { name: 'This page is not built yet' }),

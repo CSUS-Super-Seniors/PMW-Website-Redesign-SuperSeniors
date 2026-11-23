@@ -102,7 +102,9 @@ test('owner can reach employee routes and owner-only areas', async () => {
     .post('/api/jobs/J-1001/media')
     .set('Authorization', 'Bearer valid')
     .expect(501);
-  for (const path of ['/api/customers', '/api/reports', '/api/testimonials']) {
+  // The customer list exists (SSPMW-338); with no backend configured it is unavailable.
+  await request(app).get('/api/customers').set('Authorization', 'Bearer valid').expect(503);
+  for (const path of ['/api/reports', '/api/testimonials']) {
     await request(app).get(path).set('Authorization', 'Bearer valid').expect(404);
   }
 });
