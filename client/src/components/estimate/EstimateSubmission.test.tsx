@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -72,7 +72,7 @@ describe('EstimateSubmission', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
 
-    expect(await screen.findByText(/We could not send your request/)).toBeInTheDocument();
+    expect(await screen.findByText('Network failure')).toBeInTheDocument();
 
     expect(screen.queryByText('Thanks, Alex!')).not.toBeInTheDocument();
 
@@ -120,5 +120,47 @@ describe('EstimateSubmission', () => {
     await waitFor(() => expect(screen.getByText('Thanks, Alex!')).toBeInTheDocument());
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a controlled confirmation open during submission and reports confirmed success', async () => {
+    let resolveSubmit!: () => void;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSubmit = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+    const onSubmitted = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <MemoryRouter>
+        <EstimateSubmission
+          firstName=""
+          onSubmit={onSubmit}
+          onStartAnother={vi.fn()}
+          isOpen
+          onClose={onClose}
+          onSubmitted={onSubmitted}
+        />
+      </MemoryRouter>,
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Submit estimate request?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
+    await user.keyboard('{Escape}');
+    fireEvent.mouseDown(dialog.parentElement!, { target: dialog.parentElement });
+    await user.click(within(dialog).getByRole('button', { name: 'Close dialog' }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledOnce();
+
+    await act(async () => resolveSubmit());
+
+    expect(await screen.findByRole('heading', { name: 'Thanks!' })).toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onSubmitted).toHaveBeenCalledOnce();
   });
 });

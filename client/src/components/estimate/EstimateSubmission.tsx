@@ -8,17 +8,24 @@ interface EstimateSubmissionProps {
   firstName: string;
   onSubmit: () => Promise<void>;
   onStartAnother: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
+  onSubmitted?: () => void;
 }
 
 export default function EstimateSubmission({
   firstName,
   onSubmit,
   onStartAnother,
+  isOpen,
+  onClose,
+  onSubmitted,
 }: EstimateSubmissionProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const submitting = useRef(false);
+  const dialogOpen = isOpen ?? confirmOpen;
 
   async function handleSubmit() {
     if (submitting.current || submitted) return;
@@ -29,10 +36,14 @@ export default function EstimateSubmission({
     try {
       await onSubmit();
       setSubmitted(true);
-      setConfirmOpen(false);
-    } catch {
+      if (isOpen === undefined) setConfirmOpen(false);
+      onClose?.();
+      onSubmitted?.();
+    } catch (error) {
       setSubmitError(
-        'We could not send your request. Your information is still in the form. Please try again.',
+        error instanceof Error && error.message
+          ? error.message
+          : 'We could not send your request. Your information is still in the form. Please try again.',
       );
     } finally {
       submitting.current = false;
@@ -40,7 +51,10 @@ export default function EstimateSubmission({
   }
 
   function handleCancel() {
-    setConfirmOpen(false);
+    if (submitting.current) return;
+
+    if (isOpen === undefined) setConfirmOpen(false);
+    onClose?.();
     setSubmitError('');
   }
 
@@ -55,7 +69,9 @@ export default function EstimateSubmission({
       <section className="mx-auto w-full max-w-190 rounded-xl border border-neutral-300 bg-white p-6 md:p-8">
         <p className="type-overline text-amber-dark">Step 4 of 4</p>
 
-        <h1 className="type-h2 mt-4">Thanks, {firstName.trim()}!</h1>
+        <h1 className="type-h2 mt-4">
+          {firstName.trim() ? `Thanks, ${firstName.trim()}!` : 'Thanks!'}
+        </h1>
 
         <p className="type-body mt-4 text-neutral-600">
           Your estimate request has been submitted successfully. We will contact you about the next
@@ -78,10 +94,10 @@ export default function EstimateSubmission({
 
   return (
     <>
-      <Button onClick={() => setConfirmOpen(true)}>Submit request</Button>
+      {isOpen === undefined && <Button onClick={() => setConfirmOpen(true)}>Submit request</Button>}
 
       <ConfirmationDialog
-        isOpen={confirmOpen}
+        isOpen={dialogOpen}
         onCancel={handleCancel}
         onConfirm={handleSubmit}
         title="Submit estimate request?"

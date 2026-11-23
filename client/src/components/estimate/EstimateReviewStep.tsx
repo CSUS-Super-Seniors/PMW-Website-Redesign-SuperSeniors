@@ -11,8 +11,7 @@ interface EstimateReviewStepProps {
   details: EstimateStep1Data;
   photos: PreparedEstimatePhoto[];
   onEdit: (section: EstimateReviewSection) => void;
-  /** Opens confirmation; final submission belongs to SSPMW-53/70. */
-  onSubmit?: () => void;
+  onSubmit: () => void;
 }
 
 function ReviewSection({
@@ -137,21 +136,11 @@ export default function EstimateReviewStep({
           )}
         </ReviewSection>
       </div>
-      {!onSubmit && (
-        <p id="estimate-submit-unavailable" className="type-body mt-6 text-neutral-600">
-          Submitting requests is not available yet. Your estimate request has not been submitted.
-        </p>
-      )}
       <div className="mt-6 flex flex-col-reverse gap-4 sm:flex-row sm:justify-between">
         <Button variant="outline" onClick={() => onEdit('photos')}>
           Back to photos
         </Button>
-        <Button
-          variant="secondary"
-          disabled={!onSubmit}
-          aria-describedby={!onSubmit ? 'estimate-submit-unavailable' : undefined}
-          onClick={onSubmit}
-        >
+        <Button variant="secondary" onClick={onSubmit}>
           Submit request
         </Button>
       </div>
