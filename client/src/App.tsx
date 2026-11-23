@@ -9,6 +9,7 @@ import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
 import InquiriesPage from './pages/InquiriesPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
+import JobsPage from './pages/JobsPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="staff-accounts" element={<StaffAccountsPage />} />
             <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
+          <Route path="schedule" element={<JobsPage />} />
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>
