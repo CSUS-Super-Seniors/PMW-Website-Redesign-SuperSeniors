@@ -56,7 +56,10 @@ function listFromEnv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-export function checkSeedTarget(env: NodeJS.ProcessEnv): SeedTarget {
+export function checkSeedTarget(
+  env: NodeJS.ProcessEnv,
+  localSupabasePorts: readonly number[] = [LOCAL_SUPABASE_PORT],
+): SeedTarget {
   const raw = env.SEED_DATABASE_URL?.trim();
   if (!raw) {
     throw new Error(
@@ -109,9 +112,9 @@ export function checkSeedTarget(env: NodeJS.ProcessEnv): SeedTarget {
 
   if (LOCAL_HOSTS.has(host)) {
     // A pooler-style user (postgres.<ref>) means a tunnel to a Supabase project.
-    if (connection.port !== LOCAL_SUPABASE_PORT || user.includes('.')) {
+    if (!localSupabasePorts.includes(connection.port) || user.includes('.')) {
       throw new Error(
-        `Refusing to seed ${host}:${connection.port} as ${user}: the only local database allowed is local Supabase on port ${LOCAL_SUPABASE_PORT}.`,
+        `Refusing to seed ${host}:${connection.port} as ${user}: the only local database allowed is local Supabase on port ${localSupabasePorts.join(' or ')}.`,
       );
     }
     return { kind: 'local', host, connection };

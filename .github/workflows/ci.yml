@@ -69,3 +69,7 @@ jobs:
         run: npm run test:submission-db
         env:
           SUBMISSION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - name: Test immutable job numbers and concurrent J-number assignments
+        run: npm run test:job-number-db
+        env:
+          JOB_NUMBER_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
