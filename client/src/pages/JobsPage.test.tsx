@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
 import JobsPage from './JobsPage';
@@ -86,6 +86,11 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname + location.search}</div>;
 }
 
+function BackButton() {
+  const navigate = useNavigate();
+  return <button onClick={() => navigate(-1)}>Go back</button>;
+}
+
 function renderPage(path = '/portal/schedule') {
   return render(
     <AuthContext.Provider value={authValue}>
@@ -97,9 +102,11 @@ function renderPage(path = '/portal/schedule') {
               <>
                 <JobsPage />
                 <LocationProbe />
+                <BackButton />
               </>
             }
           />
+          <Route path="/portal/jobs/:jobId" element={<p>Job page</p>} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -116,6 +123,11 @@ describe('JobsPage', () => {
     expect(screen.getByText('Margaret Lewis • J-1001')).toBeInTheDocument();
     expect(screen.getByText('Due Oct 20, 2026')).toBeInTheDocument();
     expect(screen.getByText('No due date')).toBeInTheDocument();
+    expect(screen.getByText('Repair • Starts Oct 1, 2026')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Entry bench' })).toHaveAttribute(
+      'href',
+      '/portal/jobs/job-1',
+    );
     expect(screen.getByRole('heading', { name: '2 jobs' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open job J-1001' })).toHaveAttribute(
       'href',
@@ -163,6 +175,31 @@ describe('JobsPage', () => {
     expect(await screen.findByText('Entry bench')).toBeInTheDocument();
     expect(screen.getByLabelText('Search jobs')).toHaveValue('');
     expect(screen.getByTestId('location')).not.toHaveTextContent('q=');
+  });
+
+  it('follows the browser Back button instead of writing old search text back', async () => {
+    fakeServer();
+    renderPage();
+    await screen.findByText('Entry bench');
+    fireEvent.change(screen.getByLabelText('Search jobs'), { target: { value: 'chen' } });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('q=chen'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Search jobs')).toHaveValue(''));
+    // Longer than the search pause, so old text would have been written back by now.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.getByTestId('location')).not.toHaveTextContent('q=');
+    expect(await screen.findByText('Entry bench')).toBeInTheDocument();
+  });
+
+  it('opens the job when the row is clicked', async () => {
+    fakeServer();
+    renderPage();
+
+    fireEvent.click(await screen.findByText('Margaret Lewis • J-1001'));
+
+    expect(await screen.findByText('Job page')).toBeInTheDocument();
   });
 
   it('shows "No matching jobs" when filters match nothing', async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Input, Pagination, Select } from '../components/ui';
 import {
   DEFAULT_JOB_PAGE_SIZE,
@@ -38,10 +38,18 @@ function readListParams(params: URLSearchParams): {
 
 export default function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { page, pageSize, status, search } = readListParams(searchParams);
   const { state, retry } = useJobs({ page, pageSize, status, search });
   // What the staff member has typed. The URL (and the list) follows after a short pause.
   const [searchText, setSearchText] = useState(search);
+  // When the URL's search changes some other way (Back, Forward, a shared link), the box
+  // follows it. Text that only differs by spaces is left alone, so typing a space is safe.
+  const [seenSearch, setSeenSearch] = useState(search);
+  if (search !== seenSearch) {
+    setSeenSearch(search);
+    if (searchText.trim() !== search) setSearchText(search);
+  }
   const filtersActive = status !== null || search !== '';
 
   useEffect(() => {
@@ -164,16 +172,33 @@ export default function JobsPage() {
         <ul className="mt-4 space-y-3">
           {state.jobs.map((job) => {
             const due = formatJobDate(job.dueDate);
+            const start = formatJobDate(job.startDate);
+            const details = [job.jobType, start ? `Starts ${start}` : null]
+              .filter(Boolean)
+              .join(' • ');
             return (
               <li
                 key={job.id}
-                className="flex flex-col gap-3 rounded-md border border-neutral-300 bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex cursor-pointer flex-col gap-3 rounded-md border border-neutral-300 bg-white p-4 hover:bg-neutral-50 sm:flex-row sm:items-center sm:justify-between"
+                onClick={(event) => {
+                  // Links and buttons inside the row handle their own clicks.
+                  if (event.target instanceof Element && event.target.closest('a, button')) return;
+                  navigate(jobDetailPath(job.id));
+                }}
               >
                 <div className="min-w-0 space-y-2">
-                  <h3 className="type-h4 break-words">{job.item}</h3>
+                  <h3 className="type-h4 break-words">
+                    <Link
+                      to={jobDetailPath(job.id)}
+                      className="rounded-sm text-dark-brown hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+                    >
+                      {job.item}
+                    </Link>
+                  </h3>
                   <p className="type-body-sm text-neutral-600">
                     {job.customerName} • {job.jobNumber}
                   </p>
+                  {details && <p className="type-body-sm text-neutral-600">{details}</p>}
                   <p className="type-body-sm flex flex-wrap items-center gap-2 text-neutral-600">
                     <Badge variant={jobStatusBadgeVariants[job.status]}>
                       {jobStatusLabels[job.status]}
