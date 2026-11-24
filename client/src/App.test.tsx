@@ -56,8 +56,8 @@ describe('App', () => {
     renderApp('/estimate');
 
     expect(screen.getByRole('heading', { name: 'Request an estimate' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
-    expect(screen.getByRole('navigation', { name: 'Footer' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
     expect(screen.getByLabelText('Service address')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Staff login' })).not.toBeInTheDocument();
   });
@@ -66,6 +66,7 @@ describe('App', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ testimonials: [] })));
     renderApp('/testimonials');
     expect(screen.getByRole('heading', { name: 'Testimonials' })).toBeInTheDocument();
+    // jsdom treats the page's nested header as another banner; use the named navigation.
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Footer' })).toBeInTheDocument();
     expect(await screen.findByText(/No testimonials have been published yet/)).toBeInTheDocument();

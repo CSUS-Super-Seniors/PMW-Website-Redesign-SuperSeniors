@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   TESTIMONIAL_BODY_LIMIT,
+  TESTIMONIAL_HONEYPOT_FIELD,
   mapTestimonialErrors,
   testimonialSubmissionSchema,
   type PublicTestimonial,
@@ -10,9 +11,18 @@ import {
 import {
   getPublicTestimonials,
   submitTestimonial,
+  TestimonialSubmissionError,
   TestimonialValidationError,
 } from '../api/testimonials';
-import { Button, Checkbox, ErrorBanner, Input, SuccessBanner, Textarea } from '../components/ui';
+import {
+  Button,
+  Checkbox,
+  ErrorBanner,
+  InlineFieldError,
+  Input,
+  SuccessBanner,
+  Textarea,
+} from '../components/ui';
 
 type Props = {
   loadTestimonials?: typeof getPublicTestimonials;
@@ -113,7 +123,7 @@ export default function TestimonialsPage({
                 key={item.id}
                 className="flex min-w-0 flex-col items-start gap-5 rounded-lg border border-neutral-300 bg-white px-4 py-6 lg:p-6 [overflow-wrap:anywhere]"
               >
-                {item.rating != null ? <TestimonialRating rating={item.rating} /> : null}
+                <TestimonialRating rating={item.rating} />
                 <blockquote className="type-body text-dark-brown">“{item.body}”</blockquote>
                 <div className="flex flex-col gap-1">
                   <p className="type-label text-dark-brown">{item.name}</p>
@@ -137,23 +147,31 @@ export default function TestimonialsPage({
   );
 }
 
-function TestimonialRating({ rating }: { rating: number }) {
+function TestimonialRating({ rating }: { rating: number | null }) {
   return (
-    <div role="img" aria-label={`${rating} out of 5 stars`} className="flex gap-1 text-amber">
-      {Array.from({ length: 5 }, (_, index) => (
-        <svg
-          key={index}
-          aria-hidden="true"
-          viewBox="0 0 24 24"
-          className="size-6"
-          fill={index < rating ? 'currentColor' : 'none'}
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinejoin="round"
-        >
-          <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z" />
-        </svg>
-      ))}
+    <div
+      role="img"
+      aria-label={rating == null ? 'Not rated' : `${rating} out of 5 stars`}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <span className="flex gap-1 text-amber">
+        {Array.from({ length: 5 }, (_, index) => (
+          <svg
+            key={index}
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 24 24"
+            className="size-6"
+            fill={rating != null && index < rating ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinejoin="round"
+          >
+            <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9Z" />
+          </svg>
+        ))}
+      </span>
+      {rating == null ? <span className="type-caption text-neutral-600">Not rated</span> : null}
     </div>
   );
 }
@@ -174,7 +192,9 @@ function TestimonialForm({
   const [photoContact, setPhotoContact] = useState(false);
   const [errors, setErrors] = useState<TestimonialFieldErrors>({});
   const [state, setState] = useState<'idle' | 'sending' | 'failed'>('idle');
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const honeypotRef = useRef<HTMLInputElement>(null);
   const pending = useRef(false);
   const bodyError =
     body.length > TESTIMONIAL_BODY_LIMIT
@@ -189,7 +209,9 @@ function TestimonialForm({
     setBody('');
     setCanPublish(false);
     setPhotoContact(false);
+    if (honeypotRef.current) honeypotRef.current.value = '';
     setErrors({});
+    setSubmitError(null);
     setState('idle');
   }
 
@@ -214,14 +236,19 @@ function TestimonialForm({
       return;
     }
     setErrors({});
+    setSubmitError(null);
     pending.current = true;
     setState('sending');
     try {
-      await sendTestimonial(parsed.data);
+      await sendTestimonial({
+        ...parsed.data,
+        [TESTIMONIAL_HONEYPOT_FIELD]: honeypotRef.current?.value ?? '',
+      });
       resetForm();
       onSuccess();
     } catch (error) {
       if (error instanceof TestimonialValidationError) setErrors(error.fieldErrors);
+      setSubmitError(error instanceof TestimonialSubmissionError ? error.message : null);
       setState('failed');
     } finally {
       pending.current = false;
@@ -244,9 +271,27 @@ function TestimonialForm({
         aria-busy={state === 'sending'}
         className="rounded-lg border border-neutral-300 bg-white px-4 py-8 lg:p-8"
       >
+        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+          <label>
+            Leave this empty
+            <input
+              ref={honeypotRef}
+              type="text"
+              name={TESTIMONIAL_HONEYPOT_FIELD}
+              tabIndex={-1}
+              autoComplete="off"
+            />
+          </label>
+        </div>
         {state === 'failed' ? (
           <div className="mb-5">
-            <ErrorBanner message="Your testimonial could not be submitted. Your answers are saved here; please try again." />
+            <ErrorBanner
+              message={
+                submitError
+                  ? `${submitError} Your answers are saved here.`
+                  : 'Your testimonial could not be submitted. Your answers are saved here; please try again.'
+              }
+            />
           </div>
         ) : null}
         <fieldset
@@ -264,6 +309,7 @@ function TestimonialForm({
             value={name}
             onChange={(event) => setName(event.target.value)}
             error={errors.name}
+            showErrorIcon
             className="text-body leading-6"
           />
           <Input
@@ -278,30 +324,35 @@ function TestimonialForm({
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             error={errors.email}
+            showErrorIcon
             className="text-body leading-6"
             hint="We’ll only use this to request a photo or confirm details."
           />
           <Input
             id="testimonial-city"
             name="city"
-            label="City (optional)"
+            label="City"
             placeholder="Sacramento"
             autoComplete="address-level2"
+            required
             maxLength={100}
             value={city}
             onChange={(event) => setCity(event.target.value)}
             error={errors.city}
+            showErrorIcon
             className="text-body leading-6"
           />
           <Input
             id="testimonial-service"
             name="service"
-            label="Service (optional)"
+            label="Service"
             placeholder="Refinishing"
+            required
             maxLength={200}
             value={service}
             onChange={(event) => setService(event.target.value)}
             error={errors.service}
+            showErrorIcon
             className="text-body leading-6"
           />
           <div className="md:col-span-2">
@@ -317,6 +368,7 @@ function TestimonialForm({
                 setErrors((previous) => ({ ...previous, body: undefined }));
               }}
               error={bodyError}
+              showErrorIcon
               aria-describedby="testimonial-count"
               className="min-h-30 text-body leading-6"
             />
@@ -333,23 +385,35 @@ function TestimonialForm({
                 aria-invalid={errors.can_publish ? true : undefined}
                 aria-describedby={errors.can_publish ? 'testimonial-consent-error' : undefined}
                 onChange={(event) => setCanPublish(event.target.checked)}
-                label={<>You may publish my testimonial.</>}
+                label={
+                  <>
+                    <span className="lg:hidden">You may publish my testimonial.</span>
+                    <span className="hidden lg:inline">
+                      I give Peterson Mobile Woodworking permission to publish this testimonial on
+                      the website and in marketing materials.
+                    </span>
+                  </>
+                }
               />
-              {errors.can_publish ? (
-                <p
-                  id="testimonial-consent-error"
-                  role="alert"
-                  className="type-body-sm mt-2 text-error"
-                >
-                  {errors.can_publish}
-                </p>
-              ) : null}
+              <InlineFieldError
+                id="testimonial-consent-error"
+                message={errors.can_publish}
+                className="mt-2"
+                showIcon
+              />
             </div>
             <Checkbox
               name="photo_contact_ok"
               checked={photoContact}
               onChange={(event) => setPhotoContact(event.target.checked)}
-              label="Contact me about adding a photo."
+              label={
+                <>
+                  <span className="lg:hidden">Contact me about adding a photo.</span>
+                  <span className="hidden lg:inline">
+                    I would like to be contacted about adding a photo to this testimonial.
+                  </span>
+                </>
+              }
             />
           </div>
         </fieldset>

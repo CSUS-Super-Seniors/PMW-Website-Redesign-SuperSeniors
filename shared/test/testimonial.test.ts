@@ -4,6 +4,8 @@ import { mapTestimonialErrors, testimonialSubmissionSchema } from '../src/testim
 const valid = {
   name: ' Alex Example ',
   email: ' alex@example.com ',
+  city: ' Carmichael ',
+  service: ' Refinishing ',
   body: ' Excellent repair. ',
   can_publish: true,
 };
@@ -13,6 +15,8 @@ describe('testimonial submission contract', () => {
     expect(testimonialSubmissionSchema.parse(valid)).toEqual({
       name: 'Alex Example',
       email: 'alex@example.com',
+      city: 'Carmichael',
+      service: 'Refinishing',
       body: 'Excellent repair.',
       can_publish: true,
       photo_contact_ok: false,
@@ -29,17 +33,29 @@ describe('testimonial submission contract', () => {
       expect(mapTestimonialErrors(result.error).fieldErrors.body).toContain('500 characters');
   });
 
-  it('allows blank optional details and trims provided city and service', () => {
-    expect(testimonialSubmissionSchema.safeParse({ ...valid, city: '', service: '' }).success).toBe(
-      true,
-    );
-    expect(
-      testimonialSubmissionSchema.parse({
-        ...valid,
-        city: ' Carmichael ',
-        service: ' Refinishing ',
-      }),
-    ).toMatchObject({ city: 'Carmichael', service: 'Refinishing' });
+  it.each(['city', 'service'] as const)('requires a nonblank %s', (field) => {
+    for (const value of [undefined, null, '', ' \t ']) {
+      const result = testimonialSubmissionSchema.safeParse({ ...valid, [field]: value });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(mapTestimonialErrors(result.error).fieldErrors[field]).toBe(
+          field === 'city' ? 'City is required.' : 'Service is required.',
+        );
+      }
+    }
+  });
+
+  it.each([
+    ['name', 'Full name is required.'],
+    ['email', 'Email address is required.'],
+    ['body', 'Your testimonial is required.'],
+  ] as const)('uses Figma required-field copy for a missing or blank %s', (field, message) => {
+    for (const value of [undefined, null, '', ' \t ']) {
+      const result = testimonialSubmissionSchema.safeParse({ ...valid, [field]: value });
+      expect(result.success).toBe(false);
+      if (!result.success)
+        expect(mapTestimonialErrors(result.error).fieldErrors[field]).toBe(message);
+    }
   });
 
   it.each([

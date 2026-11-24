@@ -1,8 +1,10 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
+import { InlineFieldError } from './InlineFieldError';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: ReactNode;
   error?: string;
+  showErrorIcon?: boolean;
   /** Help text under the field. The error takes its place while there is one. */
   hint?: string;
 }
@@ -10,6 +12,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Input({
   label,
   error,
+  showErrorIcon = false,
   hint,
   id,
   className = '',
@@ -62,11 +65,7 @@ export function Input({
         </p>
       )}
 
-      {error && (
-        <p id={errorId} className="type-body-sm text-error" role="alert">
-          {error}
-        </p>
-      )}
+      <InlineFieldError id={errorId} message={error} showIcon={showErrorIcon} />
     </div>
   );
 }

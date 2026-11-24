@@ -30,6 +30,23 @@ describe('Textarea', () => {
     expect(textarea).toHaveAttribute('aria-describedby', error.id);
   });
 
+  it('supports an error icon and preserves additional descriptive text', () => {
+    render(
+      <Textarea
+        id="story"
+        label="Your testimonial"
+        error="Your testimonial is required."
+        aria-describedby="character-count"
+        showErrorIcon
+      />,
+    );
+    const textarea = screen.getByLabelText('Your testimonial');
+    expect(textarea).toHaveAttribute('aria-describedby', 'character-count story-error');
+    expect(textarea).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert').querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(textarea).not.toHaveAttribute('showerroricon');
+  });
+
   it('does not display an error when none is provided', () => {
     render(<Textarea label="Project details" />);
 

@@ -10,10 +10,20 @@ describe('InlineFieldError', () => {
 
     expect(error).toHaveAttribute('id', 'email-error');
     expect(error).toHaveTextContent('Enter a valid email address.');
+    expect(error.querySelector('svg')).not.toBeInTheDocument();
+  });
+
+  it('can add a decorative warning icon without changing the error announcement', () => {
+    render(<InlineFieldError id="city-error" message="City is required." showIcon />);
+    const error = screen.getByRole('alert');
+    expect(error).toHaveAttribute('id', 'city-error');
+    expect(error).toHaveTextContent('City is required.');
+    expect(error.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(error.querySelector('svg')).toHaveAttribute('focusable', 'false');
   });
 
   it('does not render when the message is omitted', () => {
-    const { container } = render(<InlineFieldError id="email-error" />);
+    const { container } = render(<InlineFieldError id="email-error" showIcon />);
 
     expect(container).toBeEmptyDOMElement();
   });

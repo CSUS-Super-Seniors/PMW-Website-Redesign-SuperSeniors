@@ -12,6 +12,7 @@ import {
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
   mapTestimonialErrors,
   testimonialSubmissionSchema,
+  TESTIMONIAL_HONEYPOT_FIELD,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
@@ -273,18 +274,26 @@ export function createApp(
       res.status(201).json({ success: true });
     },
   );
-  app.get('/api/public/testimonials', async (_req, res) => {
-    res.set('Cache-Control', 'no-store');
-    if (!testimonials) {
-      res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
-      return;
-    }
-    try {
-      res.json({ testimonials: await testimonials.listApproved() });
-    } catch {
-      res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
-    }
-  });
+  app.get(
+    '/api/public/testimonials',
+    createRateLimiter({
+      max: 60,
+      windowMs: 60_000,
+      message: 'Too many testimonial requests. Please wait a minute and try again.',
+    }),
+    async (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      if (!testimonials) {
+        res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
+        return;
+      }
+      try {
+        res.json({ testimonials: await testimonials.listApproved() });
+      } catch {
+        res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
+      }
+    },
+  );
   app.post(
     '/api/public/testimonials',
     createRateLimiter({
@@ -297,6 +306,7 @@ export function createApp(
       next();
     },
     express.json({ limit: '16kb', strict: false }),
+    rejectHoneypot(TESTIMONIAL_HONEYPOT_FIELD, 'Testimonial submission'),
     async (req, res) => {
       const result = testimonialSubmissionSchema.safeParse(req.body);
       if (!result.success) {

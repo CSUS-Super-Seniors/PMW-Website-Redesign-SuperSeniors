@@ -1,8 +1,13 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { PublicTestimonial, TestimonialSubmission } from '@pmw/validation';
+import {
+  TESTIMONIAL_HONEYPOT_FIELD,
+  type PublicTestimonial,
+  type TestimonialSubmissionRequest,
+} from '@pmw/validation';
 import TestimonialsPage from './TestimonialsPage';
+import { TestimonialSubmissionError } from '../api/testimonials';
 
 const entry: PublicTestimonial = {
   id: '1',
@@ -17,7 +22,7 @@ const entry: PublicTestimonial = {
 function renderPage(
   overrides: {
     loadTestimonials?: () => Promise<PublicTestimonial[]>;
-    sendTestimonial?: (input: TestimonialSubmission) => Promise<void>;
+    sendTestimonial?: (input: TestimonialSubmissionRequest) => Promise<void>;
   } = {},
 ) {
   return render(
@@ -27,6 +32,11 @@ function renderPage(
       {...overrides}
     />,
   );
+}
+
+async function fillCityAndService(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('City'), ' Carmichael ');
+  await user.type(screen.getByLabelText('Service'), ' Refinishing ');
 }
 
 describe('TestimonialsPage', () => {
@@ -53,10 +63,16 @@ describe('TestimonialsPage', () => {
     expect(screen.getByText(longEntry.name).closest('li')).toBe(card);
   });
 
-  it('shows stored ratings and hides the stars for unrated entries', async () => {
+  it('shows stored ratings and labels five outlined stars as Not rated for unrated entries', async () => {
     renderPage({ loadTestimonials: async () => [entry, { ...entry, id: '2', rating: 3 }] });
-    expect(await screen.findByRole('img', { name: '3 out of 5 stars' })).toBeInTheDocument();
-    expect(screen.getAllByRole('img')).toHaveLength(1);
+    const rated = await screen.findByRole('img', { name: '3 out of 5 stars' });
+    expect(rated.querySelectorAll('svg[fill="currentColor"]')).toHaveLength(3);
+    expect(rated.querySelectorAll('svg[fill="none"]')).toHaveLength(2);
+    const unrated = screen.getByRole('img', { name: 'Not rated' });
+    expect(unrated.querySelectorAll('svg')).toHaveLength(5);
+    expect(unrated.querySelectorAll('svg[fill="none"]')).toHaveLength(5);
+    expect(within(unrated).getByText('Not rated')).toBeVisible();
+    expect(screen.getAllByRole('img')).toHaveLength(2);
   });
 
   it('shows a retry action after a public-list error', async () => {
@@ -73,9 +89,13 @@ describe('TestimonialsPage', () => {
     const send = vi.fn(async () => {});
     renderPage({ sendTestimonial: send });
     await userEvent.setup().click(screen.getByRole('button', { name: 'Submit testimonial' }));
-    expect(await screen.findByText('Enter your name.')).toBeInTheDocument();
-    expect(screen.getByText('Enter your email address.')).toBeInTheDocument();
-    expect(screen.getByText('Enter your testimonial.')).toBeInTheDocument();
+    expect(await screen.findByText('Full name is required.')).toBeInTheDocument();
+    expect(screen.getByText('Email address is required.')).toBeInTheDocument();
+    expect(screen.getByText('City is required.')).toBeInTheDocument();
+    expect(screen.getByText('Service is required.')).toBeInTheDocument();
+    expect(screen.getByLabelText('City')).toBeRequired();
+    expect(screen.getByLabelText('Service')).toBeRequired();
+    expect(screen.getByText('Your testimonial is required.')).toBeInTheDocument();
     expect(screen.getByText('Permission to publish is required.')).toBeInTheDocument();
     const publishConsent = screen.getByRole('checkbox', { name: /You may publish my testimonial/ });
     expect(publishConsent).toBeRequired();
@@ -84,6 +104,11 @@ describe('TestimonialsPage', () => {
     expect(screen.getByRole('region', { name: 'Share your story' })).toBeInTheDocument();
     expect(send).not.toHaveBeenCalled();
     expect(screen.getByText('0 / 500 characters')).toBeInTheDocument();
+    for (const alert of screen.getAllByRole('alert')) {
+      const icon = alert.querySelector('svg');
+      expect(icon).toHaveAttribute('aria-hidden', 'true');
+      expect(icon).toHaveAttribute('focusable', 'false');
+    }
   });
 
   it('submits consent choices, announces success, and does not publish the pending entry', async () => {
@@ -92,6 +117,7 @@ describe('TestimonialsPage', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Full name'), 'Alex Example');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await fillCityAndService(user);
     await user.type(screen.getByLabelText('Your testimonial'), 'Lovely repair.');
     await user.click(screen.getByLabelText(/You may publish my testimonial/));
     await user.click(screen.getByLabelText(/Contact me about adding a photo/));
@@ -100,11 +126,12 @@ describe('TestimonialsPage', () => {
       expect(send).toHaveBeenCalledWith({
         name: 'Alex Example',
         email: 'alex@example.com',
-        city: '',
-        service: '',
+        city: 'Carmichael',
+        service: 'Refinishing',
         body: 'Lovely repair.',
         can_publish: true,
         photo_contact_ok: true,
+        [TESTIMONIAL_HONEYPOT_FIELD]: '',
       }),
     );
     const confirmation = await screen.findByText('Thank you. Your testimonial was sent.');
@@ -121,6 +148,44 @@ describe('TestimonialsPage', () => {
     expect(screen.queryByText('Thank you. Your testimonial was sent.')).not.toBeInTheDocument();
   });
 
+  it('keeps the honeypot out of keyboard and screen-reader navigation, sends its value, and clears it on success', async () => {
+    const send = vi.fn(async () => {});
+    const { container } = renderPage({ sendTestimonial: send });
+    const trap = container.querySelector<HTMLInputElement>(
+      `[name="${TESTIMONIAL_HONEYPOT_FIELD}"]`,
+    )!;
+    expect(trap.closest('[aria-hidden="true"]')).toBeInTheDocument();
+    expect(trap).toHaveAttribute('tabindex', '-1');
+    expect(trap).toHaveAttribute('autocomplete', 'off');
+    expect(screen.queryByRole('textbox', { name: 'Leave this empty' })).not.toBeInTheDocument();
+    fireEvent.change(trap, { target: { value: 'bot-filled-value' } });
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Full name'), 'Alex');
+    await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await fillCityAndService(user);
+    await user.type(screen.getByLabelText('Your testimonial'), 'Great work.');
+    await user.click(screen.getByLabelText(/You may publish my testimonial/));
+    await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          [TESTIMONIAL_HONEYPOT_FIELD]: 'bot-filled-value',
+        }),
+      ),
+    );
+    expect(trap).toHaveValue('');
+  });
+
+  it('clears the honeypot when the form is cancelled', async () => {
+    const { container } = renderPage();
+    const trap = container.querySelector<HTMLInputElement>(
+      `[name="${TESTIMONIAL_HONEYPOT_FIELD}"]`,
+    )!;
+    fireEvent.change(trap, { target: { value: 'bot-filled-value' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(trap).toHaveValue('');
+  });
+
   it('retains input and exposes server errors after a failed submission', async () => {
     const send = vi.fn(async () => {
       throw new Error('offline');
@@ -129,13 +194,44 @@ describe('TestimonialsPage', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Full name'), 'Alex');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await fillCityAndService(user);
     await user.type(screen.getByLabelText('Your testimonial'), 'Still here');
     await user.click(screen.getByLabelText(/You may publish my testimonial/));
     await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not be submitted/);
     expect(screen.getByLabelText('Full name')).toHaveValue('Alex');
+    expect(screen.getByLabelText('City')).toHaveValue(' Carmichael ');
+    expect(screen.getByLabelText('Service')).toHaveValue(' Refinishing ');
     expect(screen.getByLabelText(/You may publish my testimonial/)).toBeChecked();
   });
+
+  it.each([
+    [429, 'Too many submissions. Please wait a minute and try again.'],
+    [503, 'Testimonials are temporarily unavailable.'],
+  ] as const)(
+    'shows the HTTP %s message and allows retry without losing answers',
+    async (status, message) => {
+      const send = vi
+        .fn()
+        .mockRejectedValueOnce(new TestimonialSubmissionError(status, message))
+        .mockResolvedValueOnce(undefined);
+      renderPage({ sendTestimonial: send });
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText('Full name'), 'Alex');
+      await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+      await fillCityAndService(user);
+      await user.type(screen.getByLabelText('Your testimonial'), 'Great work.');
+      await user.click(screen.getByLabelText(/You may publish my testimonial/));
+      await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(message);
+      expect(screen.getByLabelText('Your testimonial')).toHaveValue('Great work.');
+      await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+      expect(await screen.findByText('Thank you. Your testimonial was sent.')).toBeInTheDocument();
+      expect(send).toHaveBeenCalledTimes(2);
+      expect(send.mock.calls[0]).toEqual(send.mock.calls[1]);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    },
+  );
 
   it('keeps over-limit text visible with an error and blocks submission until corrected', async () => {
     const send = vi.fn(async () => {});
@@ -143,6 +239,7 @@ describe('TestimonialsPage', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText('Full name'), 'Alex');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+    await fillCityAndService(user);
     await user.click(screen.getByLabelText(/You may publish my testimonial/));
     const field = screen.getByLabelText('Your testimonial');
     fireEvent.change(field, { target: { value: 'x'.repeat(501) } });
@@ -156,16 +253,37 @@ describe('TestimonialsPage', () => {
     await waitFor(() => expect(send).toHaveBeenCalledOnce());
   });
 
-  it('submits optional city and service and clears them after success', async () => {
+  it.each(['City', 'Service'] as const)(
+    'blocks submission and focuses a whitespace-only %s',
+    async (label) => {
+      const send = vi.fn(async () => {});
+      renderPage({ sendTestimonial: send });
+      const user = userEvent.setup();
+      await user.type(screen.getByLabelText('Full name'), 'Alex');
+      await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
+      await fillCityAndService(user);
+      await user.type(screen.getByLabelText('Your testimonial'), 'Great work.');
+      await user.click(screen.getByLabelText(/You may publish my testimonial/));
+      const field = screen.getByLabelText(label);
+      await user.clear(field);
+      await user.type(field, '   ');
+      await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
+      expect(await screen.findByText(`${label} is required.`)).toBeInTheDocument();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+      expect(field).toHaveFocus();
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('trims required city and service and clears them after success', async () => {
     const send = vi.fn(async () => {});
     renderPage({ sendTestimonial: send });
     const user = userEvent.setup();
-    expect(screen.getByLabelText('City (optional)')).not.toBeRequired();
-    expect(screen.getByLabelText('Service (optional)')).not.toBeRequired();
+    expect(screen.getByLabelText('City')).toBeRequired();
+    expect(screen.getByLabelText('Service')).toBeRequired();
     await user.type(screen.getByLabelText('Full name'), 'Alex');
     await user.type(screen.getByLabelText('Email address'), 'alex@example.com');
-    await user.type(screen.getByLabelText('City (optional)'), ' Carmichael ');
-    await user.type(screen.getByLabelText('Service (optional)'), ' Refinishing ');
+    await fillCityAndService(user);
     await user.type(screen.getByLabelText('Your testimonial'), 'Great work.');
     await user.click(screen.getByLabelText(/You may publish my testimonial/));
     await user.click(screen.getByRole('button', { name: 'Submit testimonial' }));
@@ -174,7 +292,7 @@ describe('TestimonialsPage', () => {
         expect.objectContaining({ city: 'Carmichael', service: 'Refinishing' }),
       ),
     );
-    expect(screen.getByLabelText('City (optional)')).toHaveValue('');
-    expect(screen.getByLabelText('Service (optional)')).toHaveValue('');
+    expect(screen.getByLabelText('City')).toHaveValue('');
+    expect(screen.getByLabelText('Service')).toHaveValue('');
   });
 });

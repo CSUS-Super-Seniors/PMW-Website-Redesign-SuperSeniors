@@ -19,7 +19,8 @@ export function createTestimonialsBackend(
         .eq('status', 'approved')
         .eq('can_publish', true)
         .order('submitted_at', { ascending: false })
-        .order('id', { ascending: false });
+        .order('id', { ascending: false })
+        .limit(50);
       if (error || !data) throw new Error('Testimonials could not be loaded.');
       return data as PublicTestimonial[];
     },
@@ -27,8 +28,8 @@ export function createTestimonialsBackend(
       const { error } = await client.from('testimonials').insert({
         name: input.name,
         email: input.email,
-        city: input.city || null,
-        service: input.service || null,
+        city: input.city,
+        service: input.service,
         body: input.body,
         can_publish: input.can_publish,
         photo_contact_ok: input.photo_contact_ok,
