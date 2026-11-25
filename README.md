@@ -593,6 +593,27 @@ Declined requests no longer appear in the estimate requests list (`GET /api/inqu
 total. There is no view of declined requests yet; a declined request can still be opened by its
 link.
 
+## Adding a customer (SSPMW-363)
+
+`/portal/customers/new` (owners only) adds a customer who called, texted or came from Yelp, Google
+or a referral. First and last name are required, plus a phone number or an email. The form and the
+server both check the details with `newCustomerSchema` in `shared/src/newCustomer.ts`, so a request
+that skips the browser check is refused the same way. There is no Social Security number field, and
+unknown fields are refused.
+
+`POST /api/customers` answers:
+
+- `201 { "customer": { "id", "firstName", "lastName" } }` when saved. The page goes back to the
+  customer list and shows a "was added" toast.
+- `400 { "error", "fieldErrors", "formErrors" }` for missing or invalid details.
+- `409 { "error", "field": "email" | "phone" }` when an active customer already has that email
+  or phone number. The page shows an "already exists" banner and marks the field.
+- `503` when the save fails. What the owner typed is kept so they can retry.
+
+The duplicate check is the same one Accept uses (`findMatchingCustomer` in
+`server/src/matchOrCreateCustomer.ts`, SSPMW-385): email ignoring case, then phone by its digits
+(`(916) 555-0142` matches `+1 916-555-0142`), skipping soft-deleted customers.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).

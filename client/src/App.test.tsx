@@ -354,6 +354,7 @@ describe('App', () => {
     '/portal/staff-accounts',
     '/portal/testimonials',
     '/portal/customers/123',
+    '/portal/customers/new',
   ])('shows the no-permission screen to an employee on %s', async (path) => {
     fakeServerRole('employee');
     renderApp(path, { session: staffSession });
@@ -373,6 +374,14 @@ describe('App', () => {
     expect(
       screen.queryByRole('heading', { name: 'You do not have access to this page' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('lets an owner open the Add customer page', async () => {
+    fakeServerRole('owner');
+    renderApp('/portal/customers/new', { session: staffSession });
+
+    expect(await screen.findByRole('heading', { name: 'Add customer' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Add customer' })).toBeInTheDocument();
   });
 
   it('shows a helpful 404 page for an unknown URL', () => {
