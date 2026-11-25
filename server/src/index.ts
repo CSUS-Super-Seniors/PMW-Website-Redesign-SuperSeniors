@@ -4,6 +4,7 @@ import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createAcceptInquiryBackend } from './acceptInquiry.js';
+import { createCustomerBackend } from './createCustomer.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
@@ -32,6 +33,7 @@ try {
     photos,
     inquiries: createInquiryBackend(supabase),
     acceptInquiry: createAcceptInquiryBackend(supabase),
+    createCustomer: createCustomerBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
       createEstimateSubmissionBackend(supabase, config.contactEmail, {
         ownerPortalOrigin: config.ownerPortalOrigin,
