@@ -230,7 +230,7 @@ test('a failed save is a 503 with a retry message', async () => {
   });
   // Only the fixed reason is logged, never the customer's details.
   assert.deepEqual(log.mock.calls, [
-    ['Add customer failed', { reason: 'Customer could not be created' }],
+    ['Add customer failed', { reason: 'Customer could not be found or created' }],
   ]);
   log.mockRestore();
 });

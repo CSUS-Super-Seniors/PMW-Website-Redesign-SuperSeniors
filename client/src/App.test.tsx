@@ -366,7 +366,7 @@ describe('App', () => {
 
   it('lets an owner open an owner-only URL', async () => {
     fakeServerRole('owner');
-    renderApp('/portal/customers', { session: staffSession });
+    renderApp('/portal/reports', { session: staffSession });
 
     expect(
       await screen.findByRole('heading', { name: 'This page is not built yet' }),
@@ -374,6 +374,19 @@ describe('App', () => {
     expect(
       screen.queryByRole('heading', { name: 'You do not have access to this page' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('links owners from Customers to Add customer until the list is built', async () => {
+    fakeServerRole('owner');
+    const user = userEvent.setup();
+    renderApp('/portal/customers', { session: staffSession });
+
+    const link = await screen.findByRole('link', { name: 'Add customer' });
+    expect(link).toHaveAttribute('href', '/portal/customers/new');
+
+    await user.click(link);
+
+    expect(await screen.findByRole('form', { name: 'Add customer' })).toBeInTheDocument();
   });
 
   it('lets an owner open the Add customer page', async () => {

@@ -610,9 +610,14 @@ unknown fields are refused.
   or phone number. The page shows an "already exists" banner and marks the field.
 - `503` when the save fails. What the owner typed is kept so they can retry.
 
-The duplicate check is the same one Accept uses (`findMatchingCustomer` in
-`server/src/matchOrCreateCustomer.ts`, SSPMW-385): email ignoring case, then phone by its digits
-(`(916) 555-0142` matches `+1 916-555-0142`), skipping soft-deleted customers.
+The duplicate check is the same find-or-create Accept uses (`matchOrCreateCustomer`, SSPMW-385,
+see "Finding or creating a customer"): email ignoring case, then phone by its digits
+(`(916) 555-0142` matches `+1 916-555-0142`), skipping soft-deleted customers. The check and the
+save happen in one locked database call, so two saves of the same new person at the same moment
+leave one customer and the other gets the 409.
+
+Until the customer list (K1, SSPMW-338) is built, `/portal/customers` shows a short placeholder with
+an "Add customer" button, so owners can reach the form from the Customers menu.
 
 ## Database
 
