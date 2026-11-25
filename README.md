@@ -629,7 +629,7 @@ A customer is **Repeat** once they have two or more jobs with status `completed`
 
 The rule is defined once, in the `public.customer_repeat_status` view: one row per active customer with `completed_job_count` and `is_repeat`. The customer list, customer profile, dashboard summary and customer report read it (join on `customer_id`) instead of counting jobs themselves, so they always agree. It uses the Row Level Security of `customers` and `jobs`, so only owners and the server can read it.
 
-In the portal, show the status with `CustomerStatusBadge` (`client/src/components/customers`), which takes `completedJobCount` from the view. The same threshold is `REPEAT_CUSTOMER_MIN_COMPLETED_JOBS` in `shared/src/customerRepeat.ts`; change it together with the view.
+In the portal, show the status with `CustomerStatusBadge` (`client/src/components/customers`), which takes `completedJobCount` from the view. The same threshold is `REPEAT_CUSTOMER_MIN_COMPLETED_JOBS` in `shared/src/customerRepeat.ts`; change it together with the view. `server/test/customerRepeatRule.test.ts` fails if the view's threshold or counted status stops matching the shared constants.
 
 ## Environments and sample data
 
