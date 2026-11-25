@@ -7,6 +7,7 @@ import { createServiceAreaBackend } from '../server/src/serviceArea.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
+import { createJobCreateBackend } from '../server/src/jobCreate.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import { createStaffBackend } from '../server/src/staff.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
@@ -40,6 +41,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   ),
   declineEmail: createDeclineEmailFromConfig(config),
   staff: createStaffBackend(supabase),
+  jobCreate: createJobCreateBackend(supabase),
 });
 
 export default app;
