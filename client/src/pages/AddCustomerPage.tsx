@@ -65,6 +65,9 @@ export default function AddCustomerPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [fieldErrors, setFieldErrors] = useState<NewCustomerFieldErrors>({});
   const [pageError, setPageError] = useState<PageError | null>(null);
+  // The field the server said already belongs to a customer. The browser can't check
+  // that, so the error stays until the owner changes that field or saves again.
+  const [duplicateField, setDuplicateField] = useState<'email' | 'phone' | null>(null);
   const [attempted, setAttempted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ field?: NewCustomerField } | null>(null);
@@ -84,7 +87,11 @@ export default function AddCustomerPage() {
   function updateField<K extends keyof Draft>(field: K, value: Draft[K]) {
     const next = { ...draft, [field]: value };
     setDraft(next);
-    setPageError(null);
+    const keepDuplicate = duplicateField !== null && duplicateField !== field;
+    if (!keepDuplicate) {
+      setPageError(null);
+      setDuplicateField(null);
+    }
     if (!attempted) return;
     // After the first save attempt, errors clear as soon as the field is fixed. Some
     // rules span two fields (phone or email), so both are rechecked.
@@ -93,6 +100,7 @@ export default function AddCustomerPage() {
     setFieldErrors((previous) => {
       const updated = { ...previous };
       for (const key of newCustomerFields) {
+        if (keepDuplicate && key === duplicateField) continue;
         if (key === field || previous[key]) updated[key] = nextErrors[key];
       }
       return updated;
@@ -117,6 +125,7 @@ export default function AddCustomerPage() {
     setAttempted(true);
     setFocusRequest(null);
     setPageError(null);
+    setDuplicateField(null);
 
     const local = newCustomerSchema.safeParse(draft);
     if (!local.success) {
@@ -145,6 +154,7 @@ export default function AddCustomerPage() {
           showErrors(result);
           return;
         case 'duplicate':
+          setDuplicateField(result.field);
           showErrors(
             { fieldErrors: { [result.field]: result.message }, formErrors: [] },
             {

@@ -211,6 +211,27 @@ describe('AddCustomerPage', () => {
     expect(screen.getByLabelText('First name')).toHaveValue('Ana');
   });
 
+  it('keeps the already exists error while other fields change, and clears it when that field changes', async () => {
+    const user = userEvent.setup();
+    stubFetch(409, { error: 'A customer with this phone number already exists.', field: 'phone' });
+    renderPage();
+
+    await fillRequired(user);
+    await user.click(save());
+    await screen.findByText('This customer already exists');
+
+    await user.type(screen.getByLabelText('Last name'), 'z');
+
+    expect(screen.getByText('This customer already exists')).toBeInTheDocument();
+    expect(screen.getByLabelText('Phone')).toHaveAttribute('aria-invalid', 'true');
+
+    await user.clear(screen.getByLabelText('Phone'));
+    await user.type(screen.getByLabelText('Phone'), '(916) 555-0199');
+
+    expect(screen.queryByText('This customer already exists')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Phone')).not.toHaveAttribute('aria-invalid');
+  });
+
   it('shows the failed save banner, keeps the typed details and lets the owner retry', async () => {
     const user = userEvent.setup();
     const fetchMock = vi
