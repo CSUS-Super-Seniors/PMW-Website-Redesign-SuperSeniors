@@ -37,6 +37,8 @@ export const routes = {
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
   portalInquiries: inquiryListPath,
+  portalJobs: '/portal/jobs',
+  portalNewJob: '/portal/jobs/new',
 } as const;
 
 export type NavLinkItem = { label: string; to: string };
