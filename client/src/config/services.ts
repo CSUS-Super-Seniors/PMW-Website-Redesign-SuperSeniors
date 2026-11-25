@@ -12,6 +12,8 @@ export type Service = {
   id: string;
   name: string;
   description: string;
+  /** Short Home card copy, kept beside the full Services description for Q8. */
+  summary?: string;
   commonJobs: readonly string[];
   /** What the photo shows. Shown in the placeholder until real photos arrive (SSPMW-49). */
   photoDescription: string;
@@ -21,6 +23,7 @@ export const services: readonly Service[] = [
   {
     id: 'furniture-repair',
     name: 'Furniture repair',
+    summary: 'Loose joints, broken legs, cracked frames, and wobbly chairs made sturdy again.',
     description:
       'Wobbly chairs, loose table legs, sticking drawers, and cracked frames. We fix the problem at the joint so the repair lasts.',
     commonJobs: [
@@ -34,6 +37,8 @@ export const services: readonly Service[] = [
   {
     id: 'refinishing',
     name: 'Refinishing',
+    summary:
+      'Worn, stained, or sun-faded finishes stripped and renewed so the wood looks its best.',
     description:
       'Stripping, sanding, staining, and sealing. We match the color you have or help you choose a new one.',
     commonJobs: [
@@ -46,6 +51,8 @@ export const services: readonly Service[] = [
   {
     id: 'restoration',
     name: 'Restoration',
+    summary:
+      'Antiques and family heirlooms carefully restored while keeping their original character.',
     description:
       'Careful work on antiques and family pieces, keeping the original wood, hardware, and character wherever we can.',
     commonJobs: ['Antique chairs and tables', 'Cabinets and chests', 'Family heirlooms'],

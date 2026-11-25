@@ -10,6 +10,10 @@ import {
   ESTIMATE_HONEYPOT_FIELD,
   ESTIMATE_RATE_LIMIT_MESSAGE,
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
+  PUBLIC_SERVICE_CITIES_PATH,
+  RECENT_GALLERY_PATH,
+  publicServiceCitiesSchema,
+  recentGallerySchema,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
@@ -28,12 +32,14 @@ import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inqu
 import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
+import type { PublicHomeBackend } from './publicHome.js';
 
 /** Where the final estimate request submits. */
 export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
 
 /** Optional backends. Each route answers 503 or 501 when its backend is missing. */
 export interface AppOptions {
+  publicHome?: PublicHomeBackend;
   serviceArea?: ServiceAreaBackend;
   photos?: EstimatePhotosBackend;
   /** The SSPMW-70 handler that saves the inquiry. It only sees requests that pass. */
@@ -80,6 +86,7 @@ export function createApp(
   backend: AuthBackend,
   contact?: ContactBackend,
   {
+    publicHome,
     serviceArea,
     estimateSubmit,
     photos,
@@ -110,6 +117,25 @@ export function createApp(
       allowedHeaders: ['Authorization', 'Content-Type'],
     }),
   );
+  // Public reads run before staff authentication and never share its Supabase session.
+  app.get(PUBLIC_SERVICE_CITIES_PATH, async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      if (!publicHome) throw new Error('Public content unavailable');
+      res.json(publicServiceCitiesSchema.parse({ cities: await publicHome.listServiceCities() }));
+    } catch {
+      res.status(503).json({ error: 'We could not load the cities we serve. Please try again.' });
+    }
+  });
+  app.get(RECENT_GALLERY_PATH, async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    try {
+      if (!publicHome) throw new Error('Public content unavailable');
+      res.json(recentGallerySchema.parse({ items: await publicHome.recentWork() }));
+    } catch {
+      res.status(503).json({ error: 'We could not load our recent work. Please try again.' });
+    }
+  });
   // Share SSPMW-95's bounded, proxy-aware limiter with the photo endpoints.
   app.use(
     '/api/estimates/photos',

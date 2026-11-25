@@ -48,7 +48,7 @@ describe('App', () => {
     renderApp('/');
 
     expect(
-      screen.getByRole('heading', { name: 'Peterson Mobile Woodworking' }),
+      screen.getByRole('heading', { name: 'Furniture repair that comes to you' }),
     ).toBeInTheDocument();
   });
 
@@ -204,7 +204,7 @@ describe('App', () => {
     renderApp('/estimate');
     await user.click(screen.getByRole('button', { name: 'Continue to photos' }));
     await user.click(screen.getByRole('link', { name: 'Cancel' }));
-    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    await screen.findByRole('heading', { name: 'Furniture repair that comes to you' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('keeps incomplete details on Cancel and clears the request after Discard', async () => {
@@ -255,7 +255,7 @@ describe('App', () => {
     await user.clear(screen.getByLabelText('First name'));
     await user.click(screen.getByLabelText('Contact me by text message'));
     await user.click(screen.getByRole('link', { name: 'Cancel' }));
-    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    await screen.findByRole('heading', { name: 'Furniture repair that comes to you' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
   it('does not treat the hidden honeypot as customer-entered data', async () => {
@@ -263,15 +263,15 @@ describe('App', () => {
     renderApp('/estimate');
     fireEvent.change(document.querySelector('[name="pmw_extra"]')!, { target: { value: 'bot' } });
     await user.click(screen.getByRole('link', { name: 'Cancel' }));
-    await screen.findByRole('heading', { name: 'Peterson Mobile Woodworking' });
+    await screen.findByRole('heading', { name: 'Furniture repair that comes to you' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
-  it('shows the business tagline on the home page, not developer notes', () => {
+  it('introduces the business on the home page', () => {
     renderApp('/');
 
     const main = screen.getByRole('main');
     expect(main).toHaveTextContent(
-      'Family-run furniture repair and restoration in Carmichael, CA since 2011.',
+      'Peterson Mobile Woodworking repairs, refinishes, and restores your furniture.',
     );
     expect(main).not.toHaveTextContent(/sprint|starter/i);
   });

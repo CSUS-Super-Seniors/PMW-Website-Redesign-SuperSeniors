@@ -3,8 +3,9 @@ import RequireAuth from './auth/RequireAuth';
 import RequireRole from './auth/RequireRole';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
-import { business, routes } from './config/site';
+import { routes } from './config/site';
 import ContactPage from './pages/ContactPage';
+import HomePage from './pages/HomePage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
 import InquiriesPage from './pages/InquiriesPage';
@@ -22,15 +23,6 @@ import { lazy, Suspense } from 'react';
 const EstimatePhotosPreviewPage = import.meta.env.DEV
   ? lazy(() => import('./pages/EstimatePhotosPreviewPage'))
   : null;
-
-function Home() {
-  return (
-    <main className="mx-auto w-full max-w-content px-4 py-10 xl:px-8">
-      <h1 className="type-h1">{business.name}</h1>
-      <p className="type-body-lg mt-2 text-neutral-600">{business.tagline}</p>
-    </main>
-  );
-}
 
 export default function App() {
   return (
@@ -54,7 +46,7 @@ export default function App() {
       </Route>
 
       <Route element={<PublicLayout />}>
-        <Route path="/" element={<Home />} />
+        <Route path="/" element={<HomePage />} />
 
         {/* Implemented public pages */}
         <Route path={routes.requestEstimate} element={<EstimateRequestPage />} />

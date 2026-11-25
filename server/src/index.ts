@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createAcceptInquiryBackend } from './acceptInquiry.js';
 import { createServiceAreaBackend } from './serviceArea.js';
+import { createPublicHomeBackend } from './publicHome.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
 import { createStaffBackend } from './staff.js';
@@ -28,6 +29,7 @@ try {
   }
   const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
+    publicHome: createPublicHomeBackend(supabase),
     serviceArea: createServiceAreaBackend(supabase),
     photos,
     inquiries: createInquiryBackend(supabase),
