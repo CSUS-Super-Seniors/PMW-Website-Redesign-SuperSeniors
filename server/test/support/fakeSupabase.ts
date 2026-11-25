@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeEmail, normalizePhone } from '../../src/customerMatch.js';
 
 // An in-memory stand-in for the Supabase client, shared by the server tests that
 // read and write customers, inquiries and jobs. It supports only the query builder
@@ -196,8 +197,66 @@ export function fakeDatabase(
     },
   };
 
+  // Mirrors public.find_or_create_customer: oldest active customer by email, then by
+  // phone digits, otherwise insert (when p_create). A failing "customers:select" or
+  // "customers:insert" makes the call fail the way the database would.
+  async function rpc(name: string, args: Row) {
+    if (failing.includes(`rpc:${name}`)) return { data: null, error: new Error('database down') };
+    if (name !== 'find_or_create_customer') {
+      return { data: null, error: new Error(`Unknown function ${name}`) };
+    }
+    if (failing.includes('customers:select')) {
+      return { data: null, error: new Error('database down') };
+    }
+    const email = normalizeEmail(args.p_email as string | null);
+    const phone = normalizePhone(args.p_phone as string | null);
+    const active = tables.customers
+      .filter((row) => (row.deleted_at ?? null) === null)
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+    const byEmail = email
+      ? active.find((row) => normalizeEmail(row.email as string) === email)
+      : null;
+    if (byEmail)
+      return {
+        data: [{ customer_id: byEmail.id, matched_by: 'email', created: false }],
+        error: null,
+      };
+    const byPhone = phone
+      ? active.find((row) => normalizePhone(row.phone as string) === phone)
+      : null;
+    if (byPhone)
+      return {
+        data: [{ customer_id: byPhone.id, matched_by: 'phone', created: false }],
+        error: null,
+      };
+    if (!args.p_create) return { data: [], error: null };
+    if (failing.includes('customers:insert')) {
+      return { data: null, error: new Error('database down') };
+    }
+    hooks.beforeInsert?.('customers', tables);
+    counter += 1;
+    const phoneText = typeof args.p_phone === 'string' ? args.p_phone.trim() : '';
+    const row: Row = {
+      id: `customers-${counter}`,
+      created_at: new Date(2030, 0, 1, 0, 0, counter).toISOString(),
+      deleted_at: null,
+      first_name: args.p_first_name,
+      last_name: args.p_last_name,
+      email,
+      phone: phoneText || null,
+      address: args.p_address ?? null,
+      city: args.p_city ?? null,
+      preferred_contact: args.p_preferred_contact ?? null,
+      text_ok: args.p_text_ok ?? false,
+      lead_source: args.p_lead_source ?? null,
+      next_follow_up_date: args.p_next_follow_up_date ?? null,
+    };
+    tables.customers.push(row);
+    return { data: [{ customer_id: row.id, matched_by: null, created: true }], error: null };
+  }
+
   return {
-    client: { from, storage } as unknown as Pick<SupabaseClient, 'from' | 'storage'>,
+    client: { from, storage, rpc } as unknown as Pick<SupabaseClient, 'from' | 'storage' | 'rpc'>,
     tables,
     files,
   };

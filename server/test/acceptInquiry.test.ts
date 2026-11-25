@@ -217,7 +217,7 @@ test('a failed customer lookup stops the accept before anything is created', asy
 
   await assert.rejects(
     createAcceptInquiryBackend(db.client).acceptInquiry(INQUIRY_ID),
-    /Customer lookup failed/,
+    /Customer could not be found or created/,
   );
 
   assert.equal(db.tables.jobs.length, 0);

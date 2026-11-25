@@ -612,6 +612,10 @@ Local Auth settings come from `supabase/config.toml`. After changing that file, 
 
 Locally, Auth emails such as password resets never leave your computer. Open http://127.0.0.1:54324 to read them. `npm run verify:password-reset` checks the whole reset flow against local Supabase: the email arrives, its link opens `/staff/reset-password`, the new password signs in, the old one stops working, and a used link shows as expired. It uses the `server/.env` values.
 
+### Finding or creating a customer (SSPMW-385)
+
+Code that needs "this person's customer record, or a new one" calls `matchOrCreateCustomer` (`server/src/matchOrCreateCustomer.ts`), which runs the database function `public.find_or_create_customer`. It matches an active customer by email (ignoring case and spaces), then by phone digits (`(916) 555-0142` matches `+1 916-555-0142`), and inserts a new customer only when neither matches. The lookup and the insert happen in one transaction that locks on the email and phone, so two requests for the same new person at the same moment leave one customer. Accept and create job and Add customer both use it. Only the server's service role can call the function; its tests are in `supabase/tests/find_or_create_customer.test.sql`.
+
 ### Making schema changes
 
 1. `npm run db:start` to start the local database (Docker Desktop must be running).
