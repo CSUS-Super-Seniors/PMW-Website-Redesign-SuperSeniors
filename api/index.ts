@@ -4,6 +4,7 @@ import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
 import { createServiceAreaBackend } from '../server/src/serviceArea.js';
+import { createPublicHomeBackend } from '../server/src/publicHome.js';
 import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
@@ -28,6 +29,7 @@ const contact = config.contactEmail
 
 const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
 const app = createApp(config, createAuthBackend(config, supabase), contact, {
+  publicHome: createPublicHomeBackend(supabase),
   serviceArea: createServiceAreaBackend(supabase),
   photos,
   inquiries: createInquiryBackend(supabase),

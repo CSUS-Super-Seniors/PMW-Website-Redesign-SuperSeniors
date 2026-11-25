@@ -88,6 +88,48 @@ Copy `client/.env.example` to `client/.env`. Only variables that start with `VIT
 | `VITE_SUPABASE_URL`             | Supabase API URL. Locally, use the URL from `npx supabase status`         |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key. Locally, use the one from `npx supabase status` |
 
+## Home page (SSPMW-225)
+
+Home uses the public layout and the same service content as Services
+(`client/src/config/services.ts`). The hero photo is a labeled placeholder until real
+brand photos arrive. Recent work never substitutes sample photos for published work.
+
+- Public `GET /api/public/service-cities` returns `{ cities: string[] }`, using only
+  active `service_cities` rows, alphabetically ordered. It can also be reused by the
+  Service Area page (SSPMW-234).
+- Public `GET /api/public/gallery/recent` returns `{ items: [{ id, beforeUrl, afterUrl }] }`.
+  It shows up to three jobs with published photos, newest publication first, choosing
+  the latest published photo for each stage. Either URL can be null when only one stage
+  is published. The opaque `id` is a media UUID, never a job identifier.
+- Both reads use `Cache-Control: no-store` and query on each page visit or retry. A new
+  city, gallery publication or removal is reflected on the next fetch. They return 503
+  on backend failure; an empty successful response has its own state. Each Home section
+  loads and retries independently, and the estimate and call links remain usable.
+- The Express and Vercel entry points both install these readers. Apply migration
+  `20261124000000_public_home_gallery.sql` with the normal migration workflow before
+  using the gallery endpoint. This does not publish existing private files.
+
+### Gallery publishing handoff (SSPMW-264 / SSPMW-204)
+
+`job_media.storage_path` continues to identify the private original. Publishing must
+copy the approved photo into the **public `gallery` bucket**, using the anonymous key
+`media/<job_media UUID>.<extension>` (`jpg`, `jpeg`, `png`, `webp`, or `avif`). After the
+copy succeeds, set `gallery_storage_path` to that key and `in_gallery` to true in the
+same database update. The existing consent check belongs to the publishing flow.
+
+A database trigger sets `gallery_published_at` on publication or public-copy replacement;
+re-publishing an old upload makes it recent again. Removing an item sets `in_gallery`
+to false and the publishing flow removes its public copy. Home stops returning it on
+the next fetch, including when only one half of a pair remains published. Do not
+change `storage_path` to point to the public copy.
+
+The server-only `recent_gallery_work()` RPC groups photos by job internally. It never
+returns customer data, job identifiers, private paths or filenames. Anonymous and
+authenticated clients cannot call this RPC directly. Legacy `in_gallery` flags with no
+public-copy path stay hidden until publishing supplies that path. Publishing/removal UI
+and the full Gallery page remain in their respective stories; Home's integration can be
+verified with test fixtures until those are ready.
+
 ## Estimate request Step 1 validation (SSPMW-297)
 
 `@pmw/validation` provides the shared Step 1 schema, issue options, TypeScript types, and error
