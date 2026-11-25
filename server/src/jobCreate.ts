@@ -14,8 +14,27 @@ export type CreateJobResult =
   | { outcome: 'customer-not-found' }
   | { outcome: 'time-conflict'; conflict: JobConflict };
 
+export interface CustomerOption {
+  id: string;
+  /** First and last name, as the dropdown shows it. */
+  name: string;
+  city: string | null;
+}
+
 export interface JobCreateBackend {
   createJob(input: JobCreateData): Promise<CreateJobResult>;
+  /** The customers an owner can pick from when creating a job. */
+  listCustomerOptions(): Promise<CustomerOption[]>;
+}
+
+/** The dropdown lists this many customers at most. Past this, it needs a search box. */
+const CUSTOMER_OPTIONS_LIMIT = 500;
+
+interface CustomerRow {
+  id: string;
+  first_name: string;
+  last_name: string;
+  city: string | null;
 }
 
 /** The steps every new job starts with, as on Figma's job page. The last one carries the due date. */
@@ -120,6 +139,22 @@ export function createJobCreateBackend(client: Pick<SupabaseClient, 'from'>): Jo
         outcome: 'created',
         job: { id: job.id as string, jobNumber: job.job_number as string },
       };
+    },
+    async listCustomerOptions() {
+      const { data, error } = await client
+        .from('customers')
+        .select('id,first_name,last_name,city')
+        .is('deleted_at', null)
+        .order('last_name', { ascending: true })
+        .order('first_name', { ascending: true })
+        .limit(CUSTOMER_OPTIONS_LIMIT);
+      if (error || !data) throw new Error('Customer options lookup failed');
+
+      return (data as unknown as CustomerRow[]).map((row) => ({
+        id: row.id,
+        name: `${row.first_name} ${row.last_name}`.trim(),
+        city: row.city,
+      }));
     },
   };
 }

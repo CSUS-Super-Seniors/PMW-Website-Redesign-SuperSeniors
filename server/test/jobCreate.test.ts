@@ -217,3 +217,37 @@ describe('createJob', () => {
     await expect(createJobCreateBackend(client).createJob(fullJob)).rejects.toThrow();
   });
 });
+
+describe('listCustomerOptions', () => {
+  it('lists customers that are not deleted, by name, with the city', async () => {
+    const { client, calls } = fakeClient({
+      'customers:select': {
+        data: [
+          { id: 'c1', first_name: 'Margaret', last_name: 'Lewis', city: 'Carmichael' },
+          { id: 'c2', first_name: 'Robert', last_name: 'Chen', city: null },
+        ],
+        error: null,
+      },
+    });
+
+    expect(await createJobCreateBackend(client).listCustomerOptions()).toEqual([
+      { id: 'c1', name: 'Margaret Lewis', city: 'Carmichael' },
+      { id: 'c2', name: 'Robert Chen', city: null },
+    ]);
+    expect(find(calls, 'customers', 'select')[0]!.filters).toEqual([['is', 'deleted_at', null]]);
+  });
+
+  it('returns an empty list when there are no customers', async () => {
+    const { client } = fakeClient({ 'customers:select': { data: [], error: null } });
+    expect(await createJobCreateBackend(client).listCustomerOptions()).toEqual([]);
+  });
+
+  it('fails when the lookup fails', async () => {
+    const { client } = fakeClient({
+      'customers:select': { data: null, error: { message: 'database down' } },
+    });
+    await expect(createJobCreateBackend(client).listCustomerOptions()).rejects.toThrow(
+      'Customer options lookup failed',
+    );
+  });
+});

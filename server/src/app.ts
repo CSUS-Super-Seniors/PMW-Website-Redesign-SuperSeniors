@@ -362,6 +362,22 @@ export function createApp(
       res.status(503).json({ error: 'The job could not be saved. Please try again.' });
     }
   });
+  // The customers an owner can pick in the new job form (SSPMW-317).
+  api.get('/job-customers', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!jobCreate) {
+      res.status(503).json({ error: 'Customers are temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json({ customers: await jobCreate.listCustomerOptions() });
+    } catch (error) {
+      console.error('Customer options failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'Customers could not be loaded. Please try again.' });
+    }
+  });
   api.get('/inquiries', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const query = parseInquiryListQuery(req.query);

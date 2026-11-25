@@ -3,7 +3,7 @@ import request from 'supertest';
 import type { JobCreateData } from '@pmw/validation';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
-import type { CreateJobResult, JobCreateBackend } from '../src/jobCreate.js';
+import type { CreateJobResult, CustomerOption, JobCreateBackend } from '../src/jobCreate.js';
 import type { AuthBackend } from '../src/supabase.js';
 
 const config = loadConfig({
@@ -20,13 +20,17 @@ function authBackend(role = 'owner'): AuthBackend {
 }
 
 // Records every job it is asked to create, and answers with a result or an error.
-function fakeJobs(answer: CreateJobResult | Error) {
+function fakeJobs(answer: CreateJobResult | Error, options: CustomerOption[] | Error = []) {
   const calls: JobCreateData[] = [];
   const backend: JobCreateBackend = {
     createJob: async (input) => {
       calls.push(input);
       if (answer instanceof Error) throw answer;
       return answer;
+    },
+    listCustomerOptions: async () => {
+      if (options instanceof Error) throw options;
+      return options;
     },
   };
   return { backend, calls };
@@ -187,5 +191,44 @@ describe('POST /api/jobs', () => {
 
   it('answers 503 when no backend is configured', async () => {
     await postJob(undefined, valid).expect(503);
+  });
+});
+
+function getOptions(backend: JobCreateBackend | undefined, role = 'owner') {
+  return request(createApp(config, authBackend(role), undefined, { jobCreate: backend }))
+    .get('/api/job-customers')
+    .set('Authorization', 'Bearer valid');
+}
+
+describe('GET /api/job-customers', () => {
+  const customers = [{ id: customerId, name: 'Margaret Lewis', city: 'Carmichael' }];
+
+  it('gives an owner the customers to pick from', async () => {
+    const { backend } = fakeJobs(created, customers);
+    const response = await getOptions(backend).expect(200);
+    expect(response.body).toEqual({ customers });
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
+
+  it('refuses an employee', async () => {
+    const { backend } = fakeJobs(created, customers);
+    await getOptions(backend, 'employee').expect(403);
+  });
+
+  it('refuses a request without a token', async () => {
+    const { backend } = fakeJobs(created, customers);
+    const app = createApp(config, authBackend(), undefined, { jobCreate: backend });
+    await request(app).get('/api/job-customers').expect(401);
+  });
+
+  it('answers 503 without leaking details when the lookup fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { backend } = fakeJobs(created, new Error('connection to db.secret.example refused'));
+    const response = await getOptions(backend).expect(503);
+    expect(response.text).not.toContain('secret');
+  });
+
+  it('answers 503 when no backend is configured', async () => {
+    await getOptions(undefined).expect(503);
   });
 });
