@@ -623,6 +623,14 @@ Locally, Auth emails such as password resets never leave your computer. Open htt
 
 If a migration changes a table that `supabase/seed.sql` fills (customers, customer_notes, inquiries, jobs, job_steps), update the seed in the same pull request. `db:reset` runs it after the migrations.
 
+### Repeat customers (SSPMW-379)
+
+A customer is **Repeat** once they have two or more jobs with status `completed`. Scheduled, in-progress and cancelled jobs do not count, and nobody sets Repeat by hand.
+
+The rule is defined once, in the `public.customer_repeat_status` view: one row per active customer with `completed_job_count` and `is_repeat`. The customer list, customer profile, dashboard summary and customer report read it (join on `customer_id`) instead of counting jobs themselves, so they always agree. It uses the Row Level Security of `customers` and `jobs`, so only owners and the server can read it.
+
+In the portal, show the status with `CustomerStatusBadge` (`client/src/components/customers`), which takes `completedJobCount` from the view. The same threshold is `REPEAT_CUSTOMER_MIN_COMPLETED_JOBS` in `shared/src/customerRepeat.ts`; change it together with the view.
+
 ## Environments and sample data
 
 Each environment has its own Supabase project, so no two environments share a database. A project's ref is the part of its URL before `.supabase.co`.
