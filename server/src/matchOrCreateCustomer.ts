@@ -1,11 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { escapeLike, normalizeEmail, phoneLookupTail, phonesMatch } from './customerMatch.js';
 
 // The one place that decides whether a person is already a customer (K9, SSPMW-385).
-// Accept and create job (G3) uses matchOrCreateCustomer, and Add customer (K3) uses
-// findMatchingCustomer on its own, so both screens agree on what a duplicate is.
+// Accept and create job (G3) and Add customer (K3) both call matchOrCreateCustomer, so
+// they agree on what a duplicate is.
+//
+// The matching and the insert happen inside the database function
+// public.find_or_create_customer (supabase/migrations/20261125010000_find_or_create_customer.sql),
+// which locks on the person's email and phone while it works. Two requests for the
+// same new person at the same moment therefore leave one customer, not two.
 
-export type CustomerClient = Pick<SupabaseClient, 'from'>;
+export type CustomerClient = Pick<SupabaseClient, 'rpc'>;
 
 export interface CustomerContact {
   email?: string | null;
@@ -34,92 +38,74 @@ export interface NewCustomer {
   nextFollowUpDate?: string | null;
 }
 
-export interface MatchOrCreateResult {
-  id: string;
-  /** True only when this call inserted the customer, so a caller can undo it on failure. */
+export type MatchOrCreateResult =
+  { id: string; created: true } | { id: string; created: false; matchedBy: CustomerMatchField };
+
+interface FindOrCreateRow {
+  customer_id: string;
+  matched_by: CustomerMatchField | null;
   created: boolean;
 }
 
-async function findByEmail(client: CustomerClient, email: string) {
-  const { data, error } = await client
-    .from('customers')
-    .select('id')
-    .is('deleted_at', null)
-    .ilike('email', escapeLike(email))
-    .order('created_at', { ascending: true })
-    .limit(1);
-  if (error) throw new Error('Customer lookup failed');
-  return data && data.length > 0 ? (data[0].id as string) : null;
+export const FIND_OR_CREATE_CUSTOMER = 'find_or_create_customer';
+
+function rpcArgs(customer: NewCustomer, create: boolean) {
+  return {
+    p_first_name: customer.firstName,
+    p_last_name: customer.lastName,
+    p_email: customer.email ?? null,
+    p_phone: customer.phone ?? null,
+    p_address: customer.address ?? null,
+    p_city: customer.city ?? null,
+    p_preferred_contact: customer.preferredContact ?? null,
+    p_text_ok: customer.textOk ?? false,
+    p_lead_source: customer.leadSource ?? null,
+    p_next_follow_up_date: customer.nextFollowUpDate ?? null,
+    p_create: create,
+  };
 }
 
-async function findByPhone(client: CustomerClient, phone: string) {
-  const tail = phoneLookupTail(phone);
-  if (!tail) return null;
-  // The database can't compare digits only, so narrow by the last four digits and
-  // confirm the full number in code.
-  const { data, error } = await client
-    .from('customers')
-    .select('id,phone')
-    .is('deleted_at', null)
-    .ilike('phone', `%${tail}%`)
-    .order('created_at', { ascending: true });
-  if (error) throw new Error('Customer lookup failed');
-  const match = (data ?? []).find((customer) => phonesMatch(customer.phone, phone));
-  return match ? (match.id as string) : null;
+async function callFindOrCreate(client: CustomerClient, customer: NewCustomer, create: boolean) {
+  const { data, error } = await client.rpc(FIND_OR_CREATE_CUSTOMER, rpcArgs(customer, create));
+  if (error) {
+    // One database call does the lookup and the save, so a failure can be either.
+    throw new Error(create ? 'Customer could not be found or created' : 'Customer lookup failed');
+  }
+  const rows = (Array.isArray(data) ? data : data ? [data] : []) as FindOrCreateRow[];
+  return rows[0] ?? null;
 }
 
 /**
  * The oldest active (not soft-deleted) customer with the same email, otherwise the
- * oldest with the same phone digits. Email is checked first because it is the more
- * specific of the two. Returns null when neither matches or both are missing.
+ * oldest with the same phone digits. Returns null when neither matches or both are
+ * missing. Never creates anything.
  */
 export async function findMatchingCustomer(
   client: CustomerClient,
   contact: CustomerContact,
 ): Promise<CustomerMatch | null> {
-  const email = normalizeEmail(contact.email);
-  if (email) {
-    const id = await findByEmail(client, email);
-    if (id) return { id, matchedBy: 'email' };
-  }
-  if (contact.phone) {
-    const id = await findByPhone(client, contact.phone);
-    if (id) return { id, matchedBy: 'phone' };
-  }
-  return null;
-}
-
-/** Inserts a customer and returns the new id. Email is stored trimmed and in lower case. */
-export async function insertCustomer(client: CustomerClient, customer: NewCustomer) {
-  const { data, error } = await client
-    .from('customers')
-    .insert({
-      first_name: customer.firstName,
-      last_name: customer.lastName,
-      email: normalizeEmail(customer.email),
-      phone: customer.phone ?? null,
-      address: customer.address ?? null,
-      city: customer.city ?? null,
-      preferred_contact: customer.preferredContact ?? null,
-      text_ok: customer.textOk ?? false,
-      lead_source: customer.leadSource ?? null,
-      next_follow_up_date: customer.nextFollowUpDate ?? null,
-    })
-    .select('id')
-    .single();
-  if (error || !data?.id) throw new Error('Customer could not be created');
-  return data.id as string;
+  const row = await callFindOrCreate(
+    client,
+    { firstName: '', lastName: '', email: contact.email, phone: contact.phone },
+    false,
+  );
+  if (!row?.customer_id || !row.matched_by) return null;
+  return { id: row.customer_id, matchedBy: row.matched_by };
 }
 
 /**
- * Finds the existing customer for these details, or creates one. Running it twice for
- * the same person returns the same id and leaves one customer record.
+ * Finds the existing customer for these details, or creates one, in one atomic step.
+ * Running it twice, or twice at the same time, for the same person returns the same id
+ * and leaves one customer record. `created` is true only when this call inserted the
+ * customer, so a caller can undo it on failure.
  */
 export async function matchOrCreateCustomer(
   client: CustomerClient,
   customer: NewCustomer,
 ): Promise<MatchOrCreateResult> {
-  const match = await findMatchingCustomer(client, customer);
-  if (match) return { id: match.id, created: false };
-  return { id: await insertCustomer(client, customer), created: true };
+  const row = await callFindOrCreate(client, customer, true);
+  if (!row?.customer_id) throw new Error('Customer could not be found or created');
+  if (row.created) return { id: row.customer_id, created: true };
+  if (!row.matched_by) throw new Error('Customer could not be found or created');
+  return { id: row.customer_id, created: false, matchedBy: row.matched_by };
 }

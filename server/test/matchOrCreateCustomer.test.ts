@@ -1,12 +1,19 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  FIND_OR_CREATE_CUSTOMER,
   findMatchingCustomer,
-  insertCustomer,
   matchOrCreateCustomer,
   type NewCustomer,
 } from '../src/matchOrCreateCustomer.js';
 import { fakeDatabase, type Row } from './support/fakeSupabase.js';
+
+// The matching rules themselves run in the database function find_or_create_customer
+// and are tested against Postgres in supabase/tests/find_or_create_customer.test.sql,
+// including that simultaneous calls leave one customer. These tests cover the
+// TypeScript side: the arguments sent, how answers and errors are read, and Accept's
+// use of it through the in-memory fake, which mirrors the function.
 
 function existing(overrides: Row = {}): Row {
   return {
@@ -155,7 +162,7 @@ test('matchOrCreateCustomer returns the matched customer and creates nothing', a
 
   const result = await matchOrCreateCustomer(db.client, details());
 
-  assert.deepEqual(result, { id: 'customer-existing', created: false });
+  assert.deepEqual(result, { id: 'customer-existing', created: false, matchedBy: 'email' });
   assert.equal(db.tables.customers.length, 1);
 });
 
@@ -203,7 +210,7 @@ test('matchOrCreateCustomer run twice for the same person leaves one record', as
   );
 
   assert.equal(db.tables.customers.length, 1);
-  assert.deepEqual(second, { id: first.id, created: false });
+  assert.deepEqual(second, { id: first.id, created: false, matchedBy: 'email' });
 });
 
 test('matchOrCreateCustomer creates a new record when the only match was deleted', async () => {
@@ -216,10 +223,14 @@ test('matchOrCreateCustomer creates a new record when the only match was deleted
   assert.equal(db.tables.customers.length, 2);
 });
 
-test('insertCustomer fills optional columns with their defaults', async () => {
+test('matchOrCreateCustomer fills optional columns with their defaults', async () => {
   const db = fakeDatabase({});
 
-  await insertCustomer(db.client, { firstName: 'Ana', lastName: 'Ruiz', phone: '9165550100' });
+  await matchOrCreateCustomer(db.client, {
+    firstName: 'Ana',
+    lastName: 'Ruiz',
+    phone: '9165550100',
+  });
 
   const created = db.tables.customers[0];
   assert.equal(created.email, null);
@@ -228,11 +239,83 @@ test('insertCustomer fills optional columns with their defaults', async () => {
   assert.equal(created.next_follow_up_date, null);
 });
 
-test('insertCustomer reports a failed save', async () => {
+test('matchOrCreateCustomer reports a failed save', async () => {
   const db = fakeDatabase({}, ['customers:insert']);
 
   await assert.rejects(
-    insertCustomer(db.client, { firstName: 'Ana', lastName: 'Ruiz' }),
-    /Customer could not be created/,
+    matchOrCreateCustomer(db.client, { firstName: 'Ana', lastName: 'Ruiz' }),
+    /Customer could not be found or created/,
   );
+});
+
+// A stand-in client that records the call and answers with a fixed result.
+function recordingClient(answer: { data: unknown; error: Error | null }) {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const client = {
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      calls.push({ name, args });
+      return answer;
+    },
+  } as unknown as Pick<SupabaseClient, 'rpc'>;
+  return { client, calls };
+}
+
+test('matchOrCreateCustomer sends every detail to the database function in one call', async () => {
+  const { client, calls } = recordingClient({
+    data: [{ customer_id: 'id-1', matched_by: null, created: true }],
+    error: null,
+  });
+
+  const result = await matchOrCreateCustomer(client, details({ nextFollowUpDate: '2026-12-01' }));
+
+  assert.deepEqual(result, { id: 'id-1', created: true });
+  assert.deepEqual(calls, [
+    {
+      name: FIND_OR_CREATE_CUSTOMER,
+      args: {
+        p_first_name: 'Margaret',
+        p_last_name: 'Lewis',
+        p_email: 'Margaret@Example.com',
+        p_phone: '(916) 555-0142',
+        p_address: '4821 Fair Oaks Blvd',
+        p_city: 'Carmichael',
+        p_preferred_contact: 'text',
+        p_text_ok: true,
+        p_lead_source: 'google',
+        p_next_follow_up_date: '2026-12-01',
+        p_create: true,
+      },
+    },
+  ]);
+});
+
+test('findMatchingCustomer asks the database function not to create anything', async () => {
+  const { client, calls } = recordingClient({ data: [], error: null });
+
+  const match = await findMatchingCustomer(client, { email: 'a@example.com' });
+
+  assert.equal(match, null);
+  assert.equal(calls[0].args.p_create, false);
+});
+
+test('matchOrCreateCustomer refuses an answer without a customer id', async () => {
+  const { client } = recordingClient({ data: [], error: null });
+
+  await assert.rejects(
+    matchOrCreateCustomer(client, details()),
+    /Customer could not be found or created/,
+  );
+});
+
+test('matchOrCreateCustomer accepts a single-row answer as well as a list', async () => {
+  const { client } = recordingClient({
+    data: { customer_id: 'id-2', matched_by: 'phone', created: false },
+    error: null,
+  });
+
+  assert.deepEqual(await matchOrCreateCustomer(client, details()), {
+    id: 'id-2',
+    created: false,
+    matchedBy: 'phone',
+  });
 });

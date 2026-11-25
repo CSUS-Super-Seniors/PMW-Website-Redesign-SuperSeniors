@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { matchOrCreateCustomer } from './matchOrCreateCustomer.js';
 
-type InquiryClient = Pick<SupabaseClient, 'from' | 'storage'>;
+type InquiryClient = Pick<SupabaseClient, 'from' | 'storage' | 'rpc'>;
 
 export interface AcceptedJob {
   id: string;
