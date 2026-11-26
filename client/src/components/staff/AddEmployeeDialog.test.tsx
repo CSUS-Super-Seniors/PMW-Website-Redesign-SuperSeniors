@@ -207,6 +207,11 @@ describe('Add employee dialog (SSPMW-276)', () => {
     expect(within(sent).getByText("Sam Rivera's invite was sent again")).toBeInTheDocument();
     expect(
       within(sent).getByText(
+        'Their role is still Employee. You chose Owner, but sending an invite again does not change the role.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(sent).getByText(
         'We emailed sam@example.com a new link to set a password. The link works for 1 hour.',
       ),
     ).toBeInTheDocument();
@@ -215,6 +220,17 @@ describe('Add employee dialog (SSPMW-276)', () => {
         'They were already invited, so their details did not change. They stay on the staff list as Employee.',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('does not warn about the role when a resent invite chose the same role', async () => {
+    fakeServer(jsonResponse(201, { staff: sam, resent: true }));
+    const { user } = await openDialog();
+
+    await fillIn(user, { role: 'Employee' });
+    await send(user);
+
+    await screen.findByRole('dialog', { name: 'Invite sent' });
+    expect(screen.queryByText(/Their role is still/)).not.toBeInTheDocument();
   });
 
   it('shows the server field error when the email already has an account', async () => {

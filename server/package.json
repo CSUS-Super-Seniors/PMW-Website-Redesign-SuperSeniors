@@ -19,6 +19,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "test:seed": "vitest run test/seed.db.test.ts",
     "test:submission-db": "vitest run test/estimateSubmission.db.test.ts",
+    "pretest:invite-flow": "npm run build -w @pmw/validation",
     "test:invite-flow": "vitest run test/staffInvite.flow.test.ts"
   },
   "dependencies": {

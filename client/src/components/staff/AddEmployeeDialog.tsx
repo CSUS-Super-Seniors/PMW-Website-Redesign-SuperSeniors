@@ -41,7 +41,12 @@ function AddEmployeeDialogBody({ onClose, onInvited }: AddEmployeeDialogProps) {
   const [errors, setErrors] = useState<StaffInviteFieldErrors>({});
   const [problem, setProblem] = useState<RequestProblem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [invited, setInvited] = useState<{ staff: StaffAccount; resent: boolean } | null>(null);
+  const [invited, setInvited] = useState<{
+    staff: StaffAccount;
+    resent: boolean;
+    /** The role the owner picked, which a re-invite does not apply. */
+    chosenRole: StaffAccount['role'];
+  } | null>(null);
   // A ref as well as state, so Escape pressed in the same tick still sees it.
   const sending = useRef(false);
 
@@ -91,7 +96,7 @@ function AddEmployeeDialogBody({ onClose, onInvited }: AddEmployeeDialogProps) {
     }
 
     if (result.status === 'ok') {
-      setInvited({ staff: result.staff, resent: result.resent });
+      setInvited({ staff: result.staff, resent: result.resent, chosenRole: parsed.data.role });
       onInvited?.(result.staff);
     } else if (result.status === 'invalid') {
       setErrors(result.fieldErrors);
@@ -107,8 +112,9 @@ function AddEmployeeDialogBody({ onClose, onInvited }: AddEmployeeDialogProps) {
   }
 
   if (invited) {
-    const { staff, resent } = invited;
+    const { staff, resent, chosenRole } = invited;
     const role = roleLabels[staff.role];
+    const roleIgnored = resent && chosenRole !== staff.role;
     return (
       <Modal isOpen onClose={onClose} title="Invite sent">
         <div className="flex flex-col gap-6">
@@ -118,6 +124,12 @@ function AddEmployeeDialogBody({ onClose, onInvited }: AddEmployeeDialogProps) {
             }
             message={`We emailed ${staff.email ?? 'them'} a${resent ? ' new' : ''} link to set a password. The link works for 1 hour.`}
           />
+          {roleIgnored && (
+            <p className="type-label text-dark-brown">
+              Their role is still {role}. You chose {roleLabels[chosenRole]}, but sending an invite
+              again does not change the role.
+            </p>
+          )}
           <p className="type-body text-dark-brown">
             {resent
               ? `They were already invited, so their details did not change. They stay on the staff list as ${role}.`
