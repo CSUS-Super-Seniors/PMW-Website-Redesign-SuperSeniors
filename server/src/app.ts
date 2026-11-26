@@ -30,6 +30,7 @@ import {
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inquiries.js';
+import { parseJobListQuery, type JobBackend } from './jobs.js';
 import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
@@ -53,6 +54,8 @@ export interface AppOptions {
   declineEmail?: DeclineEmailSender;
   /** Saves a customer the owner adds by hand (SSPMW-363). */
   createCustomer?: CreateCustomerBackend;
+  /** Reads the jobs list for staff (SSPMW-305). */
+  jobs?: JobBackend;
 }
 
 /** `skipped` means the owner chose not to email the customer. */
@@ -95,6 +98,7 @@ export function createApp(
     declineEmail,
     staff,
     createCustomer: createCustomerBackend,
+    jobs,
   }: AppOptions = {},
 ) {
   const app = express();
@@ -287,6 +291,25 @@ export function createApp(
   });
   api.get('/schedule', (_req, res) => {
     res.status(501).json({ error: 'Not implemented' });
+  });
+  api.get('/jobs', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const query = parseJobListQuery(req.query);
+    if (!query.ok) {
+      res.status(400).json({ error: query.error });
+      return;
+    }
+    if (!jobs) {
+      res.status(503).json({ error: 'Jobs are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const { page, pageSize, status, search } = query;
+      const result = await jobs.listJobs({ page, pageSize, status, search });
+      res.json({ ...result, page, pageSize });
+    } catch {
+      res.status(503).json({ error: 'Jobs are temporarily unavailable.' });
+    }
   });
   api.get('/jobs/:jobId', (_req, res) => {
     res.status(501).json({ error: 'Not implemented' });
