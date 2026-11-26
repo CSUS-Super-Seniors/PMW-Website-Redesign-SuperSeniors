@@ -61,6 +61,10 @@ insert into public.testimonials (id, name, email, rating, body, can_publish, sta
   ('00000000-0000-0000-0000-0000000000b1', 'Happy Customer', 'happy@test.local', 5, 'Great work', true, 'approved'),
   ('00000000-0000-0000-0000-0000000000b2', 'Pending Customer', 'pending@test.local', 4, 'Waiting', true, 'pending');
 
+-- Public submissions collect no rating in C8.
+insert into public.testimonials (id, name, email, body, can_publish, photo_contact_ok, status)
+values ('00000000-0000-0000-0000-0000000000b3', 'No Rating Customer', 'no-rating@test.local', 'Submitted without a rating', true, false, 'pending');
+
 -- Owner. Confirms the test data is visible to someone, so the empty results
 -- below come from RLS and not from missing rows.
 set local role authenticated;
@@ -75,7 +79,7 @@ select results_eq(
 );
 select results_eq(
   'select count(email)::int from public.testimonials',
-  array[2],
+  array[3],
   'Owner can read testimonial emails'
 );
 select results_eq(

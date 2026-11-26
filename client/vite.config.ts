@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   test: {
+    env: { VITE_TESTIMONIALS_STUB: '' },
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
   },

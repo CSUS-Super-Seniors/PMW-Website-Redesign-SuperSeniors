@@ -15,6 +15,7 @@ import {
   createEstimateSubmitHandler,
 } from './estimateSubmission.js';
 import { createDeclineEmailFromConfig } from './declineEmail.js';
+import { createTestimonialsBackend } from './testimonials.js';
 try {
   const config = loadConfig();
   warnIfOwnerNoticeUnavailable(config.ownerPortalOrigin);
@@ -41,6 +42,7 @@ try {
     ),
     declineEmail: createDeclineEmailFromConfig(config),
     staff: createStaffBackend(supabase),
+    testimonials: createTestimonialsBackend(supabase),
     jobs: createJobBackend(supabase),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);

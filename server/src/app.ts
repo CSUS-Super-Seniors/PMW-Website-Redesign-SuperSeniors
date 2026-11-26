@@ -10,6 +10,9 @@ import {
   ESTIMATE_HONEYPOT_FIELD,
   ESTIMATE_RATE_LIMIT_MESSAGE,
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
+  mapTestimonialErrors,
+  testimonialSubmissionSchema,
+  TESTIMONIAL_HONEYPOT_FIELD,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
@@ -29,6 +32,7 @@ import { parseJobListQuery, type JobBackend } from './jobs.js';
 import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
+import type { TestimonialsBackend } from './testimonials.js';
 
 /** Where the final estimate request submits. */
 export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
@@ -43,6 +47,7 @@ export interface AppOptions {
   inquiries?: InquiryBackend;
   /** Reads the owner's staff accounts list (SSPMW-121). */
   staff?: StaffBackend;
+  testimonials?: TestimonialsBackend;
   /** Accepts an estimate request and turns it into a job (SSPMW-156). */
   acceptInquiry?: AcceptInquiryBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
@@ -90,6 +95,7 @@ export function createApp(
     acceptInquiry: acceptBackend,
     declineEmail,
     staff,
+    testimonials,
     jobs,
   }: AppOptions = {},
 ) {
@@ -270,6 +276,60 @@ export function createApp(
         console.error('Contact notification failed', { contactMessageId: saved.id });
       }
       res.status(201).json({ success: true });
+    },
+  );
+  app.get(
+    '/api/public/testimonials',
+    createRateLimiter({
+      max: 60,
+      windowMs: 60_000,
+      message: 'Too many testimonial requests. Please wait a minute and try again.',
+    }),
+    async (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      if (!testimonials) {
+        res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
+        return;
+      }
+      try {
+        res.json({ testimonials: await testimonials.listApproved() });
+      } catch {
+        res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
+      }
+    },
+  );
+  app.post(
+    '/api/public/testimonials',
+    createRateLimiter({
+      max: 5,
+      windowMs: 60_000,
+      message: 'Too many submissions. Please wait a minute and try again.',
+    }),
+    (_req, res, next) => {
+      res.set('Cache-Control', 'no-store');
+      next();
+    },
+    express.json({ limit: '16kb', strict: false }),
+    rejectHoneypot(TESTIMONIAL_HONEYPOT_FIELD, 'Testimonial submission'),
+    async (req, res) => {
+      const result = testimonialSubmissionSchema.safeParse(req.body);
+      if (!result.success) {
+        res.status(400).json({
+          error: 'Please check the testimonial form.',
+          ...mapTestimonialErrors(result.error),
+        });
+        return;
+      }
+      if (!testimonials) {
+        res.status(503).json({ error: 'Testimonials are temporarily unavailable.' });
+        return;
+      }
+      try {
+        await testimonials.submit(result.data);
+        res.status(201).json({ success: true });
+      } catch {
+        res.status(503).json({ error: 'Your testimonial could not be saved. Please try again.' });
+      }
     },
   );
   app.use(express.json({ limit: '1mb' }));

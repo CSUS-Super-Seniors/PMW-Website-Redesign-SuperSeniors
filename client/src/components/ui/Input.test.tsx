@@ -30,6 +30,15 @@ describe('Input', () => {
     expect(input).toHaveAttribute('aria-describedby', error.id);
   });
 
+  it('supports an error icon and keeps the message associated with the input', () => {
+    render(<Input id="city" label="City" error="City is required." showErrorIcon />);
+    const input = screen.getByLabelText('City');
+    expect(input).toHaveAttribute('aria-describedby', 'city-error');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert').querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(input).not.toHaveAttribute('showerroricon');
+  });
+
   it('does not display an error when none is provided', () => {
     render(<Input label="Email address" />);
 

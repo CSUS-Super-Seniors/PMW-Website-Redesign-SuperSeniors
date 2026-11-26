@@ -62,6 +62,16 @@ describe('App', () => {
     expect(screen.queryByRole('heading', { name: 'Staff login' })).not.toBeInTheDocument();
   });
 
+  it('opens the public testimonials page inside the shared layout', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ testimonials: [] })));
+    renderApp('/testimonials');
+    expect(screen.getByRole('heading', { name: 'Testimonials' })).toBeInTheDocument();
+    // jsdom treats the page's nested header as another banner; use the named navigation.
+    expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Footer' })).toBeInTheDocument();
+    expect(await screen.findByText(/No testimonials have been published yet/)).toBeInTheDocument();
+  });
+
   it('opens photos only after service-area approval and preserves details on Back', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) =>
       url === '/api/estimates/service-area'

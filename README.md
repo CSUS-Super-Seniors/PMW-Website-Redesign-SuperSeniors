@@ -737,6 +737,42 @@ These development-only previews simulate the sending and result states without
 saving or emailing messages. Leave the value empty to use the API.
 Production builds always use the API, even if a stub is configured.
 
+## Testimonials preview
+
+For local screenshots, set `VITE_TESTIMONIALS_STUB=success` in
+`client/.env.development.local`, restart `npm run dev:client`, and open
+`/testimonials`. Three sample cards show five stars, four stars, and five outlined
+stars labeled "Not rated". Submitting the form simulates sending and success without calling the
+API or saving a database row. Use `failure` to preview a failed submission.
+
+Remove the value and restart Vite to use the real API again. Production builds
+always use the API and exclude these sample cards.
+Before running browser tests, stop any preview-enabled Vite server so Playwright
+can start its own server with the preview disabled.
+
+### Public testimonial protections
+
+- `GET /api/public/testimonials` returns at most the newest 50 approved records
+  with publish permission, ordered by submission time and ID. Older records are
+  retained in the database but are not returned by this endpoint. Pagination is
+  not implemented.
+- List reads allow 60 requests per visitor per minute; submissions retain their
+  separate limit of five per visitor per minute. Over-limit requests receive
+  HTTP 429, a friendly message, `Retry-After`, and `Cache-Control: no-store`,
+  without calling the testimonial database backend.
+- The form sends the off-screen `pmw_extra` honeypot. It is excluded from keyboard
+  and screen-reader navigation and marked `autocomplete="off"`. A filled trap gets the
+  normal-looking success reply, but nothing is saved. Empty or omitted traps
+  proceed to validation; the field is removed before validation and never saved.
+  Logs record only a generic dropped-submission message, without customer data.
+
+These protections reuse the estimate form's rate limiter and honeypot middleware.
+IPv4 addresses count individually; IPv6 visitors count by /64 network. Counters
+live in each server instance's memory, reset on restart, and are separate across
+instances. The existing `TRUST_PROXY_HOPS` setting must match the hosting proxy
+so requests are counted against the visitor's address. The honeypot catches bots
+that fill hidden fields; scripts that omit it still face the submission limit.
+
 ## Workflow
 
 1. Pull the latest `main`, then create a branch named after the Jira key: `SSPMW-123-short-description`.

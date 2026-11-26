@@ -1,13 +1,16 @@
 import { useId, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { InlineFieldError } from './InlineFieldError';
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: ReactNode;
   error?: string;
+  showErrorIcon?: boolean;
 }
 
 export function Textarea({
   label,
   error,
+  showErrorIcon = false,
   id,
   className = '',
   disabled = false,
@@ -49,11 +52,7 @@ export function Textarea({
         aria-describedby={describedBy || undefined}
       />
 
-      {error && (
-        <p id={errorId} className="type-body-sm text-error" role="alert">
-          {error}
-        </p>
-      )}
+      <InlineFieldError id={errorId} message={error} showIcon={showErrorIcon} />
     </div>
   );
 }

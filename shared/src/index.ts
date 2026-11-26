@@ -7,4 +7,5 @@ export * from './estimatePhotos.js';
 export * from './business.js';
 export * from './estimateSubmission.js';
 export * from './inquiryLinks.js';
+export * from './testimonial.js';
 export * from './customerRepeat.js';
