@@ -13,6 +13,8 @@ import {
   requestPasswordReset,
   updatePassword,
   userIdFromAccessToken,
+  forwardInviteLanding,
+  inviteFlag,
 } from './passwordReset';
 import { fakeAccessToken } from './testTokens';
 
@@ -146,7 +148,7 @@ describe('readResetLink', () => {
 
   it('finds a recovery link and the account it was sent to', () => {
     expect(readResetLink(`${page}#access_token=${token}&refresh_token=def&type=recovery`)).toEqual({
-      kind: 'recovery',
+      kind: 'valid',
       userId: 'user-123',
     });
   });
@@ -177,6 +179,53 @@ describe('readResetLink', () => {
 
   it('returns none for a plain visit', () => {
     expect(readResetLink(page)).toEqual({ kind: 'none' });
+  });
+});
+
+describe('readResetLink for invite links (SSPMW-271)', () => {
+  const page = 'http://localhost:5173/staff/set-password';
+  const token = fakeAccessToken('user-123');
+
+  it('finds an invite link and the account it was sent to', () => {
+    expect(readResetLink(`${page}#access_token=${token}&type=invite`, 'invite')).toEqual({
+      kind: 'valid',
+      userId: 'user-123',
+    });
+  });
+
+  it('does not accept a recovery link as an invite, or an invite as a recovery link', () => {
+    expect(readResetLink(`${page}#access_token=${token}&type=recovery`, 'invite')).toEqual({
+      kind: 'none',
+    });
+    expect(readResetLink(`${page}#access_token=${token}&type=invite`)).toEqual({ kind: 'none' });
+  });
+
+  it('finds an expired invite link', () => {
+    expect(readResetLink(`${page}#error=access_denied&error_code=otp_expired`, 'invite')).toEqual({
+      kind: 'error',
+    });
+  });
+});
+
+describe('forwardInviteLanding', () => {
+  it('sends an invite link that landed on the Site URL to Set password, keeping the hash', () => {
+    const location = { pathname: '/', hash: '#access_token=abc&type=invite', replace: vi.fn() };
+
+    expect(forwardInviteLanding(location)).toBe(true);
+    expect(location.replace).toHaveBeenCalledWith(
+      '/staff/set-password#access_token=abc&type=invite',
+    );
+  });
+
+  it('leaves Set password itself, other links and plain visits alone', () => {
+    for (const location of [
+      { pathname: '/staff/set-password', hash: '#access_token=abc&type=invite', replace: vi.fn() },
+      { pathname: '/', hash: '#access_token=abc&type=recovery', replace: vi.fn() },
+      { pathname: '/portal/schedule', hash: '', replace: vi.fn() },
+    ]) {
+      expect(forwardInviteLanding(location)).toBe(false);
+      expect(location.replace).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -227,12 +276,14 @@ describe('handleRecoveryEvent', () => {
     expect(location.replace).not.toHaveBeenCalled();
   });
 
-  it('forgets the reset link when the person signs out', () => {
+  it('forgets the reset and invite links when the person signs out', () => {
     recoveryFlag.set('girlie');
+    inviteFlag.set('girlie');
 
     handleRecoveryEvent('SIGNED_OUT', null, { pathname: '/', replace: vi.fn() });
 
     expect(recoveryFlag.get()).toBeNull();
+    expect(inviteFlag.get()).toBeNull();
   });
 
   it('ignores every other auth event', () => {

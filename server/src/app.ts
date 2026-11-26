@@ -8,6 +8,8 @@ import {
   mapEstimateStep1Errors,
   serviceAreaCheckSchema,
   ESTIMATE_HONEYPOT_FIELD,
+  mapStaffInviteErrors,
+  staffInviteSchema,
   ESTIMATE_RATE_LIMIT_MESSAGE,
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
 } from '@pmw/validation';
@@ -16,6 +18,7 @@ import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import type { StaffBackend } from './staff.js';
+import type { StaffInviteBackend } from './staffInvite.js';
 import type { AcceptInquiryBackend } from './acceptInquiry.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
@@ -43,6 +46,8 @@ export interface AppOptions {
   inquiries?: InquiryBackend;
   /** Reads the owner's staff accounts list (SSPMW-121). */
   staff?: StaffBackend;
+  /** Invites a new staff member by email (SSPMW-271). */
+  staffInvite?: StaffInviteBackend;
   /** Accepts an estimate request and turns it into a job (SSPMW-156). */
   acceptInquiry?: AcceptInquiryBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
@@ -90,6 +95,7 @@ export function createApp(
     acceptInquiry: acceptBackend,
     declineEmail,
     staff,
+    staffInvite,
     jobs,
   }: AppOptions = {},
 ) {
@@ -356,6 +362,46 @@ export function createApp(
       res.json({ staff: await staff.listStaff() });
     } catch {
       res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+    }
+  });
+  // Add employee (SSPMW-271). requireOwner above refuses employees before the body is
+  // read, and the body is checked here even though the dialog already checked it.
+  api.post('/staff/invite', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const parsed = staffInviteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Please check the invite details.',
+        ...mapStaffInviteErrors(parsed.error),
+      });
+      return;
+    }
+    if (!staffInvite) {
+      res.status(503).json({ error: 'Inviting staff is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await staffInvite.inviteStaff(parsed.data);
+      if (result.outcome === 'already-exists') {
+        res.status(409).json({
+          error: 'An account with this email already exists.',
+          fieldErrors: { email: 'An account with this email already exists.' },
+        });
+        return;
+      }
+      if (result.outcome === 'rate-limited') {
+        res.status(429).json({
+          error: 'Too many emails were sent in the last hour. Please try again later.',
+        });
+        return;
+      }
+      res.status(201).json({ staff: result.staff, resent: result.resent });
+    } catch (error) {
+      // Fixed messages only: never log the invited person's name or email.
+      console.error('Staff invite failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'The invite could not be sent. Please try again.' });
     }
   });
   api.post('/inquiries/:inquiryId/accept', async (req, res) => {

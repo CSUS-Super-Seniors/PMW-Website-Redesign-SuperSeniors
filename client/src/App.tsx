@@ -14,6 +14,7 @@ import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
+import SetPasswordRoute from './pages/SetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
 import StaffAccountsPage from './pages/StaffAccountsPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
@@ -40,6 +41,7 @@ export default function App() {
       <Route path={routes.staffSessionExpired} element={<SessionExpiredPage />} />
       <Route path={routes.staffForgotPassword} element={<ForgotPasswordRoute />} />
       <Route path={routes.staffResetPassword} element={<ResetPasswordRoute />} />
+      <Route path={routes.staffSetPassword} element={<SetPasswordRoute />} />
       <Route element={<RequireAuth />}>
         <Route path="/portal" element={<PortalLayout />}>
           <Route element={<RequireRole allowed={['owner']} />}>

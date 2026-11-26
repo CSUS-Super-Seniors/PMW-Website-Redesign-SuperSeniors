@@ -6,6 +6,7 @@ import {
   type AuthError,
   type Session,
 } from '@supabase/supabase-js';
+import { STAFF_SET_PASSWORD_PATH } from '@pmw/validation';
 import { routes } from '../config/site';
 import { getSupabase } from './supabaseClient';
 
@@ -14,11 +15,14 @@ export type UpdatePasswordResult =
   'success' | 'same-password' | 'weak-password' | 'expired' | 'unreachable' | 'failed';
 
 /**
- * What the link that opened the Reset password page says. A recovery link
- * carries the id of the person it was sent to, so the page can check that the
- * signed-in session really came from that link.
+ * What the link that opened the Reset password or Set password page says. A
+ * working link carries the id of the person it was sent to, so the page can
+ * check that the signed-in session really came from that link.
  */
-export type ResetLink = { kind: 'recovery'; userId: string } | { kind: 'error' } | { kind: 'none' };
+export type ResetLink = { kind: 'valid'; userId: string } | { kind: 'error' } | { kind: 'none' };
+
+/** `recovery` is a password reset email; `invite` is the Add employee email (SSPMW-271). */
+export type PasswordLinkType = 'recovery' | 'invite';
 
 /** Staff passwords need at least this many characters. Keep in sync with supabase/config.toml. */
 export const MIN_PASSWORD_LENGTH = 8;
@@ -94,15 +98,15 @@ export function userIdFromAccessToken(token: string): string | null {
 }
 
 /**
- * Reads the reset link from the address bar. Supabase sends people back with
- * `#access_token=...&type=recovery` on success, or `error_code=otp_expired` (in
- * the hash or the query) when the link is expired or already used. This relies
- * on the implicit flow pinned in supabaseClient.ts.
+ * Reads the reset or invite link from the address bar. Supabase sends people back
+ * with `#access_token=...&type=recovery` (or `type=invite`) on success, or
+ * `error_code=otp_expired` (in the hash or the query) when the link is expired or
+ * already used. This relies on the implicit flow pinned in supabaseClient.ts.
  *
  * Read it on the first render: Supabase clears the hash once it has signed the
  * person in.
  */
-export function readResetLink(href: string): ResetLink {
+export function readResetLink(href: string, type: PasswordLinkType = 'recovery'): ResetLink {
   const url = new URL(href);
   const hash = new URLSearchParams(url.hash.replace(/^#/, ''));
   const query = url.searchParams;
@@ -110,41 +114,69 @@ export function readResetLink(href: string): ResetLink {
     (key) => hash.has(key) || query.has(key),
   );
   if (hasError) return { kind: 'error' };
-  if (hash.get('type') !== 'recovery') return { kind: 'none' };
+  if (hash.get('type') !== type) return { kind: 'none' };
   const userId = userIdFromAccessToken(hash.get('access_token') ?? '');
-  return userId ? { kind: 'recovery', userId } : { kind: 'none' };
+  return userId ? { kind: 'valid', userId } : { kind: 'none' };
 }
 
-const RECOVERY_KEY = 'pmw-password-recovery';
+export interface LinkFlag {
+  set(userId: string): void;
+  get(): string | null;
+  clear(): void;
+}
+
+function sessionFlag(key: string): LinkFlag {
+  return {
+    set(userId) {
+      try {
+        window.sessionStorage.setItem(key, userId);
+      } catch {
+        // Storage can be blocked (private mode). The form still works until a reload.
+      }
+    },
+    get() {
+      try {
+        return window.sessionStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    clear() {
+      try {
+        window.sessionStorage.removeItem(key);
+      } catch {
+        // Nothing to clear if storage is blocked.
+      }
+    },
+  };
+}
 
 /**
  * Remembers, for this tab only, which account arrived from a reset link, so
  * reloading the Reset password page keeps the form instead of the expired state.
  * The page only trusts it when the signed-in session belongs to the same account.
  */
-export const recoveryFlag = {
-  set(userId: string) {
-    try {
-      window.sessionStorage.setItem(RECOVERY_KEY, userId);
-    } catch {
-      // Storage can be blocked (private mode). The form still works until a reload.
-    }
-  },
-  get(): string | null {
-    try {
-      return window.sessionStorage.getItem(RECOVERY_KEY);
-    } catch {
-      return null;
-    }
-  },
-  clear() {
-    try {
-      window.sessionStorage.removeItem(RECOVERY_KEY);
-    } catch {
-      // Nothing to clear if storage is blocked.
-    }
-  },
-};
+export const recoveryFlag = sessionFlag('pmw-password-recovery');
+
+/** The same for an invite link and the Set password page (SSPMW-271). */
+export const inviteFlag = sessionFlag('pmw-password-invite');
+
+/**
+ * Sends an invite link that landed on the wrong page to Set password, keeping the
+ * hash so the page can read it. This happens when a hosted project's Redirect URLs
+ * do not list Set password and Supabase falls back to the Site URL. Call it before
+ * the Supabase client starts, because the client clears the hash. Returns true
+ * when it moved the page.
+ */
+export function forwardInviteLanding(
+  location: Pick<Location, 'pathname' | 'hash' | 'replace'> = window.location,
+): boolean {
+  if (location.pathname === STAFF_SET_PASSWORD_PATH) return false;
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (hash.get('type') !== 'invite') return false;
+  location.replace(`${STAFF_SET_PASSWORD_PATH}${location.hash}`);
+  return true;
+}
 
 /**
  * Called for every Supabase auth event. When a reset link signs someone in,
@@ -159,6 +191,7 @@ export function handleRecoveryEvent(
 ) {
   if (event === 'SIGNED_OUT') {
     recoveryFlag.clear();
+    inviteFlag.clear();
     return;
   }
   if (event !== 'PASSWORD_RECOVERY' || !session) return;
