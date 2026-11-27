@@ -4,11 +4,15 @@ import RequireRole from './auth/RequireRole';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { business, routes } from './config/site';
+import AddCustomerPage from './pages/AddCustomerPage';
 import ContactPage from './pages/ContactPage';
+import CustomersSection from './components/customers/CustomersSection';
+import CustomersComingSoonPage from './pages/CustomersComingSoonPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
 import InquiriesPage from './pages/InquiriesPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
+import JobsPage from './pages/JobsPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NewJobPage from './pages/NewJobPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -46,11 +50,16 @@ export default function App() {
             <Route path="inquiries" element={<InquiriesPage />} />
             <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="jobs/new" element={<NewJobPage />} />
-            <Route path="customers/*" element={<PlaceholderPage />} />
+            <Route path="customers" element={<CustomersSection />}>
+              <Route index element={<CustomersComingSoonPage />} />
+              <Route path="new" element={<AddCustomerPage />} />
+              <Route path="*" element={<PlaceholderPage />} />
+            </Route>
             <Route path="reports/*" element={<PlaceholderPage />} />
             <Route path="staff-accounts" element={<StaffAccountsPage />} />
             <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
+          <Route path="schedule" element={<JobsPage />} />
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>

@@ -7,6 +7,10 @@ import {
   estimateStep1Schema,
   mapEstimateStep1Errors,
   serviceAreaCheckSchema,
+  newCustomerSchema,
+  mapNewCustomerErrors,
+  CUSTOMER_EXISTS_MESSAGES,
+  CUSTOMER_SAVE_FAILED_MESSAGE,
   ESTIMATE_HONEYPOT_FIELD,
   ESTIMATE_RATE_LIMIT_MESSAGE,
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
@@ -22,6 +26,7 @@ import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import type { StaffBackend } from './staff.js';
 import type { AcceptInquiryBackend } from './acceptInquiry.js';
+import type { CreateCustomerBackend } from './createCustomer.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
@@ -30,6 +35,7 @@ import {
 } from './serviceArea.js';
 import { PhotoRequestError, type EstimatePhotosBackend } from './estimatePhotos.js';
 import { parseInquiryListQuery, UUID_PATTERN, type InquiryBackend } from './inquiries.js';
+import { parseJobListQuery, type JobBackend } from './jobs.js';
 import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
@@ -54,6 +60,10 @@ export interface AppOptions {
   jobCreate?: JobCreateBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
   declineEmail?: DeclineEmailSender;
+  /** Saves a customer the owner adds by hand (SSPMW-363). */
+  createCustomer?: CreateCustomerBackend;
+  /** Reads the jobs list for staff (SSPMW-305). */
+  jobs?: JobBackend;
 }
 
 /** `skipped` means the owner chose not to email the customer. */
@@ -96,6 +106,8 @@ export function createApp(
     jobCreate,
     declineEmail,
     staff,
+    createCustomer: createCustomerBackend,
+    jobs,
   }: AppOptions = {},
 ) {
   const app = express();
@@ -289,6 +301,25 @@ export function createApp(
   api.get('/schedule', (_req, res) => {
     res.status(501).json({ error: 'Not implemented' });
   });
+  api.get('/jobs', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const query = parseJobListQuery(req.query);
+    if (!query.ok) {
+      res.status(400).json({ error: query.error });
+      return;
+    }
+    if (!jobs) {
+      res.status(503).json({ error: 'Jobs are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const { page, pageSize, status, search } = query;
+      const result = await jobs.listJobs({ page, pageSize, status, search });
+      res.json({ ...result, page, pageSize });
+    } catch {
+      res.status(503).json({ error: 'Jobs are temporarily unavailable.' });
+    }
+  });
   api.get('/jobs/:jobId', (_req, res) => {
     res.status(501).json({ error: 'Not implemented' });
   });
@@ -407,6 +438,39 @@ export function createApp(
       res.json({ staff: await staff.listStaff() });
     } catch {
       res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+    }
+  });
+  // Add customer (SSPMW-363). The body is checked with the same schema as the form, and
+  // the duplicate check runs here on the server, so neither can be skipped.
+  api.post('/customers', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const parsed = newCustomerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Please check the customer details.',
+        ...mapNewCustomerErrors(parsed.error),
+      });
+      return;
+    }
+    if (!createCustomerBackend) {
+      res.status(503).json({ error: CUSTOMER_SAVE_FAILED_MESSAGE });
+      return;
+    }
+    try {
+      const result = await createCustomerBackend.createCustomer(parsed.data);
+      if (result.outcome === 'duplicate') {
+        res
+          .status(409)
+          .json({ error: CUSTOMER_EXISTS_MESSAGES[result.matchedBy], field: result.matchedBy });
+        return;
+      }
+      res.status(201).json({ customer: result.customer });
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details, so this is safe to log.
+      console.error('Add customer failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: CUSTOMER_SAVE_FAILED_MESSAGE });
     }
   });
   api.post('/inquiries/:inquiryId/accept', async (req, res) => {

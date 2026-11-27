@@ -1,5 +1,6 @@
 import { createEstimatePhotosBackend } from '../server/src/estimatePhotos.js';
 import { createInquiryBackend } from '../server/src/inquiries.js';
+import { createJobBackend } from '../server/src/jobs.js';
 import { createApp } from '../server/src/app.js';
 import { loadConfig } from '../server/src/config.js';
 import { createContactBackend } from '../server/src/contact.js';
@@ -8,6 +9,7 @@ import { createDeclineEmailFromConfig } from '../server/src/declineEmail.js';
 import { createAuthBackend, createSupabaseAdmin } from '../server/src/supabase.js';
 import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
 import { createJobCreateBackend } from '../server/src/jobCreate.js';
+import { createCustomerBackend } from '../server/src/createCustomer.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import { createStaffBackend } from '../server/src/staff.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
@@ -33,6 +35,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   photos,
   inquiries: createInquiryBackend(supabase),
   acceptInquiry: createAcceptInquiryBackend(supabase),
+  createCustomer: createCustomerBackend(supabase),
   estimateSubmit: createEstimateSubmitHandler(
     createEstimateSubmissionBackend(supabase, config.contactEmail, {
       ownerPortalOrigin: config.ownerPortalOrigin,
@@ -42,6 +45,7 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   declineEmail: createDeclineEmailFromConfig(config),
   staff: createStaffBackend(supabase),
   jobCreate: createJobCreateBackend(supabase),
+  jobs: createJobBackend(supabase),
 });
 
 export default app;
