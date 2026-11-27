@@ -548,7 +548,10 @@ describe('photo HTTP endpoints', () => {
     });
     const app = createApp(config, auth, undefined, {
       photos: storage.backend,
-      serviceArea: { isInServiceArea: async (city) => city === 'Carmichael' },
+      serviceArea: {
+        listActiveCities: async () => [],
+        isInServiceArea: async (city) => city === 'Carmichael',
+      },
       estimateSubmit: submit,
     });
     await request(app)

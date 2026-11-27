@@ -292,6 +292,25 @@ describe('App', () => {
     );
   });
 
+  it('shows Service Area inside the public layout with active navigation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(Response.json({ cities: [{ name: 'Carmichael' }] })),
+    );
+    renderApp('/service-area');
+    expect(screen.getByRole('heading', { name: 'Where we work' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+        name: 'Service Area',
+      }),
+    ).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('list', { name: 'Cities we serve' })).toHaveTextContent(
+      'Carmichael',
+    );
+  });
+
   it('sends a signed-out visitor from a portal URL to staff login', () => {
     renderApp('/portal/dashboard');
 

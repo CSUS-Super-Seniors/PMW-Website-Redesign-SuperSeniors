@@ -29,8 +29,9 @@ try {
     );
   }
   const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+  const serviceArea = createServiceAreaBackend(supabase);
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
-    serviceArea: createServiceAreaBackend(supabase),
+    serviceArea,
     photos,
     inquiries: createInquiryBackend(supabase),
     acceptInquiry: createAcceptInquiryBackend(supabase),

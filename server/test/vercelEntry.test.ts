@@ -183,6 +183,9 @@ describe('Vercel startup contact wiring', () => {
     expect(outside.body).toEqual({ inServiceArea: false });
     expect(db.from).toHaveBeenCalledWith('service_cities');
     expect(eq).toHaveBeenCalledWith('is_active', true);
+    const cities = await request(app).get('/api/service-cities').expect(200);
+    expect(cities.body).toEqual({ cities: [{ name: 'Carmichael' }] });
+    expect(cities.headers['cache-control']).toBe('no-store');
   });
 
   it('trusts the one Vercel proxy so each visitor gets their own estimate rate limit', async () => {

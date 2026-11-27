@@ -210,8 +210,28 @@ export function createApp(
       res.json({ valid: true });
     },
   );
-  // Step 1 asks this before the customer can continue. It only answers yes or no,
-  // so the city list itself is never sent to the browser.
+  // Public display endpoint; unlike the estimate check it intentionally lists cities.
+  app.get(
+    '/api/service-cities',
+    createRateLimiter({
+      max: 60,
+      windowMs: 60_000,
+      maxVisitors: 10_000,
+      message: 'Too many city list requests. Please wait a minute and retry.',
+    }),
+    async (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      try {
+        if (!serviceArea) throw new Error('Missing service area backend');
+        res.json({ cities: await serviceArea.listActiveCities() });
+      } catch {
+        res
+          .status(503)
+          .json({ error: 'We could not load the cities we serve. Please try again or call us.' });
+      }
+    },
+  );
+  // Step 1 still answers only yes/no; its response never includes the city list.
   app.post(
     '/api/estimates/service-area',
     // Generous for a customer who corrects their city, but each check reads the database.
