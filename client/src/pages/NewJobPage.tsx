@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import {
   JOB_ESTIMATED_HOURS_MAX,
   JOB_ITEM_MAX,
@@ -15,7 +15,7 @@ import {
 import { createJob } from '../api/createJob';
 import { useCustomerOptions } from '../api/useCustomerOptions';
 import { useAuth } from '../auth/AuthContext';
-import { Button, ErrorBanner, Input, Select, SuccessBanner, Textarea } from '../components/ui';
+import { Button, ErrorBanner, Input, Select, Textarea } from '../components/ui';
 import { routes } from '../config/site';
 import {
   conflictMessage,
@@ -27,6 +27,8 @@ import {
   type JobFormValues,
 } from '../lib/jobForm';
 import NoPermissionPage from './NoPermissionPage';
+import { ADD_CUSTOMER_PATH } from '../components/customers/customerRoutes';
+import { jobCreatedState } from '../lib/jobCreated';
 
 const linkButton =
   'type-button inline-flex min-h-11 items-center justify-center rounded-sm px-5 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber';
@@ -52,7 +54,7 @@ export default function NewJobPage() {
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState(false);
-  const [savedNumber, setSavedNumber] = useState<string | null>(null);
+  const navigate = useNavigate();
   const inFlight = useRef(false);
 
   if (state.status === 'no-access') return <NoPermissionPage />;
@@ -100,7 +102,7 @@ export default function NewJobPage() {
 
     switch (result.status) {
       case 'ok':
-        setSavedNumber(result.job.jobNumber);
+        navigate(routes.portalSchedule, { state: jobCreatedState(result.job.jobNumber) });
         return;
       case 'invalid':
         setFieldErrors(result.fieldErrors);
@@ -132,31 +134,7 @@ export default function NewJobPage() {
     }
   }
 
-  function startAnother() {
-    setValues(emptyJobForm);
-    setFieldErrors({});
-    setFormErrors([]);
-    setNotice(null);
-    setSavedNumber(null);
-  }
-
   function content() {
-    if (savedNumber) {
-      return (
-        <div className="mt-6 flex max-w-3xl flex-col gap-5">
-          <SuccessBanner message={`Job ${savedNumber} saved successfully.`} />
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Link to={routes.portalJobs} className={primaryLink}>
-              Back to Jobs
-            </Link>
-            <Button variant="outline" onClick={startAnother}>
-              Create another job
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
     if (state.status === 'loading') {
       return (
         <p role="status" className="type-body mt-6 text-neutral-600">
@@ -185,9 +163,14 @@ export default function NewJobPage() {
 
     if (state.customers.length === 0) {
       return (
-        <p className="type-body mt-6 text-neutral-600">
-          There are no customers yet. A job needs a customer, so add one first.
-        </p>
+        <div className="mt-6 flex max-w-3xl flex-col items-start gap-4">
+          <p className="type-body text-neutral-600">
+            There are no customers yet. A job needs a customer, so add one first.
+          </p>
+          <Link to={ADD_CUSTOMER_PATH} className={primaryLink}>
+            Add customer
+          </Link>
+        </div>
       );
     }
 
@@ -323,7 +306,7 @@ export default function NewJobPage() {
         )}
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <Link to={routes.portalJobs} className={outlineLink}>
+          <Link to={routes.portalSchedule} className={outlineLink}>
             Cancel
           </Link>
           <Button type="submit" disabled={saving}>
@@ -337,7 +320,7 @@ export default function NewJobPage() {
   return (
     <main className="w-full px-4 py-6 md:px-8">
       <Link
-        to={routes.portalJobs}
+        to={routes.portalSchedule}
         className="type-body-sm rounded-sm text-walnut underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
       >
         Back to Jobs

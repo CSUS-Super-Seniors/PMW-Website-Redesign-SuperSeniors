@@ -1,8 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
+import { readCreatedJobNumber } from '../lib/jobCreated';
 import NewJobPage from './NewJobPage';
 
 const session = {
@@ -50,13 +51,18 @@ function sentJobs(fakeFetch: ReturnType<typeof fakeServer>) {
   return fakeFetch.mock.calls.filter(([url]) => url === '/api/jobs');
 }
 
+function JobsListStub() {
+  const location = useLocation();
+  return <p>Jobs list. Created: {String(readCreatedJobNumber(location.state))}</p>;
+}
+
 function renderPage() {
   return render(
     <AuthContext.Provider value={authValue}>
       <MemoryRouter initialEntries={['/portal/jobs/new']}>
         <Routes>
           <Route path="/portal/jobs/new" element={<NewJobPage />} />
-          <Route path="/portal/jobs" element={<p>Jobs list</p>} />
+          <Route path="/portal/schedule" element={<JobsListStub />} />
         </Routes>
       </MemoryRouter>
     </AuthContext.Provider>,
@@ -90,6 +96,10 @@ describe('NewJobPage', () => {
     fakeServer([jsonResponse(200, { customers: [] })]);
     renderPage();
     expect(await screen.findByText(/There are no customers yet/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Add customer' })).toHaveAttribute(
+      'href',
+      '/portal/customers/new',
+    );
   });
 
   it('lists each customer with their city', async () => {
@@ -137,7 +147,7 @@ describe('NewJobPage', () => {
     expect(screen.queryByText('Item is required.')).not.toBeInTheDocument();
   });
 
-  it('saves the job, shows its number, and can start another', async () => {
+  it('saves the job and goes to the Jobs list with its number', async () => {
     const fakeFetch = fakeServer(
       [jsonResponse(200, { customers })],
       jsonResponse(201, { job: { id: 'job-1', jobNumber: 'J-1013' } }),
@@ -147,7 +157,7 @@ describe('NewJobPage', () => {
 
     save();
 
-    expect(await screen.findByText('Job J-1013 saved successfully.')).toBeInTheDocument();
+    expect(await screen.findByText('Jobs list. Created: J-1013')).toBeInTheDocument();
     const [, init] = sentJobs(fakeFetch)[0];
     expect(JSON.parse(String(init?.body))).toMatchObject({
       customer_id: customerId,
@@ -155,9 +165,6 @@ describe('NewJobPage', () => {
       status: 'scheduled',
       start_date: null,
     });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create another job' }));
-    expect(await screen.findByLabelText(/^Item/)).toHaveValue('');
   });
 
   it('shows the other job when there is a time conflict, and keeps the form', async () => {
