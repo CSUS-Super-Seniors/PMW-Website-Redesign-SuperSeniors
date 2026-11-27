@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
-import { Badge, Button, ErrorBanner, Input, Pagination, Select } from '../components/ui';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
+import {
+  Badge,
+  Button,
+  ErrorBanner,
+  Input,
+  Pagination,
+  Select,
+  SuccessBanner,
+} from '../components/ui';
 import {
   DEFAULT_JOB_PAGE_SIZE,
   JOB_PAGE_SIZES,
@@ -10,6 +18,9 @@ import {
 } from '../api/jobs';
 import { useJobs } from '../api/useJobs';
 import { formatJobDate, jobStatusBadgeVariants, jobStatusLabels } from '../lib/jobFormat';
+import { useStaffRole } from '../auth/useStaffRole';
+import { routes } from '../config/site';
+import { readCreatedJobNumber } from '../lib/jobCreated';
 import NoPermissionPage from './NoPermissionPage';
 
 const pageSizes: readonly number[] = JOB_PAGE_SIZES;
@@ -39,6 +50,11 @@ function readListParams(params: URLSearchParams): {
 export default function JobsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Only owners can create jobs, so only they see the button.
+  const { state: roleState } = useStaffRole();
+  const isOwner = roleState.status === 'ok' && roleState.role === 'owner';
+  const createdNumber = readCreatedJobNumber(location.state);
   const { page, pageSize, status, search } = readListParams(searchParams);
   const { state, retry } = useJobs({ page, pageSize, status, search });
   // What the staff member has typed. The URL (and the list) follows after a short pause.
@@ -237,9 +253,32 @@ export default function JobsPage() {
   return (
     <main className="w-full px-4 py-6 md:px-8">
       <h1 className="sr-only">Jobs</h1>
-      <p className="type-body text-neutral-600">
-        Manage job details, steps, and upcoming visits. Newest jobs first.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="type-body text-neutral-600">
+          Manage job details, steps, and upcoming visits. Newest jobs first.
+        </p>
+        {isOwner && (
+          <Link
+            to={routes.portalNewJob}
+            className="type-button inline-flex min-h-11 items-center justify-center rounded-sm bg-dark-brown px-5 py-2 text-white transition-colors hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber"
+          >
+            + New Job
+          </Link>
+        )}
+      </div>
+      {createdNumber && (
+        <SuccessBanner
+          className="mt-6"
+          message={`Job ${createdNumber} saved successfully. Select its row to review details.`}
+          onDismiss={() =>
+            // Clearing the history entry keeps a refresh from showing the message again.
+            navigate(
+              { pathname: location.pathname, search: location.search },
+              { replace: true, state: null },
+            )
+          }
+        />
+      )}
       <form
         role="search"
         className="mt-6 grid gap-4 sm:grid-cols-[1fr_14rem]"

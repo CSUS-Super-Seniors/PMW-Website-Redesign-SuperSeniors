@@ -14,6 +14,11 @@ import {
   ESTIMATE_HONEYPOT_FIELD,
   ESTIMATE_RATE_LIMIT_MESSAGE,
   SERVICE_AREA_RATE_LIMIT_MESSAGE,
+  jobCreateSchema,
+  mapJobCreateErrors,
+  todayInBusinessZone,
+  isBeforeToday,
+  JOB_START_DATE_PAST_MESSAGE,
 } from '@pmw/validation';
 import type { ContactBackend, SavedContactMessage } from './contact.js';
 import type { Config } from './config.js';
@@ -34,6 +39,7 @@ import { parseJobListQuery, type JobBackend } from './jobs.js';
 import { notifyCustomerOfDecline, type DeclineEmailSender } from './declineEmail.js';
 import { rejectHoneypot } from './lib/honeypot.js';
 import { createRateLimiter } from './lib/rateLimit.js';
+import type { JobCreateBackend } from './jobCreate.js';
 
 /** Where the final estimate request submits. */
 export const ESTIMATE_SUBMIT_PATH = '/api/estimates';
@@ -50,6 +56,8 @@ export interface AppOptions {
   staff?: StaffBackend;
   /** Accepts an estimate request and turns it into a job (SSPMW-156). */
   acceptInquiry?: AcceptInquiryBackend;
+  /** Creates a job by hand (SSPMW-311, SSPMW-320). */
+  jobCreate?: JobCreateBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
   declineEmail?: DeclineEmailSender;
   /** Saves a customer the owner adds by hand (SSPMW-363). */
@@ -95,6 +103,7 @@ export function createApp(
     photos,
     inquiries,
     acceptInquiry: acceptBackend,
+    jobCreate,
     declineEmail,
     staff,
     createCustomer: createCustomerBackend,
@@ -334,6 +343,71 @@ export function createApp(
   });
   api.get('/owner/check', (_req, res) => {
     res.set('Cache-Control', 'no-store').json({ status: 'ok' });
+  });
+  // Owner creates a job by hand (SSPMW-311, SSPMW-320). The server repeats every check the
+  // form makes, so bad input is refused even when the browser is bypassed.
+  api.post('/jobs', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const parsed = jobCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: 'Please check the job form.', ...mapJobCreateErrors(parsed.error) });
+      return;
+    }
+    const job = parsed.data;
+    if (job.start_date && isBeforeToday(job.start_date, todayInBusinessZone())) {
+      res.status(400).json({
+        error: 'Please check the job form.',
+        fieldErrors: { start_date: JOB_START_DATE_PAST_MESSAGE },
+        formErrors: [],
+      });
+      return;
+    }
+    if (!jobCreate) {
+      res.status(503).json({ error: 'Creating jobs is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await jobCreate.createJob(job);
+      if (result.outcome === 'customer-not-found') {
+        res.status(400).json({
+          error: 'Please check the job form.',
+          fieldErrors: { customer_id: 'Choose a customer from the list.' },
+          formErrors: [],
+        });
+        return;
+      }
+      if (result.outcome === 'time-conflict') {
+        res
+          .status(409)
+          .json({ error: 'Time conflict with another job.', conflict: result.conflict });
+        return;
+      }
+      res.status(201).json({ job: result.job });
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details.
+      console.error('Create job failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'The job could not be saved. Please try again.' });
+    }
+  });
+  // The customers an owner can pick in the new job form (SSPMW-317).
+  api.get('/job-customers', async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!jobCreate) {
+      res.status(503).json({ error: 'Customers are temporarily unavailable.' });
+      return;
+    }
+    try {
+      res.json({ customers: await jobCreate.listCustomerOptions() });
+    } catch (error) {
+      console.error('Customer options failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: 'Customers could not be loaded. Please try again.' });
+    }
   });
   api.get('/inquiries', async (req, res) => {
     res.set('Cache-Control', 'no-store');

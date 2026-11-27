@@ -14,6 +14,7 @@ import InquiriesPage from './pages/InquiriesPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
 import JobsPage from './pages/JobsPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
+import NewJobPage from './pages/NewJobPage';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
@@ -48,6 +49,7 @@ export default function App() {
           <Route element={<RequireRole allowed={['owner']} />}>
             <Route path="inquiries" element={<InquiriesPage />} />
             <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
+            <Route path="jobs/new" element={<NewJobPage />} />
             <Route path="customers" element={<CustomersSection />}>
               <Route index element={<CustomersComingSoonPage />} />
               <Route path="new" element={<AddCustomerPage />} />

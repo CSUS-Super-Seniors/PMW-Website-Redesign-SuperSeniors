@@ -55,7 +55,8 @@ type Answer = 'list' | 'pending' | ReturnType<typeof jsonResponse>;
 function fakeServer({
   rows = jobs,
   answers = ['list'],
-}: { rows?: typeof jobs; answers?: Answer[] } = {}) {
+  role = 'owner',
+}: { rows?: typeof jobs; answers?: Answer[]; role?: string } = {}) {
   let calls = 0;
   const fakeFetch = vi.fn(async (url: string) => {
     if (!url.startsWith('/api/jobs?')) throw new Error(`Unexpected request: ${url}`);
@@ -77,7 +78,11 @@ function fakeServer({
       pageSize: Number(params.get('pageSize')),
     });
   });
-  vi.stubGlobal('fetch', fakeFetch);
+  // The "+ New Job" button asks /api/me who is signed in. That is answered here, so
+  // fakeFetch only records the job list requests.
+  vi.stubGlobal('fetch', (url: string) =>
+    url === '/api/me' ? Promise.resolve(jsonResponse(200, { role })) : fakeFetch(url),
+  );
   return fakeFetch;
 }
 
@@ -229,5 +234,54 @@ describe('JobsPage', () => {
 
     await screen.findByText('Entry bench');
     expect(fakeFetch.mock.calls[0]![0]).not.toContain('status=');
+  });
+});
+
+function renderWithState(state?: unknown) {
+  return render(
+    <AuthContext.Provider value={authValue}>
+      <MemoryRouter initialEntries={[{ pathname: '/portal/schedule', state }]}>
+        <Routes>
+          <Route path="/portal/schedule" element={<JobsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </AuthContext.Provider>,
+  );
+}
+
+describe('JobsPage and new jobs', () => {
+  it('gives an owner a New Job link', async () => {
+    fakeServer();
+    renderWithState();
+    expect(await screen.findByRole('link', { name: '+ New Job' })).toHaveAttribute(
+      'href',
+      '/portal/jobs/new',
+    );
+  });
+
+  it('does not show the New Job link to an employee', async () => {
+    fakeServer({ role: 'employee' });
+    renderWithState();
+    await screen.findByText('Entry bench');
+    expect(screen.queryByRole('link', { name: '+ New Job' })).not.toBeInTheDocument();
+  });
+
+  it('confirms a job that was just created, until it is dismissed', async () => {
+    fakeServer();
+    renderWithState({ jobCreated: 'J-1013' });
+
+    expect(
+      await screen.findByText('Job J-1013 saved successfully. Select its row to review details.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss message' }));
+    expect(screen.queryByText(/saved successfully/)).not.toBeInTheDocument();
+  });
+
+  it('shows no confirmation on an ordinary visit', async () => {
+    fakeServer();
+    renderWithState();
+    await screen.findByText('Entry bench');
+    expect(screen.queryByText(/saved successfully/)).not.toBeInTheDocument();
   });
 });
