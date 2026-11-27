@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
+import { JOB_CUSTOMER_OPTIONS_LIMIT } from '@pmw/validation';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthContext, type AuthContextValue } from '../auth/AuthContext';
@@ -108,6 +109,25 @@ describe('NewJobPage', () => {
     expect(
       await screen.findByRole('option', { name: 'Margaret Lewis · Carmichael' }),
     ).toBeInTheDocument();
+  });
+
+  it('says so when the customer list is cut off', async () => {
+    const many = Array.from({ length: JOB_CUSTOMER_OPTIONS_LIMIT }, (_, index) => ({
+      id: `5eed0001-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      name: `Customer ${index}`,
+      city: null,
+    }));
+    fakeServer([jsonResponse(200, { customers: many })]);
+    renderPage();
+
+    expect(await screen.findByText(/Showing the first 500 customers/)).toBeInTheDocument();
+  });
+
+  it('does not mention a cut-off for a short customer list', async () => {
+    fakeServer([jsonResponse(200, { customers })]);
+    renderPage();
+    await screen.findByLabelText(/^Customer/);
+    expect(screen.queryByText(/Showing the first/)).not.toBeInTheDocument();
   });
 
   it('asks for the required fields without sending anything', async () => {

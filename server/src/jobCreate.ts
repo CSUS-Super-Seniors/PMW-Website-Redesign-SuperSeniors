@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { JobCreateData } from '@pmw/validation';
+import { JOB_CUSTOMER_OPTIONS_LIMIT, type JobCreateData } from '@pmw/validation';
 
 export interface JobConflict {
   jobNumber: string;
@@ -26,9 +26,6 @@ export interface JobCreateBackend {
   /** The customers an owner can pick from when creating a job. */
   listCustomerOptions(): Promise<CustomerOption[]>;
 }
-
-/** The dropdown lists this many customers at most. Past this, it needs a search box. */
-const CUSTOMER_OPTIONS_LIMIT = 500;
 
 interface CustomerRow {
   id: string;
@@ -147,7 +144,7 @@ export function createJobCreateBackend(client: Pick<SupabaseClient, 'from'>): Jo
         .is('deleted_at', null)
         .order('last_name', { ascending: true })
         .order('first_name', { ascending: true })
-        .limit(CUSTOMER_OPTIONS_LIMIT);
+        .limit(JOB_CUSTOMER_OPTIONS_LIMIT);
       if (error || !data) throw new Error('Customer options lookup failed');
 
       return (data as unknown as CustomerRow[]).map((row) => ({

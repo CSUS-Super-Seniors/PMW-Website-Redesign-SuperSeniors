@@ -20,6 +20,8 @@ export const JOB_ITEM_MAX = 200;
 export const JOB_NOTES_MAX = 2000;
 /** `jobs.estimated_hours` is numeric(5, 2), so this is the largest value it can hold. */
 export const JOB_ESTIMATED_HOURS_MAX = 999.99;
+/** The new job form's customer dropdown lists this many customers at most. */
+export const JOB_CUSTOMER_OPTIONS_LIMIT = 500;
 
 /** The business is in Sacramento, so "today" is a Pacific time date. */
 export const BUSINESS_TIME_ZONE = 'America/Los_Angeles';

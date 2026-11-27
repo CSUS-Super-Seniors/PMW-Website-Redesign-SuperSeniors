@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
+  JOB_CUSTOMER_OPTIONS_LIMIT,
   JOB_ESTIMATED_HOURS_MAX,
   JOB_ITEM_MAX,
   JOB_NOTES_MAX,
@@ -205,6 +206,12 @@ export default function NewJobPage() {
                 </option>
               ))}
             </Select>
+            {state.customers.length >= JOB_CUSTOMER_OPTIONS_LIMIT && (
+              <p className="type-body-sm mt-2 text-neutral-600">
+                Showing the first {JOB_CUSTOMER_OPTIONS_LIMIT} customers. If someone is missing, add
+                the job after the customer list gets search.
+              </p>
+            )}
           </div>
 
           <div className="md:col-span-2">
