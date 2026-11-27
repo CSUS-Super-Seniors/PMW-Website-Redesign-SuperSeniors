@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { fetchCustomerOptions, type CustomerOptionsResult } from './jobs';
+import { fetchCustomerOptions, type CustomerOptionsResult } from './createJob';
 
 export type CustomerOptionsState = { status: 'loading' } | CustomerOptionsResult;
 

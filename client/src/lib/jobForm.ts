@@ -7,7 +7,7 @@ import {
   type JobCreateErrors,
   type JobCreateInput,
 } from '@pmw/validation';
-import type { JobConflict } from '../api/jobs';
+import type { JobConflict } from '../api/createJob';
 
 /** What the owner has typed. Every field is text, as in the browser. */
 export interface JobFormValues {

@@ -12,7 +12,7 @@ import {
   todayInBusinessZone,
   type JobCreateFieldErrors,
 } from '@pmw/validation';
-import { createJob } from '../api/jobs';
+import { createJob } from '../api/createJob';
 import { useCustomerOptions } from '../api/useCustomerOptions';
 import { useAuth } from '../auth/AuthContext';
 import { Button, ErrorBanner, Input, Select, SuccessBanner, Textarea } from '../components/ui';

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createJob, fetchCustomerOptions } from './jobs';
+import { createJob, fetchCustomerOptions } from './createJob';
 
 function respond(status: number, body: unknown = {}) {
   const fakeFetch = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>(async () => ({
