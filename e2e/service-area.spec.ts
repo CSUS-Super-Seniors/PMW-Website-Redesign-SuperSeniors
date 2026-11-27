@@ -75,8 +75,29 @@ test('service cities failure can be retried without displaying sample chips', as
   // StrictMode may issue and cancel the first mount request. Recovery follows
   // the user action, not an assumed number of development-mode requests.
   recovered = true;
-  await page.getByRole('button', { name: 'Try again' }).click();
+  await page.getByRole('button', { name: 'Try again' }).focus();
+  await page.keyboard.press('Enter');
   await expect(
     page.getByRole('list', { name: 'Cities we serve' }).getByRole('listitem'),
   ).toHaveText(['Carmichael']);
+  await expect(page.getByRole('list', { name: 'Cities we serve' })).toBeFocused();
+});
+
+test('keyboard retry focuses repeated errors and empty results', async ({ page }) => {
+  let empty = false;
+  await page.route('**/api/service-cities', (route) =>
+    route.fulfill(
+      empty ? { json: { cities: [] } } : { status: 503, json: { error: 'Unavailable' } },
+    ),
+  );
+  await page.goto('/service-area');
+  const retry = page.getByRole('button', { name: 'Try again' });
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('City list error')).toBeFocused();
+  empty = true;
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status')).toContainText('Our city list is being updated');
+  await expect(page.getByRole('status')).toBeFocused();
 });

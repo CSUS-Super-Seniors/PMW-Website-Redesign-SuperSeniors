@@ -32,7 +32,6 @@ try {
   const serviceArea = createServiceAreaBackend(supabase);
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
     serviceArea,
-    serviceCities: serviceArea,
     photos,
     inquiries: createInquiryBackend(supabase),
     acceptInquiry: createAcceptInquiryBackend(supabase),

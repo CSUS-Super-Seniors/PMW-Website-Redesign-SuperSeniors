@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { ServiceCity } from '@pmw/validation';
 import { fetchServiceCities, type FetchServiceCities } from '../api/serviceCities';
@@ -22,6 +22,17 @@ export default function ServiceAreaPage({
 }) {
   const [state, setState] = useState<CitiesState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const citiesRegion = useRef<HTMLDivElement>(null);
+  const retryFocus = useRef(false);
+
+  useEffect(() => {
+    if (state.status === 'loading' || !retryFocus.current) return;
+    retryFocus.current = false;
+    const region = citiesRegion.current;
+    if (region && document.activeElement === region) {
+      region.querySelector<HTMLElement>('[data-cities-result]')?.focus();
+    }
+  }, [state]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -66,7 +77,17 @@ export default function ServiceAreaPage({
           <h2 id="served-cities-title" className="type-h3 xl:type-h2">
             Cities we serve
           </h2>
-          <div className="mt-6" aria-busy={state.status === 'loading'}>
+          <div
+            ref={citiesRegion}
+            role="region"
+            aria-label="City list"
+            tabIndex={-1}
+            className="mt-6"
+            aria-busy={state.status === 'loading'}
+            onBlur={() => {
+              retryFocus.current = false;
+            }}
+          >
             {state.status === 'loading' && (
               <p role="status" className="type-body-lg">
                 Loading cities we serve…
@@ -74,15 +95,19 @@ export default function ServiceAreaPage({
             )}
             {state.status === 'error' && (
               <div className="space-y-4">
-                <ErrorBanner
-                  title="We could not load the cities we serve"
-                  message="Check your connection and try again, or call us to ask whether we can come to you."
-                >
-                  <p className="type-body mt-2">Call {phone}.</p>
-                </ErrorBanner>
+                <div data-cities-result tabIndex={-1} aria-label="City list error">
+                  <ErrorBanner
+                    title="We could not load the cities we serve"
+                    message="Check your connection and try again, or call us to ask whether we can come to you."
+                  >
+                    <p className="type-body mt-2">Call {phone}.</p>
+                  </ErrorBanner>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => {
+                    citiesRegion.current?.focus();
+                    retryFocus.current = true;
                     setState({ status: 'loading' });
                     setAttempt((value) => value + 1);
                   }}
@@ -93,13 +118,23 @@ export default function ServiceAreaPage({
             )}
             {state.status === 'success' &&
               (state.cities.length === 0 ? (
-                <p role="status" className="type-body-lg text-neutral-800">
+                <p
+                  data-cities-result
+                  tabIndex={-1}
+                  role="status"
+                  className="type-body-lg text-neutral-800"
+                >
                   Our city list is being updated. Call {phone} and we’ll let you know if we can come
                   to you.
                 </p>
               ) : (
                 <>
-                  <ul aria-label="Cities we serve" className="flex flex-wrap gap-3">
+                  <ul
+                    data-cities-result
+                    tabIndex={-1}
+                    aria-label="Cities we serve"
+                    className="flex flex-wrap gap-3"
+                  >
                     {state.cities.map(({ name }) => (
                       <li
                         key={name}

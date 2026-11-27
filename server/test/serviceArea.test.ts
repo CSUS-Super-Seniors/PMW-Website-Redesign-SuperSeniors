@@ -47,7 +47,7 @@ describe('createServiceAreaBackend', () => {
     await expect(backend.isInServiceArea('Davis')).resolves.toBe(false);
     await expect(backend.isInServiceArea('Placerville')).resolves.toBe(false);
     expect(table.from).toHaveBeenCalledWith('service_cities');
-    expect(table.select).toHaveBeenCalledWith('name, display_order');
+    expect(table.select.mock.calls).toEqual([['name'], ['name'], ['name']]);
     expect(table.eq).toHaveBeenCalledWith('is_active', true);
   });
 
@@ -117,7 +117,7 @@ describe('POST /api/estimates/service-area', () => {
     ['Davis', 'Please provide the city as a JSON object.'],
   ])('rejects %j with 400', async (body, error) => {
     const isInServiceArea = vi.fn();
-    const response = await request(app({ isInServiceArea }))
+    const response = await request(app({ listActiveCities: async () => [], isInServiceArea }))
       .post(path)
       .set('Content-Type', 'application/json')
       .send(JSON.stringify(body))
@@ -130,7 +130,10 @@ describe('POST /api/estimates/service-area', () => {
     const missing = await request(app()).post(path).send({ city: 'Carmichael' }).expect(503);
     expect(missing.body).toEqual({ error: SERVICE_AREA_UNAVAILABLE_MESSAGE });
 
-    const failing = { isInServiceArea: vi.fn().mockRejectedValue(new Error('db down')) };
+    const failing = {
+      listActiveCities: async () => [],
+      isInServiceArea: vi.fn().mockRejectedValue(new Error('db down')),
+    };
     const failed = await request(app(failing)).post(path).send({ city: 'Carmichael' }).expect(503);
     expect(failed.body).toEqual({ error: SERVICE_AREA_UNAVAILABLE_MESSAGE });
     expect(failed.text).not.toContain('db down');
@@ -138,7 +141,7 @@ describe('POST /api/estimates/service-area', () => {
 
   it('keeps request bodies small', async () => {
     const isInServiceArea = vi.fn();
-    await request(app({ isInServiceArea }))
+    await request(app({ listActiveCities: async () => [], isInServiceArea }))
       .post(path)
       .send({ city: 'a'.repeat(2000) })
       .expect(413);
@@ -187,7 +190,7 @@ describe('requireServiceArea (submit route guard)', () => {
     [{ city: 7 }, 'City must be text.'],
   ])('refuses a missing or invalid city %j with the Step 1 error shape', async (body, message) => {
     const isInServiceArea = vi.fn();
-    const { app, saved } = submitApp({ isInServiceArea });
+    const { app, saved } = submitApp({ listActiveCities: async () => [], isInServiceArea });
     const response = await request(app).post('/submit').send(body).expect(400);
     expect(response.body).toEqual({
       error: message,
@@ -199,7 +202,10 @@ describe('requireServiceArea (submit route guard)', () => {
   });
 
   it('refuses with 503 rather than saving when the check is unavailable', async () => {
-    const failing = submitApp({ isInServiceArea: vi.fn().mockRejectedValue(new Error('down')) });
+    const failing = submitApp({
+      listActiveCities: async () => [],
+      isInServiceArea: vi.fn().mockRejectedValue(new Error('down')),
+    });
     await request(failing.app).post('/submit').send({ city: 'Carmichael' }).expect(503);
     expect(failing.saved).not.toHaveBeenCalled();
 

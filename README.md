@@ -137,18 +137,35 @@ customer also can't continue and is asked to try again.
 Only active `service_cities` rows are included, ordered by `display_order ASC NULLS LAST`,
 then name. Unranked active rows are not dropped. Empty data returns 200 with an empty
 array; unavailable data returns a safe 503 error, never fallback cities.
+Accepted display names are trimmed and deduplicated with the same city normalization
+used for eligibility, after database-priority sorting, so the highest-priority row wins.
+The public list allows 60 requests per minute per visitor using the existing trusted-IP
+limiter with bounded visitor storage; excess requests return 429 with `Retry-After`
+before reading the database. Responses, including 429 errors, remain `no-store`.
+As with the existing limiter, counts are per running server instance; under storage
+pressure new visitors share bounded overflow buckets rather than growing memory.
 Responses use `Cache-Control: no-store`. Each page mount/retry reads fresh data;
 changes appear on refresh/remount without a rebuild. A page already showing a successful
 list does not subscribe to live database updates.
+Keyboard retry keeps focus in the cities region while loading, then focuses the list,
+empty message, or error result only if the visitor has not moved focus elsewhere.
 
 The estimate endpoint `POST /api/estimates/service-area` **still returns only**
 `{ "inServiceArea": boolean }`, never city names. Its normalization, rate limits,
-validation and submit-time blocking remain unchanged. Both endpoints use the same
-active-city repository; the public list is not a separate eligibility configuration.
+request validation and submit-time blocking remain unchanged. Invalid stored names
+are now skipped consistently by the shared active-row reader, with one sanitized,
+count-only warning per read that rejects rows. Both endpoints use that reader;
+the public list is not a separate eligibility configuration.
+Both routes use the single `ServiceAreaBackend` dependency.
 
-Apply the nullable ordering migration through the normal reviewed migration process
-before deploying the API. It changes no existing city names, active flags or ordering
-values. **Final Q7 production cities are still unconfirmed. Preserve production rows.**
+Estimate checks and the submit guard select only `name` and work before the ordering
+migration. Only the public list selects `display_order` and applies presentation
+ordering; until that column exists, the list returns a safe 503 without fallback data.
+Genuine names-only query failures still block estimate approval and submission.
+After integrating main, apply `supabase/migrations/20261126000000_service_city_display_order.sql`
+through the normal reviewed migration process, after main's migrations. Do not use
+`--include-all` to bypass migration ordering. It changes no existing city names,
+active flags or ordering values. **Final Q7 production cities are still unconfirmed. Preserve production rows.**
 The development seed provisionally orders Carmichael, Fair Oaks, Citrus Heights,
 Orangevale, Sacramento and Rancho Cordova. Rancho Cordova is provisional and becomes
 estimate-eligible wherever that development seed is applied. The seed preserves unrelated
@@ -159,6 +176,9 @@ provider. See `docs/service-area-map/README.md` for source, reuse terms, transfo
 manual `node scripts/generate-service-area-map.mjs` reproduction, and required artwork
 review. No paid API, runtime map keys, external map scripts or new environment variables.
 The map is orientation only, not a boundary/radius or authoritative coverage list.
+Regression checks inspect rendered page content and the committed SVG for street-address
+content and require Carmichael as its only visible text label. These checks do not
+replace pending manual geographic/artwork approval.
 
 Browser coverage lives in `e2e/service-area.spec.ts` and captures desktop/phone screenshots
 in Playwright's test output. Run with `npm run test:e2e -- e2e/service-area.spec.ts` after

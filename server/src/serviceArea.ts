@@ -4,15 +4,13 @@ import {
   OUTSIDE_SERVICE_AREA_MESSAGE,
   cityField,
   isCityInServiceArea,
+  normalizeCityName,
   type ServiceCity,
 } from '@pmw/validation';
 
 export interface ServiceAreaBackend {
   /** Rejects when the city list can't be read. Unavailable never means approved. */
   isInServiceArea(city: string): Promise<boolean>;
-}
-
-export interface ServiceCitiesBackend {
   listActiveCities(): Promise<ServiceCity[]>;
 }
 
@@ -20,14 +18,13 @@ export interface ServiceCitiesBackend {
  * Reads the active cities on every check, so adding or turning off a city in
  * `service_cities` changes the result with no code change or redeploy.
  */
-export function createServiceAreaBackend(
-  client: Pick<SupabaseClient, 'from'>,
-): ServiceAreaBackend & ServiceCitiesBackend {
-  async function listActiveCities(): Promise<ServiceCity[]> {
-    const { data, error } = await client
+export function createServiceAreaBackend(client: Pick<SupabaseClient, 'from'>): ServiceAreaBackend {
+  async function readActiveRows(columns: 'name' | 'name, display_order') {
+    const { data: rawData, error } = await client
       .from('service_cities')
-      .select('name, display_order')
+      .select(columns)
       .eq('is_active', true);
+    const data: unknown = rawData;
     if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
     const rows: { name: string; display_order: number | null }[] = [];
     let rejectedRows = 0;
@@ -37,12 +34,17 @@ export function createServiceAreaBackend(
         rejectedRows++;
         continue;
       }
-      rows.push({ name: name.data, display_order: row.display_order ?? null });
+      rows.push({ name: name.data.trim(), display_order: row.display_order ?? null });
     }
     if (rejectedRows > 0) {
       // One bounded warning per read; never include row data or database details.
       console.warn('Service cities: skipped invalid rows; rejected-row count:', rejectedRows);
     }
+    return rows;
+  }
+
+  async function listActiveCities(): Promise<ServiceCity[]> {
+    const rows = await readActiveRows('name, display_order');
     // Database-owned ranks; no city-name priority list. Unranked cities always
     // appear, and ties are deterministic without relying on database row order.
     rows.sort((a, b) => {
@@ -53,14 +55,22 @@ export function createServiceAreaBackend(
         (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
       );
     });
-    return rows.map(({ name }) => ({ name }));
+    const seen = new Set<string>();
+    return rows
+      .filter(({ name }) => {
+        const normalized = normalizeCityName(name);
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      })
+      .map(({ name }) => ({ name }));
   }
   return {
     listActiveCities,
     async isInServiceArea(city) {
       return isCityInServiceArea(
         city,
-        (await listActiveCities()).map(({ name }) => name),
+        (await readActiveRows('name')).map(({ name }) => name),
       );
     },
   };
