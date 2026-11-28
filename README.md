@@ -642,7 +642,7 @@ On **Staff accounts**, an owner chooses **Add employee** and enters a full name,
 | 429  | Supabase Auth's hourly email limit is used up                                            |
 | 503  | Supabase could not send the invite or save the profile                                   |
 
-Apply `20261125020000_grant_service_role_staff_profiles_insert.sql`. It grants the service role INSERT on `staff_profiles`, and `supabase/tests/staff_profiles_service_role.test.sql` checks that employees still cannot add staff. `npm run test:invite-flow` runs the whole flow against a local Supabase stack: the owner invites, the email arrives, its link opens Set password, the person saves a password, signs in and gets the chosen role. It also checks that employees and bad input are refused and send nothing. CI's **Staff invite flow test** job starts Supabase and runs it.
+Apply `20261127000000_grant_service_role_staff_profiles_insert.sql`. It grants the service role INSERT on `staff_profiles`, and `supabase/tests/staff_profiles_service_role.test.sql` checks that employees still cannot add staff. `npm run test:invite-flow` runs the whole flow against a local Supabase stack: the owner invites, the email arrives, its link opens Set password, the person saves a password, signs in and gets the chosen role. It also checks that employees and bad input are refused and send nothing. CI's **Staff invite flow test** job starts Supabase and runs it.
 
 ### Finding or creating a customer (SSPMW-385)
 
