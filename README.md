@@ -871,26 +871,6 @@ npx playwright install chromium
 npm run test:e2e           # Playwright starts and stops Vite automatically
 ```
 
-### Job number sequence (SSPMW-330)
-
-Jobs receive `J-` numbers from the existing `job_number_seq`; its unique constraint
-rejects duplicates, and a new trigger prevents changing a number after assignment.
-Database integration tests cover automatic and concurrent assignment on separate
-Postgres connections, duplicate rejection, cancellation, immutability and no reuse
-after deletion. They clean up their test jobs and customers; sequence gaps are expected.
-
-Run against local Supabase after applying migrations. Set the connection URL for the
-local database port in this checkout (`55322`; CI uses `54322`) in PowerShell:
-
-```powershell
-$env:JOB_NUMBER_TEST_DATABASE_URL = "postgresql://postgres:<local-password>@127.0.0.1:55322/postgres"
-npm.cmd run test:job-number-db
-Remove-Item Env:JOB_NUMBER_TEST_DATABASE_URL
-```
-
-The test refuses hosted Supabase and non-local hosts/ports. CI runs it in the local
-Supabase RLS job.
-
 For debugging locally, run `npm run test:e2e -- --headed`.
 GitHub Actions runs the existing **Lint, format, and test** check and the new
 **Playwright smoke test** check on each PR to `main`.
@@ -898,3 +878,24 @@ GitHub Actions runs the existing **Lint, format, and test** check and the new
 A repository admin must mark both job checks as required under the `main`
 branch protection rule (or repository ruleset) before a failing test can
 prevent merging. Use the exact check names above after an initial PR run.
+
+## Job number sequence (SSPMW-330)
+
+Jobs receive `J-` numbers from the existing `job_number_seq`; a check constraint
+enforces the `J-` followed by digits format, the unique constraint rejects duplicates,
+and a trigger prevents changing a number after assignment. Valid explicit numbers remain
+available for seed data. Database integration tests cover automatic and concurrent
+assignment on separate Postgres connections, format validation, duplicate rejection,
+cancellation, immutability and no reuse after deletion. Tests clean up their jobs and
+customers; sequence gaps are expected.
+
+Run against local Supabase after applying migrations. Set
+`JOB_NUMBER_TEST_DATABASE_URL` in your shell to
+`postgresql://postgres:<local-password>@127.0.0.1:54322/postgres`, then run:
+
+```bash
+npm run test:job-number-db
+```
+
+The test refuses hosted Supabase and non-local hosts or ports. CI runs it in the local
+Supabase RLS job.

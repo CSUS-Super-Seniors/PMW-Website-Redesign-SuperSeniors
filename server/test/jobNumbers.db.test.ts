@@ -5,11 +5,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { checkSeedTarget } from '../src/lib/seedTarget.js';
 
 const databaseUrl = process.env.JOB_NUMBER_TEST_DATABASE_URL;
-const localSupabasePorts = [54322, 55322];
 
 if (process.env.npm_lifecycle_event === 'test:job-number-db' && !databaseUrl) {
   throw new Error(
-    'Set JOB_NUMBER_TEST_DATABASE_URL to local Supabase (port 55322 locally, 54322 in CI) to run test:job-number-db.',
+    'Set JOB_NUMBER_TEST_DATABASE_URL to local Supabase on port 54322 to run test:job-number-db.',
   );
 }
 
@@ -46,10 +45,7 @@ describe.skipIf(!databaseUrl)('job number sequence on local Postgres', { timeout
   beforeAll(async () => {
     let target: ReturnType<typeof checkSeedTarget>;
     try {
-      target = checkSeedTarget(
-        { ...process.env, SEED_DATABASE_URL: databaseUrl },
-        localSupabasePorts,
-      );
+      target = checkSeedTarget({ ...process.env, SEED_DATABASE_URL: databaseUrl });
     } catch (error) {
       throw new Error(`JOB_NUMBER_TEST_DATABASE_URL: ${(error as Error).message}`, {
         cause: error,
@@ -80,6 +76,35 @@ describe.skipIf(!databaseUrl)('job number sequence on local Postgres', { timeout
 
     expect(job.job_number).toMatch(/^J-\d+$/);
     expect(job.status).toBe('scheduled');
+  });
+
+  it('rejects job numbers that do not match the J-digits format', async () => {
+    const customerId = await createCustomer();
+
+    await expect(
+      pool.query(
+        `insert into public.jobs (customer_id, item, job_number)
+           values ($1, 'Invalid explicit sequence test', 'banana')`,
+        [customerId],
+      ),
+    ).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'jobs_job_number_format_check',
+    });
+  });
+
+  it('allows valid explicit job numbers for seed data', async () => {
+    const customerId = await createCustomer();
+    const jobNumber = `J-${randomUUID().replace(/\D/g, '')}`;
+
+    const result = await pool.query(
+      `insert into public.jobs (customer_id, item, job_number)
+         values ($1, 'Explicit sequence test', $2)
+         returning job_number`,
+      [customerId, jobNumber],
+    );
+
+    expect(result.rows[0].job_number).toBe(jobNumber);
   });
 
   it('assigns unique job numbers to simultaneous inserts on separate connections', async () => {

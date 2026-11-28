@@ -1,3 +1,7 @@
+alter table public.jobs
+  add constraint jobs_job_number_format_check
+  check (job_number ~ '^J-[0-9]+$');
+
 create function public.prevent_job_number_change()
 returns trigger
 language plpgsql
