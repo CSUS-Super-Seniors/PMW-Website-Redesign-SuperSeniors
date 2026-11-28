@@ -1,10 +1,17 @@
 import type { RequestHandler } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { OUTSIDE_SERVICE_AREA_MESSAGE, cityField, isCityInServiceArea } from '@pmw/validation';
+import {
+  OUTSIDE_SERVICE_AREA_MESSAGE,
+  cityField,
+  isCityInServiceArea,
+  normalizeCityName,
+  type ServiceCity,
+} from '@pmw/validation';
 
 export interface ServiceAreaBackend {
   /** Rejects when the city list can't be read. Unavailable never means approved. */
   isInServiceArea(city: string): Promise<boolean>;
+  listActiveCities(): Promise<ServiceCity[]>;
 }
 
 /**
@@ -12,17 +19,59 @@ export interface ServiceAreaBackend {
  * `service_cities` changes the result with no code change or redeploy.
  */
 export function createServiceAreaBackend(client: Pick<SupabaseClient, 'from'>): ServiceAreaBackend {
+  async function readActiveRows(columns: 'name' | 'name, display_order') {
+    const { data: rawData, error } = await client
+      .from('service_cities')
+      .select(columns)
+      .eq('is_active', true);
+    const data: unknown = rawData;
+    if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
+    const rows: { name: string; display_order: number | null }[] = [];
+    let rejectedRows = 0;
+    for (const row of data) {
+      const name = cityField.safeParse(row?.name);
+      if (!name.success) {
+        rejectedRows++;
+        continue;
+      }
+      rows.push({ name: name.data.trim(), display_order: row.display_order ?? null });
+    }
+    if (rejectedRows > 0) {
+      // One bounded warning per read; never include row data or database details.
+      console.warn('Service cities: skipped invalid rows; rejected-row count:', rejectedRows);
+    }
+    return rows;
+  }
+
+  async function listActiveCities(): Promise<ServiceCity[]> {
+    const rows = await readActiveRows('name, display_order');
+    // Database-owned ranks; no city-name priority list. Unranked cities always
+    // appear, and ties are deterministic without relying on database row order.
+    rows.sort((a, b) => {
+      const rank = (a.display_order ?? Infinity) - (b.display_order ?? Infinity);
+      return (
+        (Number.isNaN(rank) ? 0 : rank) ||
+        a.name.localeCompare(b.name, 'en') ||
+        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+      );
+    });
+    const seen = new Set<string>();
+    return rows
+      .filter(({ name }) => {
+        const normalized = normalizeCityName(name);
+        if (seen.has(normalized)) return false;
+        seen.add(normalized);
+        return true;
+      })
+      .map(({ name }) => ({ name }));
+  }
   return {
+    listActiveCities,
     async isInServiceArea(city) {
-      const { data, error } = await client
-        .from('service_cities')
-        .select('name')
-        .eq('is_active', true);
-      if (error || !Array.isArray(data)) throw new Error('Service cities could not be loaded.');
-      const names = data
-        .map((row: { name?: unknown }) => row.name)
-        .filter((name): name is string => typeof name === 'string');
-      return isCityInServiceArea(city, names);
+      return isCityInServiceArea(
+        city,
+        (await readActiveRows('name')).map(({ name }) => name),
+      );
     },
   };
 }

@@ -120,7 +120,7 @@ customer also can't continue and is asked to try again.
 
 - Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
   `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
-  active cities aren't secret; the Service Area page will show them). Bad input returns 400, an
+  active cities aren't secret; the Service Area page shows them). Bad input returns 400, an
   unreadable city list returns 503, and too many checks return 429 (see spam protection below).
 - The submit route runs `requireServiceArea` (see spam protection below). It checks only the
   city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
@@ -130,6 +130,60 @@ customer also can't continue and is asked to try again.
 - The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
   Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
   for local, dev and staging. Production cities come from the client's Q7 answer.
+
+## Public Service Area (SSPMW-234/240/243)
+
+`GET /api/service-cities` is public and returns `{ "cities": [{ "name": "…" }] }`.
+Only active `service_cities` rows are included, ordered by `display_order ASC NULLS LAST`,
+then name. Unranked active rows are not dropped. Empty data returns 200 with an empty
+array; unavailable data returns a safe 503 error, never fallback cities.
+Accepted display names are trimmed and deduplicated with the same city normalization
+used for eligibility, after database-priority sorting, so the highest-priority row wins.
+The public list allows 60 requests per minute per visitor using the existing trusted-IP
+limiter with bounded visitor storage; excess requests return 429 with `Retry-After`
+before reading the database. Responses, including 429 errors, remain `no-store`.
+As with the existing limiter, counts are per running server instance; under storage
+pressure new visitors share bounded overflow buckets rather than growing memory.
+Responses use `Cache-Control: no-store`. Each page mount/retry reads fresh data;
+changes appear on refresh/remount without a rebuild. A page already showing a successful
+list does not subscribe to live database updates.
+Keyboard retry keeps focus in the cities region while loading, then focuses the list,
+empty message, or error result only if the visitor has not moved focus elsewhere.
+
+The estimate endpoint `POST /api/estimates/service-area` **still returns only**
+`{ "inServiceArea": boolean }`, never city names. Its normalization, rate limits,
+request validation and submit-time blocking remain unchanged. Invalid stored names
+are now skipped consistently by the shared active-row reader, with one sanitized,
+count-only warning per read that rejects rows. Both endpoints use that reader;
+the public list is not a separate eligibility configuration.
+Both routes use the single `ServiceAreaBackend` dependency.
+
+Estimate checks and the submit guard select only `name` and work before the ordering
+migration. Only the public list selects `display_order` and applies presentation
+ordering; until that column exists, the list returns a safe 503 without fallback data.
+Genuine names-only query failures still block estimate approval and submission.
+After integrating main, apply `supabase/migrations/20261126000000_service_city_display_order.sql`
+through the normal reviewed migration process, after main's migrations. Do not use
+`--include-all` to bypass migration ordering. It changes no existing city names,
+active flags or ordering values. **Final Q7 production cities are still unconfirmed. Preserve production rows.**
+The development seed provisionally orders Carmichael, Fair Oaks, Citrus Heights,
+Orangevale, Sacramento and Rancho Cordova. Rancho Cordova is provisional and becomes
+estimate-eligible wherever that development seed is applied. The seed preserves unrelated
+city rows. Never seed production. Carmichael is confirmed inside; Davis outside.
+
+The page uses a self-contained static draft Census regional SVG, not a runtime map
+provider. See `docs/service-area-map/README.md` for source, reuse terms, transformation,
+manual `node scripts/generate-service-area-map.mjs` reproduction, and required artwork
+review. No paid API, runtime map keys, external map scripts or new environment variables.
+The map is orientation only, not a boundary/radius or authoritative coverage list.
+Regression checks inspect rendered page content and the committed SVG for street-address
+content and require Carmichael as its only visible text label. These checks do not
+replace pending manual geographic/artwork approval.
+
+Browser coverage lives in `e2e/service-area.spec.ts` and captures desktop/phone screenshots
+in Playwright's test output. Run with `npm run test:e2e -- e2e/service-area.spec.ts` after
+the usual dependency/browser setup. Database seed tests require local Supabase with all
+migrations applied; no live database is needed for page/API unit tests.
 
 ## Estimate form spam protection (SSPMW-95)
 
@@ -593,6 +647,32 @@ Declined requests no longer appear in the estimate requests list (`GET /api/inqu
 total. There is no view of declined requests yet; a declined request can still be opened by its
 link.
 
+## Adding a customer (SSPMW-363)
+
+`/portal/customers/new` (owners only) adds a customer who called, texted or came from Yelp, Google
+or a referral. First and last name are required, plus a phone number or an email. The form and the
+server both check the details with `newCustomerSchema` in `shared/src/newCustomer.ts`, so a request
+that skips the browser check is refused the same way. There is no Social Security number field, and
+unknown fields are refused.
+
+`POST /api/customers` answers:
+
+- `201 { "customer": { "id", "firstName", "lastName" } }` when saved. The page goes back to the
+  customer list and shows a "was added" toast.
+- `400 { "error", "fieldErrors", "formErrors" }` for missing or invalid details.
+- `409 { "error", "field": "email" | "phone" }` when an active customer already has that email
+  or phone number. The page shows an "already exists" banner and marks the field.
+- `503` when the save fails. What the owner typed is kept so they can retry.
+
+The duplicate check is the same find-or-create Accept uses (`matchOrCreateCustomer`, SSPMW-385,
+see "Finding or creating a customer"): email ignoring case, then phone by its digits
+(`(916) 555-0142` matches `+1 916-555-0142`), skipping soft-deleted customers. The check and the
+save happen in one locked database call, so two saves of the same new person at the same moment
+leave one customer and the other gets the 409.
+
+Until the customer list (K1, SSPMW-338) is built, `/portal/customers` shows a short placeholder with
+an "Add customer" button, so owners can reach the form from the Customers menu.
+
 ## Database
 
 The schema lives in `supabase/migrations` and is only changed through migration files in a pull request, never by hand in the Supabase dashboard. The `db:migrate` and `db:reset` scripts only touch the local database (`--local`).
@@ -612,6 +692,10 @@ Local Auth settings come from `supabase/config.toml`. After changing that file, 
 
 Locally, Auth emails such as password resets never leave your computer. Open http://127.0.0.1:54324 to read them. `npm run verify:password-reset` checks the whole reset flow against local Supabase: the email arrives, its link opens `/staff/reset-password`, the new password signs in, the old one stops working, and a used link shows as expired. It uses the `server/.env` values.
 
+### Finding or creating a customer (SSPMW-385)
+
+Code that needs "this person's customer record, or a new one" calls `matchOrCreateCustomer` (`server/src/matchOrCreateCustomer.ts`), which runs the database function `public.find_or_create_customer`. It matches an active customer by email (ignoring case and spaces), then by phone digits (`(916) 555-0142` matches `+1 916-555-0142`), and inserts a new customer only when neither matches. The lookup and the insert happen in one transaction that locks on the email and phone, so two requests for the same new person at the same moment leave one customer. Accept and create job and Add customer both use it. Only the server's service role can call the function; its tests are in `supabase/tests/find_or_create_customer.test.sql`.
+
 ### Making schema changes
 
 1. `npm run db:start` to start the local database (Docker Desktop must be running).
@@ -622,6 +706,14 @@ Locally, Auth emails such as password resets never leave your computer. Open htt
 6. Optional: `npm run db:reset` to check the schema rebuilds cleanly from every migration. This deletes your local data.
 
 If a migration changes a table that `supabase/seed.sql` fills (customers, customer_notes, inquiries, jobs, job_steps), update the seed in the same pull request. `db:reset` runs it after the migrations.
+
+### Repeat customers (SSPMW-379)
+
+A customer is **Repeat** once they have two or more jobs with status `completed`. Scheduled, in-progress and cancelled jobs do not count, and nobody sets Repeat by hand.
+
+The rule is defined once, in the `public.customer_repeat_status` view: one row per active customer with `completed_job_count` and `is_repeat`. The customer list, customer profile, dashboard summary and customer report read it (join on `customer_id`) instead of counting jobs themselves, so they always agree. It uses the Row Level Security of `customers` and `jobs`, so only owners and the server can read it.
+
+In the portal, show the status with `CustomerStatusBadge` (`client/src/components/customers`), which takes `completedJobCount` from the view. The same threshold is `REPEAT_CUSTOMER_MIN_COMPLETED_JOBS` in `shared/src/customerRepeat.ts`; change it together with the view. `server/test/customerRepeatRule.test.ts` fails if the view's threshold or counted status stops matching the shared constants.
 
 ## Environments and sample data
 
