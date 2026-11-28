@@ -39,7 +39,10 @@ function appWithSubmit(env: Record<string, string> = {}) {
   const saveInquiry = vi.fn();
   const sendEmails = vi.fn();
   const app = createApp(loadConfig({ ...baseEnv, ...env }), auth, undefined, {
-    serviceArea: { isInServiceArea: async (city) => city === 'Carmichael' },
+    serviceArea: {
+      listActiveCities: async () => [],
+      isInServiceArea: async (city) => city === 'Carmichael',
+    },
     estimateSubmit: (req, res) => {
       saveInquiry(req.body);
       sendEmails();
@@ -181,7 +184,7 @@ describe('estimate submit route protection', () => {
       res.status(201).json({ success: true });
     };
     const app = createApp(loadConfig(baseEnv), auth, undefined, {
-      serviceArea: { isInServiceArea: async () => true },
+      serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
       estimateSubmit: handler,
     });
     await request(app).post(ESTIMATE_SUBMIT_PATH).send(customer).expect(201);

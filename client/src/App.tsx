@@ -4,17 +4,21 @@ import RequireRole from './auth/RequireRole';
 import PortalLayout from './components/layout/PortalLayout';
 import PublicLayout from './components/layout/PublicLayout';
 import { business, routes } from './config/site';
+import AddCustomerPage from './pages/AddCustomerPage';
 import ContactPage from './pages/ContactPage';
+import CustomersSection from './components/customers/CustomersSection';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
 import CustomersPage from './pages/CustomersPage';
 import InquiriesPage from './pages/InquiriesPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
+import JobsPage from './pages/JobsPage';
 import ForgotPasswordRoute from './pages/ForgotPasswordRoute';
 import NotFoundPage from './pages/NotFoundPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ResetPasswordRoute from './pages/ResetPasswordRoute';
 import ServicesPage from './pages/ServicesPage';
+import ServiceAreaPage from './pages/ServiceAreaPage';
 import StaffAccountsPage from './pages/StaffAccountsPage';
 import StaffLoginRoute from './pages/StaffLoginRoute';
 import SessionExpiredPage from './components/layout/SessionExpiredPage';
@@ -45,12 +49,16 @@ export default function App() {
           <Route element={<RequireRole allowed={['owner']} />}>
             <Route path="inquiries" element={<InquiriesPage />} />
             <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
-            <Route path="customers" element={<CustomersPage />} />
-            <Route path="customers/*" element={<PlaceholderPage />} />
+            <Route path="customers" element={<CustomersSection />}>
+              <Route index element={<CustomersPage />} />
+              <Route path="new" element={<AddCustomerPage />} />
+              <Route path="*" element={<PlaceholderPage />} />
+            </Route>
             <Route path="reports/*" element={<PlaceholderPage />} />
             <Route path="staff-accounts" element={<StaffAccountsPage />} />
             <Route path="testimonials/*" element={<PlaceholderPage />} />
           </Route>
+          <Route path="schedule" element={<JobsPage />} />
           <Route path="*" element={<PlaceholderPage />} />
         </Route>
       </Route>
@@ -61,19 +69,15 @@ export default function App() {
         {/* Implemented public pages */}
         <Route path={routes.requestEstimate} element={<EstimateRequestPage />} />
         <Route path={routes.services} element={<ServicesPage />} />
+        <Route path={routes.serviceArea} element={<ServiceAreaPage />} />
         <Route path={routes.contact} element={<ContactPage />} />
 
         {/* Planned pages that are not implemented yet */}
-        {[
-          routes.gallery,
-          routes.serviceArea,
-          routes.testimonials,
-          routes.about,
-          routes.privacy,
-          routes.terms,
-        ].map((path) => (
-          <Route key={path} path={path} element={<PlaceholderPage />} />
-        ))}
+        {[routes.gallery, routes.testimonials, routes.about, routes.privacy, routes.terms].map(
+          (path) => (
+            <Route key={path} path={path} element={<PlaceholderPage />} />
+          ),
+        )}
 
         {/* Unknown URLs display the helpful 404 page */}
         <Route path="*" element={<NotFoundPage />} />

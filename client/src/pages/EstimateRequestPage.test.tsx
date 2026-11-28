@@ -36,11 +36,15 @@ afterEach(() => {
   else Reflect.deleteProperty(URL, 'revokeObjectURL');
 });
 
-async function setup(withPhoto = false) {
+async function setup(withPhoto = false, submitRequest?: (init: RequestInit) => Promise<Response>) {
   const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
     if (url === '/api/estimates/validate-step-1') return Response.json({ valid: true });
     if (url === '/api/estimates/service-area')
       return Response.json({ inServiceArea: JSON.parse(String(init?.body)).city !== 'Davis' });
+    if (url === '/api/estimates')
+      return submitRequest
+        ? submitRequest(init ?? {})
+        : Response.json({ success: true, inquiry_number: 'EST-123' }, { status: 201 });
     if (url === '/api/estimates/photos/session')
       return Response.json({ token: 'private-session', expiresAt: 4102444800 });
     if (init?.method === 'PUT') {
@@ -57,12 +61,16 @@ async function setup(withPhoto = false) {
   const user = userEvent.setup();
   const view = render(
     <RouterProvider
-      router={createMemoryRouter([
-        {
-          path: '*',
-          element: <EstimateRequestPage />,
-        },
-      ])}
+      router={createMemoryRouter(
+        [
+          {
+            path: '/estimate',
+            element: <EstimateRequestPage />,
+          },
+          { path: '/', element: <h1>Home page</h1> },
+        ],
+        { initialEntries: ['/estimate'] },
+      )}
     />,
   );
   for (const [label, value] of Object.entries(values))
@@ -186,10 +194,7 @@ describe('estimate review and edit flow', () => {
     const submit = screen.getByRole('button', { name: 'Submit request' });
     await user.click(submit);
     const dialog = screen.getByRole('dialog', { name: 'Submit estimate request?' });
-    expect(within(dialog).getByRole('button', { name: 'Submit request' })).toBeDisabled();
-    expect(within(dialog).getByRole('status')).toHaveTextContent(
-      'Your estimate request has not been submitted.',
-    );
+    expect(within(dialog).getByRole('button', { name: 'Submit request' })).toBeEnabled();
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(submit).toHaveFocus();
@@ -203,6 +208,107 @@ describe('estimate review and edit flow', () => {
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/estimates')).toBe(false);
+  });
+
+  it('submits the shared contract and clears all request state for a new request', async () => {
+    const { user, fetchMock } = await setup(true);
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Submit request' }),
+    );
+
+    const thanksHeading = await screen.findByRole('heading', { name: 'Thanks, Ana!' });
+    expect(thanksHeading).toBeInTheDocument();
+    expect(thanksHeading).toHaveAttribute('tabindex', '-1');
+    expect(thanksHeading).toHaveFocus();
+    const submission = fetchMock.mock.calls.find(([url]) => url === '/api/estimates');
+    expect(submission).toBeDefined();
+    expect(submission?.[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = JSON.parse(String(submission?.[1]?.body));
+    expect(body).toMatchObject({
+      first_name: 'Ana',
+      last_name: 'Smith',
+      email: 'ana@example.com',
+      text_ok: true,
+      lead_source: 'referral',
+      pmw_extra: 'hidden-value',
+      photoSession: { token: 'private-session', expiresAt: 4102444800 },
+      photos: [{ storagePath: expect.stringMatching(/^estimate-uploads\//) }],
+    });
+    expect(body.submission_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Start another request' }));
+    expect(await screen.findByLabelText('First name')).toHaveValue('');
+    for (const label of Object.keys(values)) expect(screen.getByLabelText(label)).toHaveValue('');
+    expect(screen.getByLabelText('How did you hear about us?')).toHaveValue('');
+    expect(screen.getByLabelText('What happened?')).toHaveValue('');
+    expect(screen.getByLabelText('Contact me by text message')).not.toBeChecked();
+    expect(document.querySelector('[name="pmw_extra"]')).toHaveValue('');
+    expect(screen.queryByRole('img', { name: 'Preview of chair.png' })).not.toBeInTheDocument();
+  });
+
+  it('shows network failures and retries the same payload with the same submission ID', async () => {
+    const submit = vi
+      .fn<(init: RequestInit) => Promise<Response>>()
+      .mockRejectedValueOnce(new Error('Network connection lost'))
+      .mockResolvedValueOnce(
+        Response.json({ success: true, inquiry_number: 'EST-123' }, { status: 201 }),
+      );
+    const { user, fetchMock } = await setup(false, submit);
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    const dialog = screen.getByRole('dialog', { name: 'Submit estimate request?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
+
+    expect(await screen.findByText('Network connection lost')).toBeInTheDocument();
+    expect(screen.getByText('ana@example.com')).toBeInTheDocument();
+    const firstBody = JSON.parse(String(submit.mock.calls[0][0].body));
+
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
+    expect(await screen.findByRole('heading', { name: 'Thanks, Ana!' })).toBeInTheDocument();
+    const secondBody = JSON.parse(String(submit.mock.calls[1][0].body));
+    expect(secondBody).toEqual(firstBody);
+    expect(secondBody.submission_id).toBe(firstBody.submission_id);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/estimates')).toHaveLength(2);
+  });
+
+  it('shows a friendly generic message for server errors instead of the backend error', async () => {
+    const submit = vi
+      .fn<(init: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        Response.json({ error: 'Database password or internal stack details' }, { status: 503 }),
+      );
+    const { user } = await setup(false, submit);
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    const dialog = screen.getByRole('dialog', { name: 'Submit estimate request?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
+
+    expect(
+      await screen.findByText(
+        'We could not send your request right now. Your information is still in the form. Please try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Database password or internal stack details'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(values['Email address'])).toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it('allows normal home navigation after the server confirms the submission', async () => {
+    const { user } = await setup();
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Submit request' }),
+    );
+    await screen.findByRole('heading', { name: 'Thanks, Ana!' });
+
+    await user.click(screen.getByRole('link', { name: 'Return home' }));
+    expect(await screen.findByRole('heading', { name: 'Home page' })).toBeInTheDocument();
   });
 
   it('clears its local preview URL on unmount', async () => {

@@ -144,7 +144,7 @@ function isCustomerListItem(value: unknown): value is CustomerListItem {
  * check on the route is what keeps employees out here; the function's Row Level
  * Security covers anyone calling the database directly.
  */
-export function createCustomerBackend(client: Pick<SupabaseClient, 'rpc'>): CustomerBackend {
+export function createCustomerListBackend(client: Pick<SupabaseClient, 'rpc'>): CustomerBackend {
   return {
     async listCustomers({ page, pageSize, search, status, lastJobFrom, lastJobTo }) {
       const { data, error } = await client.rpc('list_customers', {

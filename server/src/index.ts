@@ -4,11 +4,13 @@ import { createAuthBackend, createSupabaseAdmin } from './supabase.js';
 import { createApp } from './app.js';
 import { createContactBackend } from './contact.js';
 import { createAcceptInquiryBackend } from './acceptInquiry.js';
+import { createCustomerBackend } from './createCustomer.js';
 import { createServiceAreaBackend } from './serviceArea.js';
 import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
+import { createJobBackend } from './jobs.js';
 import { createStaffBackend } from './staff.js';
-import { createCustomerBackend } from './customers.js';
+import { createCustomerListBackend } from './customers.js';
 import { warnIfOwnerNoticeUnavailable } from './ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
@@ -28,11 +30,13 @@ try {
     );
   }
   const photos = createEstimatePhotosBackend(supabase, config.supabaseServiceRoleKey);
+  const serviceArea = createServiceAreaBackend(supabase);
   const server = createApp(config, createAuthBackend(config, supabase), contact, {
-    serviceArea: createServiceAreaBackend(supabase),
+    serviceArea,
     photos,
     inquiries: createInquiryBackend(supabase),
     acceptInquiry: createAcceptInquiryBackend(supabase),
+    createCustomer: createCustomerBackend(supabase),
     estimateSubmit: createEstimateSubmitHandler(
       createEstimateSubmissionBackend(supabase, config.contactEmail, {
         ownerPortalOrigin: config.ownerPortalOrigin,
@@ -41,7 +45,8 @@ try {
     ),
     declineEmail: createDeclineEmailFromConfig(config),
     staff: createStaffBackend(supabase),
-    customers: createCustomerBackend(supabase),
+    customers: createCustomerListBackend(supabase),
+    jobs: createJobBackend(supabase),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);
   });

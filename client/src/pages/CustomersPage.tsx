@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   CUSTOMER_PAGE_SIZES,
   CUSTOMER_SEARCH_MAX_LENGTH,
@@ -21,7 +21,11 @@ import {
 import type { CustomerListParams, CustomerSummary } from '../api/customers';
 import { useCustomers } from '../api/useCustomers';
 import { customerCount, formatLastJobDate, isCompleteDate } from '../lib/customerFormat';
+import { ADD_CUSTOMER_PATH } from '../components/customers/customerRoutes';
 import NoPermissionPage from './NoPermissionPage';
+
+const addCustomerStyles =
+  'type-button inline-flex min-h-11 shrink-0 items-center justify-center rounded-sm bg-dark-brown px-5 py-2 text-white transition-colors hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber';
 
 /** How long typing pauses before the search runs. */
 export const SEARCH_DELAY_MS = 300;
@@ -298,9 +302,14 @@ export default function CustomersPage() {
   return (
     <main className="w-full px-4 py-6 md:px-8">
       <h1 className="sr-only">Customers</h1>
-      <p className="type-body text-neutral-600">
-        View and manage your customers and their job history.
-      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="type-body text-neutral-600">
+          View and manage your customers and their job history.
+        </p>
+        <Link to={ADD_CUSTOMER_PATH} className={addCustomerStyles}>
+          Add customer
+        </Link>
+      </div>
 
       <section
         aria-label="Customer list"

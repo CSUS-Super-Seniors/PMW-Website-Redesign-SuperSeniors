@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { escapeLike, normalizeEmail, phoneLookupTail, phonesMatch } from './customerMatch.js';
+import { matchOrCreateCustomer } from './matchOrCreateCustomer.js';
 
-type InquiryClient = Pick<SupabaseClient, 'from' | 'storage'>;
+type InquiryClient = Pick<SupabaseClient, 'from' | 'storage' | 'rpc'>;
 
 export interface AcceptedJob {
   id: string;
@@ -99,62 +99,24 @@ async function isActiveCustomer(client: InquiryClient, customerId: string) {
   return data !== null;
 }
 
-// Oldest active customer with the same email, otherwise with the same phone digits.
-async function findMatchingCustomerId(client: InquiryClient, inquiry: InquiryRow) {
-  const email = normalizeEmail(inquiry.email);
-  if (email) {
-    const { data, error } = await client
-      .from('customers')
-      .select('id')
-      .is('deleted_at', null)
-      .ilike('email', escapeLike(email))
-      .order('created_at', { ascending: true })
-      .limit(1);
-    if (error) throw new Error('Customer lookup failed');
-    if (data && data.length > 0) return data[0].id as string;
-  }
-
-  const tail = phoneLookupTail(inquiry.phone);
-  if (tail) {
-    const { data, error } = await client
-      .from('customers')
-      .select('id,phone')
-      .is('deleted_at', null)
-      .ilike('phone', `%${tail}%`)
-      .order('created_at', { ascending: true });
-    if (error) throw new Error('Customer lookup failed');
-    const match = (data ?? []).find((customer) => phonesMatch(customer.phone, inquiry.phone));
-    if (match) return match.id as string;
-  }
-
-  return null;
-}
-
+// The inquiry's linked customer when they are still active, otherwise the shared
+// match-or-create helper (K9) finds them by email or phone or creates them.
 async function resolveCustomer(client: InquiryClient, inquiry: InquiryRow) {
   if (inquiry.customer_id && (await isActiveCustomer(client, inquiry.customer_id))) {
     return { id: inquiry.customer_id, created: false };
   }
 
-  const matchedId = await findMatchingCustomerId(client, inquiry);
-  if (matchedId) return { id: matchedId, created: false };
-
-  const { data, error } = await client
-    .from('customers')
-    .insert({
-      first_name: inquiry.first_name,
-      last_name: inquiry.last_name,
-      email: normalizeEmail(inquiry.email),
-      phone: inquiry.phone,
-      address: inquiry.address,
-      city: inquiry.city,
-      preferred_contact: inquiry.preferred_contact,
-      text_ok: inquiry.text_ok,
-      lead_source: inquiry.lead_source,
-    })
-    .select('id')
-    .single();
-  if (error || !data?.id) throw new Error('Customer could not be created');
-  return { id: data.id as string, created: true };
+  return matchOrCreateCustomer(client, {
+    firstName: inquiry.first_name,
+    lastName: inquiry.last_name,
+    email: inquiry.email,
+    phone: inquiry.phone,
+    address: inquiry.address,
+    city: inquiry.city,
+    preferredContact: inquiry.preferred_contact,
+    textOk: inquiry.text_ok,
+    leadSource: inquiry.lead_source,
+  });
 }
 
 async function createJob(client: InquiryClient, inquiry: InquiryRow, customerId: string) {

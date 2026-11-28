@@ -3,7 +3,7 @@ import request from 'supertest';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import {
-  createCustomerBackend,
+  createCustomerListBackend,
   parseCustomerListQuery,
   readIsoDate,
   type CustomerBackend,
@@ -127,7 +127,7 @@ describe('readIsoDate', () => {
   });
 });
 
-describe('createCustomerBackend', () => {
+describe('createCustomerListBackend', () => {
   function fakeRpc(answer: { data: unknown; error: unknown }) {
     const calls: [string, unknown][] = [];
     const client = {
@@ -144,7 +144,7 @@ describe('createCustomerBackend', () => {
       data: { total: 31, customers: [{ ...margaret, internalNote: 'never sent' }] },
       error: null,
     });
-    const result = await createCustomerBackend(client).listCustomers({
+    const result = await createCustomerListBackend(client).listCustomers({
       page: 3,
       pageSize: 10,
       search: 'lew',
@@ -172,7 +172,7 @@ describe('createCustomerBackend', () => {
   it('throws when the database fails', async () => {
     const { client } = fakeRpc({ data: null, error: { message: 'boom' } });
     await expect(
-      createCustomerBackend(client).listCustomers({
+      createCustomerListBackend(client).listCustomers({
         page: 1,
         pageSize: 10,
         search: null,
@@ -189,7 +189,7 @@ describe('createCustomerBackend', () => {
       error: null,
     });
     await expect(
-      createCustomerBackend(client).listCustomers({
+      createCustomerListBackend(client).listCustomers({
         page: 1,
         pageSize: 10,
         search: null,

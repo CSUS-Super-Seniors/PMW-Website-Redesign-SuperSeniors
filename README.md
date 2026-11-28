@@ -120,7 +120,7 @@ customer also can't continue and is asked to try again.
 
 - Public `POST /api/estimates/service-area` takes `{ "city": "Carmichael" }` and returns
   `{ "inServiceArea": true | false }`. It answers yes or no rather than sending the list (the
-  active cities aren't secret; the Service Area page will show them). Bad input returns 400, an
+  active cities aren't secret; the Service Area page shows them). Bad input returns 400, an
   unreadable city list returns 503, and too many checks return 429 (see spam protection below).
 - The submit route runs `requireServiceArea` (see spam protection below). It checks only the
   city: a missing or invalid city gets 400 with `fieldErrors.city`, and an outside-area city gets
@@ -130,6 +130,60 @@ customer also can't continue and is asked to try again.
 - The city list is data, not code: add, rename or turn off a city in `service_cities` (Supabase
   Table Editor or SQL) and the next check uses it. `supabase/seed.sql` adds placeholder cities
   for local, dev and staging. Production cities come from the client's Q7 answer.
+
+## Public Service Area (SSPMW-234/240/243)
+
+`GET /api/service-cities` is public and returns `{ "cities": [{ "name": "…" }] }`.
+Only active `service_cities` rows are included, ordered by `display_order ASC NULLS LAST`,
+then name. Unranked active rows are not dropped. Empty data returns 200 with an empty
+array; unavailable data returns a safe 503 error, never fallback cities.
+Accepted display names are trimmed and deduplicated with the same city normalization
+used for eligibility, after database-priority sorting, so the highest-priority row wins.
+The public list allows 60 requests per minute per visitor using the existing trusted-IP
+limiter with bounded visitor storage; excess requests return 429 with `Retry-After`
+before reading the database. Responses, including 429 errors, remain `no-store`.
+As with the existing limiter, counts are per running server instance; under storage
+pressure new visitors share bounded overflow buckets rather than growing memory.
+Responses use `Cache-Control: no-store`. Each page mount/retry reads fresh data;
+changes appear on refresh/remount without a rebuild. A page already showing a successful
+list does not subscribe to live database updates.
+Keyboard retry keeps focus in the cities region while loading, then focuses the list,
+empty message, or error result only if the visitor has not moved focus elsewhere.
+
+The estimate endpoint `POST /api/estimates/service-area` **still returns only**
+`{ "inServiceArea": boolean }`, never city names. Its normalization, rate limits,
+request validation and submit-time blocking remain unchanged. Invalid stored names
+are now skipped consistently by the shared active-row reader, with one sanitized,
+count-only warning per read that rejects rows. Both endpoints use that reader;
+the public list is not a separate eligibility configuration.
+Both routes use the single `ServiceAreaBackend` dependency.
+
+Estimate checks and the submit guard select only `name` and work before the ordering
+migration. Only the public list selects `display_order` and applies presentation
+ordering; until that column exists, the list returns a safe 503 without fallback data.
+Genuine names-only query failures still block estimate approval and submission.
+After integrating main, apply `supabase/migrations/20261126000000_service_city_display_order.sql`
+through the normal reviewed migration process, after main's migrations. Do not use
+`--include-all` to bypass migration ordering. It changes no existing city names,
+active flags or ordering values. **Final Q7 production cities are still unconfirmed. Preserve production rows.**
+The development seed provisionally orders Carmichael, Fair Oaks, Citrus Heights,
+Orangevale, Sacramento and Rancho Cordova. Rancho Cordova is provisional and becomes
+estimate-eligible wherever that development seed is applied. The seed preserves unrelated
+city rows. Never seed production. Carmichael is confirmed inside; Davis outside.
+
+The page uses a self-contained static draft Census regional SVG, not a runtime map
+provider. See `docs/service-area-map/README.md` for source, reuse terms, transformation,
+manual `node scripts/generate-service-area-map.mjs` reproduction, and required artwork
+review. No paid API, runtime map keys, external map scripts or new environment variables.
+The map is orientation only, not a boundary/radius or authoritative coverage list.
+Regression checks inspect rendered page content and the committed SVG for street-address
+content and require Carmichael as its only visible text label. These checks do not
+replace pending manual geographic/artwork approval.
+
+Browser coverage lives in `e2e/service-area.spec.ts` and captures desktop/phone screenshots
+in Playwright's test output. Run with `npm run test:e2e -- e2e/service-area.spec.ts` after
+the usual dependency/browser setup. Database seed tests require local Supabase with all
+migrations applied; no live database is needed for page/API unit tests.
 
 ## Estimate form spam protection (SSPMW-95)
 
@@ -174,11 +228,11 @@ Both server entry points provide service-area and photo backends through `create
 JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
 Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
 Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
-Step 3 shows the review/edit screen and opens confirmation. Sending remains unavailable;
-SSPMW-53 owns final confirmation/Thanks, and connecting review to the submission API remains pending.
-The SSPMW-70 backend now verifies uploads and saves the inquiry plus its retained photo
-links in one transaction. A photo conflict rolls the inquiry back; removed photos never
-appear in the saved set. The page currently stops at review and confirmation without submitting.
+Step 3 shows the review/edit screen and opens the integrated submission confirmation.
+After confirmation, the page posts the retained details, honeypot, photo session and uploaded
+photos to `POST /api/estimates`. The SSPMW-70 backend verifies uploads and saves the inquiry plus
+its retained photo links in one transaction. A photo conflict rolls the inquiry back; removed
+photos never appear in the saved set.
 
 `useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
 Final submission uses `prepareSubmission` to verify live capabilities and stored bytes,
@@ -193,9 +247,10 @@ which returns the original INQ number without creating rows or sending emails ag
 submissions always require live photo capabilities; expiration never authorizes a new write.
 Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
 Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; SSPMW-95 protects the submit route, and its file checks are connected to the photo backend.
-The page retains `{ details, spamCheck, photoSession, photos }` for the later review/submission flow.
-SSPMW-44 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`.
-Both server entry points provide `estimateSubmit`; the database saves server-approved service-area membership.
+The page retains `{ details, spamCheck, photoSession, photos }` through review and submission.
+It sends `spamCheck.pmw_extra` with the final request; the server honeypot middleware consumes
+that field before applying the shared submission schema. Both server entry points provide
+`estimateSubmit`; the database saves server-approved service-area membership.
 
 - Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
 - Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
@@ -229,7 +284,7 @@ overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
-### Estimate review and editing (SSPMW-44 / SSPMW-50)
+### Estimate review, submission and Thanks (SSPMW-44 / SSPMW-50 / SSPMW-53 / SSPMW-60)
 
 After optional photos finish uploading, Step 3 shows contact details (including text
 permission), service address/city, item, the readable problem option, description,
@@ -241,11 +296,12 @@ Edit buttons open the existing details/photo step and focus the selected section
 text permission, the hidden spam check and selected photos remain intact. Unchanged
 photos are not uploaded again; removing/replacing photos refreshes the photo handoff.
 
-**Submit request** opens the shared modal. Cancel, Escape and Close return to review
-with data kept. The dialog clearly states that nothing has been submitted and its
-final send button is disabled. SSPMW-53 can connect its confirmation/Thanks flow using
-the retained `EstimateRequestHandoff` shape `{ details, spamCheck, photoSession, photos }`.
-Opening confirmation does not mark the request submitted or disable the leave guard.
+**Submit request** opens the shared confirmation dialog. Cancel, Escape, Close and
+backdrop click dismiss it without sending; all entered details and selected photos remain.
+After confirmation, the button shows **Sending…** and duplicate requests and dismissal
+are prevented. HTTP and network errors appear in the dialog; the customer can retry the
+same payload, which reuses its submission ID. The page shows success only after a valid
+server response confirms `POST /api/estimates`.
 
 Scope and dependencies:
 
@@ -253,17 +309,26 @@ Scope and dependencies:
   dropdown and shared labels. Options are Google, Referral, Social media, Yelp and
   Other. Step 3 displays the selected label and supports editing it while retaining
   other fields/photos. Shared client/server validation rejects unsupported values.
-- SSPMW-70/PR #66 is not a dependency of SSPMW-44. This branch adds no final-save
-  API, email wiring, database migration, submission retry logic or Thanks screen.
-  Those acceptance checks belong to their owning stories.
-- Existing SSPMW-64 leave protection remains active across review, editing and the
-  confirmation preview. The future successful-submit flow must call `markSubmitted()`
-  only after the server confirms success.
+- On confirmed submission, Step 4 displays a personalized **Thanks, {first name}!**
+  message (or **Thanks!** when no first name is available). **Start another request**
+  clears form fields, honeypot, local photo selections/previews, photo session and
+  submission state. Previously uploaded but unattached photos follow the cleanup policy.
+  **Return home** navigates normally without the unfinished-request leave guard.
+- SSPMW-64 leave protection remains active through review, editing, confirmation and
+  failed submissions. The page calls `markSubmitted()` only after the server confirms
+  success, which disables the leave warning before the customer navigates.
 
-Unit tests cover the summary, edit/return, field/service-area errors, photo replacement,
-lead-source retention, and confirmation cancellation without submitting anything.
-Browser coverage: `e2e/estimate-photos.spec.ts`, `e2e/estimate-leave-guard.spec.ts`, and
-`e2e/estimate-review-confirmation.spec.ts`, with desktop/phone screenshots in `test-results/`.
+Relevant tests:
+
+```bash
+npm run test --workspace=client -- src/pages/EstimateRequestPage.test.tsx src/components/estimate/EstimateSubmission.test.tsx
+npx playwright test e2e/estimate-review-confirmation.spec.ts --project=chromium
+npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium
+```
+
+The unit and browser tests cover cancellation, pending dismissal, errors/retry, duplicate
+prevention, reset, and navigation after success. The Playwright specs exercise desktop and
+phone widths and save screenshots in `test-results/`.
 
 ### Lead source collection and handoff (SSPMW-92 / SSPMW-87)
 
@@ -291,11 +356,11 @@ form's `onContinue(details, spamCheck)` includes the selected value unchanged in
 `details`. The page retains it through the service-area check, photos, and Back
 navigation. The endpoint only validates; it does not save an inquiry.
 
-**Integration status:** Step 3 now displays the source label and preserves edits.
-SSPMW-44 carries `details.lead_source` into Step 3, displays the shared
-`leadSourceOptions` label, and tests retention when editing and navigating between steps.
-Connecting final submission to the API below remains pending. SSPMW-70 now revalidates the source
-and inserts it into `public.inquiries.lead_source`. Backend tests cover rejection of
+**Integration status:** Step 3 displays the source label and preserves edits.
+The estimate page carries `details.lead_source` into Step 3 and the final submission,
+displays the shared `leadSourceOptions` label, and tests retention when editing and
+navigating between steps. SSPMW-70 revalidates the source and inserts it into
+`public.inquiries.lead_source`. Backend tests cover rejection of
 tampered/missing sources; the database tests cover all five stored source values.
 SSPMW-92 remains pending review, integrated UI verification, or an approved scope change.
 
@@ -304,8 +369,8 @@ selection, missing-selection error, correction, checking/disabled state, server
 field error, network failure and retry, and successful validation with the source
 retained after going to photos and back. Check that an edited source survives
 another trip through photos and Back navigation. Continuing with zero photos opens
-review with "No photos selected." Submit opens confirmation without sending the
-request. Capture desktop and phone screenshots for the PR.
+review with "No photos selected." Submit, retry and confirm a successful request.
+Capture desktop and phone screenshots for the PR.
 
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 
@@ -329,14 +394,14 @@ App route tree supports `useBlocker`. Tests mounting the estimate page must like
 use a data router, such as `createMemoryRouter`.
 
 `useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
-SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
-before navigating to Thanks. It permits immediate navigation and disables both
-warnings. A new request must clear the old draft/photos and call `startNewRequest()`
-if reusing the same mounted page. The current photo handoff is not submission and
-remains protected. The success/reset contract is covered in hook tests; wiring it
-into the real submission flow remains pending SSPMW-53/70.
+The estimate page calls `markSubmitted()` only after confirmed server submission,
+before navigating away from the personalized Thanks page. This permits immediate
+navigation and disables both warnings. Starting another request clears the old
+draft/photos and calls `startNewRequest()` on the mounted page. The photo handoff,
+review and failed submissions remain protected.
 
-Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
+Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`
+and `npx playwright test e2e/estimate-review-confirmation.spec.ts --project=chromium`.
 The spec captures desktop and phone versions of the dialog in `test-results/`.
 
 ## Final estimate submission (SSPMW-70 / SSPMW-75 / SSPMW-77 / SSPMW-80)
@@ -440,12 +505,12 @@ only their own test rows, and leave normal number-sequence gaps. A missing URL f
 explicit command; ordinary `npm test` skips this suite when no URL is provided. CI runs
 it after the existing RLS and seed checks.
 
-Manual acceptance still requires a test request on dev/staging: confirm one New inquiry,
+Manual backend acceptance still requires a test request on dev/staging: confirm one New inquiry,
 its source and photos through an owner signed view; verify both emails arrive. Repeat
 with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized logs.
 Retry the original request and confirm the same INQ number with no duplicate inquiry or
-emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
-and its success/error presentation, including desktop/phone screenshots.
+emails. The `/estimate` page now submits through the API and presents confirmation,
+error/retry and success states; verify these in the browser as part of UI acceptance.
 
 ### Customer receipt (SSPMW-197 / SSPMW-201)
 
@@ -605,7 +670,7 @@ characters), `status` (`new` or `repeat`), and `from` / `to` (`YYYY-MM-DD`, last
 inclusive). It answers `{ customers, total, page, pageSize }`, and 400 for anything else.
 
 The rules live in the database function `public.list_customers`
-(`supabase/migrations/20261123000000_list_customers.sql`):
+(`supabase/migrations/20261128000000_list_customers.sql`):
 
 - Soft-deleted customers (`deleted_at` set) never appear.
 - **Jobs** counts jobs that are not cancelled. **Repeat** is two or more of them (K8, SSPMW-379);
@@ -619,6 +684,31 @@ The rules live in the database function `public.list_customers`
 
 The sample data gives each customer one job, so every sample customer shows as New until more jobs
 are added.
+
+## Adding a customer (SSPMW-363)
+
+`/portal/customers/new` (owners only) adds a customer who called, texted or came from Yelp, Google
+or a referral. First and last name are required, plus a phone number or an email. The form and the
+server both check the details with `newCustomerSchema` in `shared/src/newCustomer.ts`, so a request
+that skips the browser check is refused the same way. There is no Social Security number field, and
+unknown fields are refused.
+
+`POST /api/customers` answers:
+
+- `201 { "customer": { "id", "firstName", "lastName" } }` when saved. The page goes back to the
+  customer list and shows a "was added" toast.
+- `400 { "error", "fieldErrors", "formErrors" }` for missing or invalid details.
+- `409 { "error", "field": "email" | "phone" }` when an active customer already has that email
+  or phone number. The page shows an "already exists" banner and marks the field.
+- `503` when the save fails. What the owner typed is kept so they can retry.
+
+The duplicate check is the same find-or-create Accept uses (`matchOrCreateCustomer`, SSPMW-385,
+see "Finding or creating a customer"): email ignoring case, then phone by its digits
+(`(916) 555-0142` matches `+1 916-555-0142`), skipping soft-deleted customers. The check and the
+save happen in one locked database call, so two saves of the same new person at the same moment
+leave one customer and the other gets the 409.
+
+The customer list (`/portal/customers`, SSPMW-338) has an "Add customer" button that opens the form.
 
 ## Database
 
@@ -639,6 +729,10 @@ Local Auth settings come from `supabase/config.toml`. After changing that file, 
 
 Locally, Auth emails such as password resets never leave your computer. Open http://127.0.0.1:54324 to read them. `npm run verify:password-reset` checks the whole reset flow against local Supabase: the email arrives, its link opens `/staff/reset-password`, the new password signs in, the old one stops working, and a used link shows as expired. It uses the `server/.env` values.
 
+### Finding or creating a customer (SSPMW-385)
+
+Code that needs "this person's customer record, or a new one" calls `matchOrCreateCustomer` (`server/src/matchOrCreateCustomer.ts`), which runs the database function `public.find_or_create_customer`. It matches an active customer by email (ignoring case and spaces), then by phone digits (`(916) 555-0142` matches `+1 916-555-0142`), and inserts a new customer only when neither matches. The lookup and the insert happen in one transaction that locks on the email and phone, so two requests for the same new person at the same moment leave one customer. Accept and create job and Add customer both use it. Only the server's service role can call the function; its tests are in `supabase/tests/find_or_create_customer.test.sql`.
+
 ### Making schema changes
 
 1. `npm run db:start` to start the local database (Docker Desktop must be running).
@@ -649,6 +743,14 @@ Locally, Auth emails such as password resets never leave your computer. Open htt
 6. Optional: `npm run db:reset` to check the schema rebuilds cleanly from every migration. This deletes your local data.
 
 If a migration changes a table that `supabase/seed.sql` fills (customers, customer_notes, inquiries, jobs, job_steps), update the seed in the same pull request. `db:reset` runs it after the migrations.
+
+### Repeat customers (SSPMW-379)
+
+A customer is **Repeat** once they have two or more jobs with status `completed`. Scheduled, in-progress and cancelled jobs do not count, and nobody sets Repeat by hand.
+
+The rule is defined once, in the `public.customer_repeat_status` view: one row per active customer with `completed_job_count` and `is_repeat`. The customer list, customer profile, dashboard summary and customer report read it (join on `customer_id`) instead of counting jobs themselves, so they always agree. It uses the Row Level Security of `customers` and `jobs`, so only owners and the server can read it.
+
+In the portal, show the status with `CustomerStatusBadge` (`client/src/components/customers`), which takes `completedJobCount` from the view. The same threshold is `REPEAT_CUSTOMER_MIN_COMPLETED_JOBS` in `shared/src/customerRepeat.ts`; change it together with the view. `server/test/customerRepeatRule.test.ts` fails if the view's threshold or counted status stops matching the shared constants.
 
 ## Environments and sample data
 
