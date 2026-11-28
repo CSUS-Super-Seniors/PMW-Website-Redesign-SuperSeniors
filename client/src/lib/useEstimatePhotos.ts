@@ -60,6 +60,11 @@ export function useEstimatePhotos() {
     update((previous) => previous.filter((photo) => photo.id !== id));
   }, []);
 
+  const resetPhotos = useCallback(() => {
+    sessionRef.current = null;
+    update(() => []);
+  }, []);
+
   async function uploadPhotos(): Promise<EstimatePhotoHandoff> {
     if (uploading.current) throw new Error('Photos are already uploading.');
     if (current.current.some((photo) => photo.status !== 'ready'))
@@ -129,5 +134,5 @@ export function useEstimatePhotos() {
     }
   }
 
-  return { photos, addPhotos, removePhoto, uploadPhotos };
+  return { photos, addPhotos, removePhoto, resetPhotos, uploadPhotos };
 }

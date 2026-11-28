@@ -228,11 +228,11 @@ Both server entry points provide service-area and photo backends through `create
 JPG/PNG originals up to 10 MiB (shown as 10 MB) compress to at most 1 MiB using the existing helper and upload to private `inquiry photos` storage on Next.
 Zero photos needs no file upload, but an existing session may need renewal. Back preserves state; refresh loses it.
 Failed uploads are retryable, successful uploads are reused, and removed photos are excluded.
-Step 3 shows the review/edit screen and opens confirmation. Sending remains unavailable;
-SSPMW-53 owns final confirmation/Thanks, and connecting review to the submission API remains pending.
-The SSPMW-70 backend now verifies uploads and saves the inquiry plus its retained photo
-links in one transaction. A photo conflict rolls the inquiry back; removed photos never
-appear in the saved set. The page currently stops at review and confirmation without submitting.
+Step 3 shows the review/edit screen and opens the integrated submission confirmation.
+After confirmation, the page posts the retained details, honeypot, photo session and uploaded
+photos to `POST /api/estimates`. The SSPMW-70 backend verifies uploads and saves the inquiry plus
+its retained photo links in one transaction. A photo conflict rolls the inquiry back; removed
+photos never appear in the saved set.
 
 `useEstimatePhotos().uploadPhotos()` returns `{ photoSession: { token, expiresAt } | null, photos: [{ id, storagePath, receipt }] }`.
 Final submission uses `prepareSubmission` to verify live capabilities and stored bytes,
@@ -247,9 +247,10 @@ which returns the original INQ number without creating rows or sending emails ag
 submissions always require live photo capabilities; expiration never authorizes a new write.
 Sessions last 24 hours; renewal preserves identity for seven days after expiry and reuploads retained files. After that, start a new request.
 Photo requests time out after 30 seconds. Owner-only `GET /api/inquiry-photos/:photoId/view-url` returns five-minute signed views; SSPMW-95 protects the submit route, and its file checks are connected to the photo backend.
-The page retains `{ details, spamCheck, photoSession, photos }` for the later review/submission flow.
-SSPMW-44 must send `spamCheck.pmw_extra` with the final request through `POST /api/estimates`.
-Both server entry points provide `estimateSubmit`; the database saves server-approved service-area membership.
+The page retains `{ details, spamCheck, photoSession, photos }` through review and submission.
+It sends `spamCheck.pmw_extra` with the final request; the server honeypot middleware consumes
+that field before applying the shared submission schema. Both server entry points provide
+`estimateSubmit`; the database saves server-approved service-area membership.
 
 - Preview: `/dev/estimate-photos` on Vite (development-only; Next uploads to the configured API/storage, but submits no inquiry).
 - Browser checks: `npx playwright test e2e/estimate-photos.spec.ts --project=chromium` (desktop/phone, real compression, mocked uploads).
@@ -283,7 +284,7 @@ overlapping cleanup runs, and reports failures through its Actions run status.
 The cleanup checks `inquiry_photos` before selecting expired objects for deletion;
 attached and still-claimable uploads are retained. No live cleanup is needed to test this change.
 
-### Estimate review and editing (SSPMW-44 / SSPMW-50)
+### Estimate review, submission and Thanks (SSPMW-44 / SSPMW-50 / SSPMW-53 / SSPMW-60)
 
 After optional photos finish uploading, Step 3 shows contact details (including text
 permission), service address/city, item, the readable problem option, description,
@@ -295,11 +296,12 @@ Edit buttons open the existing details/photo step and focus the selected section
 text permission, the hidden spam check and selected photos remain intact. Unchanged
 photos are not uploaded again; removing/replacing photos refreshes the photo handoff.
 
-**Submit request** opens the shared modal. Cancel, Escape and Close return to review
-with data kept. The dialog clearly states that nothing has been submitted and its
-final send button is disabled. SSPMW-53 can connect its confirmation/Thanks flow using
-the retained `EstimateRequestHandoff` shape `{ details, spamCheck, photoSession, photos }`.
-Opening confirmation does not mark the request submitted or disable the leave guard.
+**Submit request** opens the shared confirmation dialog. Cancel, Escape, Close and
+backdrop click dismiss it without sending; all entered details and selected photos remain.
+After confirmation, the button shows **Sending…** and duplicate requests and dismissal
+are prevented. HTTP and network errors appear in the dialog; the customer can retry the
+same payload, which reuses its submission ID. The page shows success only after a valid
+server response confirms `POST /api/estimates`.
 
 Scope and dependencies:
 
@@ -307,17 +309,26 @@ Scope and dependencies:
   dropdown and shared labels. Options are Google, Referral, Social media, Yelp and
   Other. Step 3 displays the selected label and supports editing it while retaining
   other fields/photos. Shared client/server validation rejects unsupported values.
-- SSPMW-70/PR #66 is not a dependency of SSPMW-44. This branch adds no final-save
-  API, email wiring, database migration, submission retry logic or Thanks screen.
-  Those acceptance checks belong to their owning stories.
-- Existing SSPMW-64 leave protection remains active across review, editing and the
-  confirmation preview. The future successful-submit flow must call `markSubmitted()`
-  only after the server confirms success.
+- On confirmed submission, Step 4 displays a personalized **Thanks, {first name}!**
+  message (or **Thanks!** when no first name is available). **Start another request**
+  clears form fields, honeypot, local photo selections/previews, photo session and
+  submission state. Previously uploaded but unattached photos follow the cleanup policy.
+  **Return home** navigates normally without the unfinished-request leave guard.
+- SSPMW-64 leave protection remains active through review, editing, confirmation and
+  failed submissions. The page calls `markSubmitted()` only after the server confirms
+  success, which disables the leave warning before the customer navigates.
 
-Unit tests cover the summary, edit/return, field/service-area errors, photo replacement,
-lead-source retention, and confirmation cancellation without submitting anything.
-Browser coverage: `e2e/estimate-photos.spec.ts`, `e2e/estimate-leave-guard.spec.ts`, and
-`e2e/estimate-review-confirmation.spec.ts`, with desktop/phone screenshots in `test-results/`.
+Relevant tests:
+
+```bash
+npm run test --workspace=client -- src/pages/EstimateRequestPage.test.tsx src/components/estimate/EstimateSubmission.test.tsx
+npx playwright test e2e/estimate-review-confirmation.spec.ts --project=chromium
+npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium
+```
+
+The unit and browser tests cover cancellation, pending dismissal, errors/retry, duplicate
+prevention, reset, and navigation after success. The Playwright specs exercise desktop and
+phone widths and save screenshots in `test-results/`.
 
 ### Lead source collection and handoff (SSPMW-92 / SSPMW-87)
 
@@ -345,11 +356,11 @@ form's `onContinue(details, spamCheck)` includes the selected value unchanged in
 `details`. The page retains it through the service-area check, photos, and Back
 navigation. The endpoint only validates; it does not save an inquiry.
 
-**Integration status:** Step 3 now displays the source label and preserves edits.
-SSPMW-44 carries `details.lead_source` into Step 3, displays the shared
-`leadSourceOptions` label, and tests retention when editing and navigating between steps.
-Connecting final submission to the API below remains pending. SSPMW-70 now revalidates the source
-and inserts it into `public.inquiries.lead_source`. Backend tests cover rejection of
+**Integration status:** Step 3 displays the source label and preserves edits.
+The estimate page carries `details.lead_source` into Step 3 and the final submission,
+displays the shared `leadSourceOptions` label, and tests retention when editing and
+navigating between steps. SSPMW-70 revalidates the source and inserts it into
+`public.inquiries.lead_source`. Backend tests cover rejection of
 tampered/missing sources; the database tests cover all five stored source values.
 SSPMW-92 remains pending review, integrated UI verification, or an approved scope change.
 
@@ -358,8 +369,8 @@ selection, missing-selection error, correction, checking/disabled state, server
 field error, network failure and retry, and successful validation with the source
 retained after going to photos and back. Check that an edited source survives
 another trip through photos and Back navigation. Continuing with zero photos opens
-review with "No photos selected." Submit opens confirmation without sending the
-request. Capture desktop and phone screenshots for the PR.
+review with "No photos selected." Submit, retry and confirm a successful request.
+Capture desktop and phone screenshots for the PR.
 
 ### Leaving an unfinished estimate (SSPMW-64 / SSPMW-69)
 
@@ -383,14 +394,14 @@ App route tree supports `useBlocker`. Tests mounting the estimate page must like
 use a data router, such as `createMemoryRouter`.
 
 `useEstimateLeaveGuard(hasData)` returns `{ blocker, markSubmitted, startNewRequest }`.
-SSPMW-53/70 must call `markSubmitted()` only after confirmed server submission,
-before navigating to Thanks. It permits immediate navigation and disables both
-warnings. A new request must clear the old draft/photos and call `startNewRequest()`
-if reusing the same mounted page. The current photo handoff is not submission and
-remains protected. The success/reset contract is covered in hook tests; wiring it
-into the real submission flow remains pending SSPMW-53/70.
+The estimate page calls `markSubmitted()` only after confirmed server submission,
+before navigating away from the personalized Thanks page. This permits immediate
+navigation and disables both warnings. Starting another request clears the old
+draft/photos and calls `startNewRequest()` on the mounted page. The photo handoff,
+review and failed submissions remain protected.
 
-Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`.
+Browser coverage: `npx playwright test e2e/estimate-leave-guard.spec.ts --project=chromium`
+and `npx playwright test e2e/estimate-review-confirmation.spec.ts --project=chromium`.
 The spec captures desktop and phone versions of the dialog in `test-results/`.
 
 ## Final estimate submission (SSPMW-70 / SSPMW-75 / SSPMW-77 / SSPMW-80)
@@ -494,12 +505,12 @@ only their own test rows, and leave normal number-sequence gaps. A missing URL f
 explicit command; ordinary `npm test` skips this suite when no URL is provided. CI runs
 it after the existing RLS and seed checks.
 
-Manual acceptance still requires a test request on dev/staging: confirm one New inquiry,
+Manual backend acceptance still requires a test request on dev/staging: confirm one New inquiry,
 its source and photos through an owner signed view; verify both emails arrive. Repeat
 with Resend forced to fail and confirm 201 plus the saved inquiry and sanitized logs.
 Retry the original request and confirm the same INQ number with no duplicate inquiry or
-emails. The current `/estimate` page does not yet submit; SSPMW-44 owns the review screen
-and its success/error presentation, including desktop/phone screenshots.
+emails. The `/estimate` page now submits through the API and presents confirmation,
+error/retry and success states; verify these in the browser as part of UI acceptance.
 
 ### Customer receipt (SSPMW-197 / SSPMW-201)
 
