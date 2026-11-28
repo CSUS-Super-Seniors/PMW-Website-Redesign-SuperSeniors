@@ -7,6 +7,10 @@ import {
   estimateStep1Schema,
   mapEstimateStep1Errors,
   serviceAreaCheckSchema,
+  newCustomerSchema,
+  mapNewCustomerErrors,
+  CUSTOMER_EXISTS_MESSAGES,
+  CUSTOMER_SAVE_FAILED_MESSAGE,
   ESTIMATE_HONEYPOT_FIELD,
   mapStaffInviteErrors,
   staffInviteSchema,
@@ -20,6 +24,7 @@ import { requireOwner, requireStaff } from './auth.js';
 import type { StaffBackend } from './staff.js';
 import type { StaffInviteBackend } from './staffInvite.js';
 import type { AcceptInquiryBackend } from './acceptInquiry.js';
+import type { CreateCustomerBackend } from './createCustomer.js';
 import {
   SERVICE_AREA_UNAVAILABLE_MESSAGE,
   requireServiceArea,
@@ -52,6 +57,8 @@ export interface AppOptions {
   acceptInquiry?: AcceptInquiryBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
   declineEmail?: DeclineEmailSender;
+  /** Saves a customer the owner adds by hand (SSPMW-363). */
+  createCustomer?: CreateCustomerBackend;
   /** Reads the jobs list for staff (SSPMW-305). */
   jobs?: JobBackend;
 }
@@ -96,6 +103,7 @@ export function createApp(
     declineEmail,
     staff,
     staffInvite,
+    createCustomer: createCustomerBackend,
     jobs,
   }: AppOptions = {},
 ) {
@@ -208,8 +216,28 @@ export function createApp(
       res.json({ valid: true });
     },
   );
-  // Step 1 asks this before the customer can continue. It only answers yes or no,
-  // so the city list itself is never sent to the browser.
+  // Public display endpoint; unlike the estimate check it intentionally lists cities.
+  app.get(
+    '/api/service-cities',
+    createRateLimiter({
+      max: 60,
+      windowMs: 60_000,
+      maxVisitors: 10_000,
+      message: 'Too many city list requests. Please wait a minute and retry.',
+    }),
+    async (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      try {
+        if (!serviceArea) throw new Error('Missing service area backend');
+        res.json({ cities: await serviceArea.listActiveCities() });
+      } catch {
+        res
+          .status(503)
+          .json({ error: 'We could not load the cities we serve. Please try again or call us.' });
+      }
+    },
+  );
+  // Step 1 still answers only yes/no; its response never includes the city list.
   app.post(
     '/api/estimates/service-area',
     // Generous for a customer who corrects their city, but each check reads the database.
@@ -402,6 +430,39 @@ export function createApp(
         reason: error instanceof Error ? error.message : 'unknown',
       });
       res.status(503).json({ error: 'The invite could not be sent. Please try again.' });
+    }
+  });
+  // Add customer (SSPMW-363). The body is checked with the same schema as the form, and
+  // the duplicate check runs here on the server, so neither can be skipped.
+  api.post('/customers', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const parsed = newCustomerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Please check the customer details.',
+        ...mapNewCustomerErrors(parsed.error),
+      });
+      return;
+    }
+    if (!createCustomerBackend) {
+      res.status(503).json({ error: CUSTOMER_SAVE_FAILED_MESSAGE });
+      return;
+    }
+    try {
+      const result = await createCustomerBackend.createCustomer(parsed.data);
+      if (result.outcome === 'duplicate') {
+        res
+          .status(409)
+          .json({ error: CUSTOMER_EXISTS_MESSAGES[result.matchedBy], field: result.matchedBy });
+        return;
+      }
+      res.status(201).json({ customer: result.customer });
+    } catch (error) {
+      // The backend's errors carry fixed messages with no customer details, so this is safe to log.
+      console.error('Add customer failed', {
+        reason: error instanceof Error ? error.message : 'unknown',
+      });
+      res.status(503).json({ error: CUSTOMER_SAVE_FAILED_MESSAGE });
     }
   });
   api.post('/inquiries/:inquiryId/accept', async (req, res) => {

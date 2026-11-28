@@ -59,7 +59,7 @@ function fixture(inArea = true) {
   const photos = {
     prepareSubmission: vi.fn(async () => ({ sessionId: null, storagePaths: [] as string[] })),
   };
-  const area = { isInServiceArea: vi.fn(async () => inArea) };
+  const area = { listActiveCities: async () => [], isInServiceArea: vi.fn(async () => inArea) };
   const app = createApp(config, auth, undefined, {
     serviceArea: area,
     estimateSubmit: createEstimateSubmitHandler(backend, photos),
@@ -430,7 +430,7 @@ describe('submission persistence and Resend adapter', () => {
           : Response.json({ id: 'email-id' });
       });
       const app = createApp(config, auth, undefined, {
-        serviceArea: { isInServiceArea: async () => true },
+        serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
         estimateSubmit: createEstimateSubmitHandler(f.backend, {
           prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
         }),
@@ -484,7 +484,7 @@ describe('submission persistence and Resend adapter', () => {
           : Response.json({ id: 'email-id' });
       });
       const app = createApp(config, auth, undefined, {
-        serviceArea: { isInServiceArea: async () => true },
+        serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
         estimateSubmit: createEstimateSubmitHandler(f.backend, {
           prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
         }),
@@ -538,7 +538,7 @@ describe('submission persistence and Resend adapter', () => {
       const f = backendFixture(true, portalOrigin);
       const log = vi.spyOn(console, 'error').mockImplementation(() => {});
       const app = createApp(config, auth, undefined, {
-        serviceArea: { isInServiceArea: async () => true },
+        serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
         estimateSubmit: createEstimateSubmitHandler(f.backend, {
           prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
         }),
@@ -584,7 +584,7 @@ describe('submission persistence and Resend adapter', () => {
       Response.json({ message: 'PRIVATE PROVIDER BODY' }, { status: 403 }),
     );
     const app = createApp(config, auth, undefined, {
-      serviceArea: { isInServiceArea: async () => true },
+      serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
       estimateSubmit: createEstimateSubmitHandler(f.backend, {
         prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
       }),
@@ -609,7 +609,7 @@ describe('submission persistence and Resend adapter', () => {
     const f = backendFixture(false);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const app = createApp(config, auth, undefined, {
-      serviceArea: { isInServiceArea: async () => true },
+      serviceArea: { listActiveCities: async () => [], isInServiceArea: async () => true },
       estimateSubmit: createEstimateSubmitHandler(f.backend, {
         prepareSubmission: async () => ({ sessionId: null, storagePaths: [] }),
       }),

@@ -135,7 +135,14 @@ describe.skipIf(!databaseUrl)('supabase/seed.sql on a real database', { timeout:
   });
 
   it('seeds the placeholder service cities as active, and turns them back on', async () => {
-    const cities = ['Carmichael', 'Citrus Heights', 'Fair Oaks', 'Orangevale', 'Sacramento'];
+    const cities = [
+      'Carmichael',
+      'Citrus Heights',
+      'Fair Oaks',
+      'Orangevale',
+      'Rancho Cordova',
+      'Sacramento',
+    ];
     const activeCities = async () =>
       (
         await query(
@@ -148,8 +155,35 @@ describe.skipIf(!databaseUrl)('supabase/seed.sql on a real database', { timeout:
     expect(await activeCities()).toEqual(cities);
 
     await query(`update public.service_cities set is_active = false where name = 'Carmichael'`);
+    await query(`update public.service_cities set display_order = null where name = 'Fair Oaks'`);
     await seed();
     expect(await activeCities()).toEqual(cities);
+    const ordered = await query(
+      `select name from public.service_cities where name = any($1) order by display_order, name`,
+      [cities],
+    );
+    expect(ordered.map((row) => row.name)).toEqual([
+      'Carmichael',
+      'Fair Oaks',
+      'Citrus Heights',
+      'Orangevale',
+      'Sacramento',
+      'Rancho Cordova',
+    ]);
+  });
+
+  it('preserves unrelated active and inactive service cities on repeated seeding', async () => {
+    await query(`insert into public.service_cities (name, is_active, display_order) values
+      ('Seed test unranked city', true, null), ('Seed test inactive city', false, 70)`);
+    await seed();
+    await seed();
+    expect(
+      await query(`select name, is_active, display_order from public.service_cities
+      where name like 'Seed test %' order by name`),
+    ).toEqual([
+      { name: 'Seed test inactive city', is_active: false, display_order: 70 },
+      { name: 'Seed test unranked city', is_active: true, display_order: null },
+    ]);
   });
 
   it('puts edited sample rows back to their sample values', async () => {

@@ -292,6 +292,25 @@ describe('App', () => {
     );
   });
 
+  it('shows Service Area inside the public layout with active navigation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(Response.json({ cities: [{ name: 'Carmichael' }] })),
+    );
+    renderApp('/service-area');
+    expect(screen.getByRole('heading', { name: 'Where we work' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).toBeInTheDocument();
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', {
+        name: 'Service Area',
+      }),
+    ).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByRole('list', { name: 'Cities we serve' })).toHaveTextContent(
+      'Carmichael',
+    );
+  });
+
   it('sends a signed-out visitor from a portal URL to staff login', () => {
     renderApp('/portal/dashboard');
 
@@ -354,6 +373,7 @@ describe('App', () => {
     '/portal/staff-accounts',
     '/portal/testimonials',
     '/portal/customers/123',
+    '/portal/customers/new',
   ])('shows the no-permission screen to an employee on %s', async (path) => {
     fakeServerRole('employee');
     renderApp(path, { session: staffSession });
@@ -365,7 +385,7 @@ describe('App', () => {
 
   it('lets an owner open an owner-only URL', async () => {
     fakeServerRole('owner');
-    renderApp('/portal/customers', { session: staffSession });
+    renderApp('/portal/reports', { session: staffSession });
 
     expect(
       await screen.findByRole('heading', { name: 'This page is not built yet' }),
@@ -373,6 +393,27 @@ describe('App', () => {
     expect(
       screen.queryByRole('heading', { name: 'You do not have access to this page' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('links owners from Customers to Add customer until the list is built', async () => {
+    fakeServerRole('owner');
+    const user = userEvent.setup();
+    renderApp('/portal/customers', { session: staffSession });
+
+    const link = await screen.findByRole('link', { name: 'Add customer' });
+    expect(link).toHaveAttribute('href', '/portal/customers/new');
+
+    await user.click(link);
+
+    expect(await screen.findByRole('form', { name: 'Add customer' })).toBeInTheDocument();
+  });
+
+  it('lets an owner open the Add customer page', async () => {
+    fakeServerRole('owner');
+    renderApp('/portal/customers/new', { session: staffSession });
+
+    expect(await screen.findByRole('heading', { name: 'Add customer' })).toBeInTheDocument();
+    expect(screen.getByRole('form', { name: 'Add customer' })).toBeInTheDocument();
   });
 
   it('shows a helpful 404 page for an unknown URL', () => {
