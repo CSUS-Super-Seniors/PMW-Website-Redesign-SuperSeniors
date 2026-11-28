@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { fetchStaffAccounts, type StaffListResult } from './staff';
+import { fetchStaffAccounts, type StaffAccount, type StaffListResult } from './staff';
 
 export type StaffAccountsState = { status: 'loading' } | StaffListResult;
 
-export function useStaffAccounts(): { state: StaffAccountsState; retry: () => void } {
+export function useStaffAccounts(): {
+  state: StaffAccountsState;
+  retry: () => void;
+  updateRole: (staffId: string, role: StaffAccount['role']) => void;
+  markInactive: (staffId: string) => void;
+} {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const userId = session?.user.id;
@@ -36,5 +41,39 @@ export function useStaffAccounts(): { state: StaffAccountsState; retry: () => vo
     setAttempt((n) => n + 1);
   }
 
-  return { state, retry };
+  function updateRole(staffId: string, role: StaffAccount['role']) {
+    setResult((previous) => {
+      if (!previous || previous.userId !== userId || previous.value.status !== 'ok') {
+        return previous;
+      }
+      return {
+        ...previous,
+        value: {
+          ...previous.value,
+          staff: previous.value.staff.map((person) =>
+            person.id === staffId ? { ...person, role } : person,
+          ),
+        },
+      };
+    });
+  }
+
+  function markInactive(staffId: string) {
+    setResult((previous) => {
+      if (!previous || previous.userId !== userId || previous.value.status !== 'ok') {
+        return previous;
+      }
+      return {
+        ...previous,
+        value: {
+          ...previous.value,
+          staff: previous.value.staff.map((person) =>
+            person.id === staffId ? { ...person, status: 'inactive' } : person,
+          ),
+        },
+      };
+    });
+  }
+
+  return { state, retry, updateRole, markInactive };
 }
