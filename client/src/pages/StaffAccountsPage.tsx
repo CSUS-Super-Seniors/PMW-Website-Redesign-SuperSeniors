@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { AddEmployeeDialog } from '../components/staff/AddEmployeeDialog';
 import { Badge, Button, ErrorBanner, Table, type TableColumn } from '../components/ui';
 import type { StaffAccount } from '../api/staff';
 import { useStaffAccounts, type StaffAccountsState } from '../api/useStaffAccounts';
@@ -97,19 +99,26 @@ function StaffContent({ state, retry }: { state: StaffAccountsState; retry: () =
 }
 
 export default function StaffAccountsPage() {
-  const { state, retry } = useStaffAccounts();
+  const { state, retry, add } = useStaffAccounts();
+  const [adding, setAdding] = useState(false);
 
   if (state.status === 'no-access') return <NoPermissionPage />;
 
   return (
     <main className="w-full px-4 py-6 md:px-8">
       <h1 className="sr-only">Staff accounts</h1>
-      <p className="type-body text-neutral-600">
-        People who can log in to the owner tools. Only owners can see this page.
-      </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="type-body text-neutral-600">
+          People who can log in to the owner tools. Only owners can see this page.
+        </p>
+        <Button className="w-full shrink-0 sm:w-auto" onClick={() => setAdding(true)}>
+          Add employee
+        </Button>
+      </div>
       <div className="mt-6">
         <StaffContent state={state} retry={retry} />
       </div>
+      <AddEmployeeDialog isOpen={adding} onClose={() => setAdding(false)} onInvited={add} />
     </main>
   );
 }

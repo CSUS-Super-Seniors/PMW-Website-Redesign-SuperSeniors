@@ -11,6 +11,7 @@ import { createAcceptInquiryBackend } from '../server/src/acceptInquiry.js';
 import { createCustomerBackend } from '../server/src/createCustomer.js';
 import { withVercelOrigins } from '../server/src/vercelOrigins.js';
 import { createStaffBackend } from '../server/src/staff.js';
+import { createStaffInviteBackend } from '../server/src/staffInvite.js';
 import { warnIfOwnerNoticeUnavailable } from '../server/src/ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
@@ -44,6 +45,9 @@ const app = createApp(config, createAuthBackend(config, supabase), contact, {
   ),
   declineEmail: createDeclineEmailFromConfig(config),
   staff: createStaffBackend(supabase),
+  staffInvite: createStaffInviteBackend(supabase, {
+    ownerPortalOrigin: config.ownerPortalOrigin,
+  }),
   jobs: createJobBackend(supabase),
 });
 

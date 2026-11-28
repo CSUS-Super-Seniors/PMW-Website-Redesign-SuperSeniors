@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { fetchStaffAccounts, type StaffListResult } from './staff';
+import { fetchStaffAccounts, type StaffAccount, type StaffListResult } from './staff';
 
 export type StaffAccountsState = { status: 'loading' } | StaffListResult;
 
-export function useStaffAccounts(): { state: StaffAccountsState; retry: () => void } {
+export function useStaffAccounts(): {
+  state: StaffAccountsState;
+  retry: () => void;
+  /** Shows a person who was just invited without loading the whole list again. */
+  add: (person: StaffAccount) => void;
+} {
   const { session } = useAuth();
   const accessToken = session?.access_token;
   const userId = session?.user.id;
@@ -36,5 +41,15 @@ export function useStaffAccounts(): { state: StaffAccountsState; retry: () => vo
     setAttempt((n) => n + 1);
   }
 
-  return { state, retry };
+  function add(person: StaffAccount) {
+    setResult((current) => {
+      if (!current || current.value.status !== 'ok') return current;
+      const others = current.value.staff.filter((row) => row.id !== person.id);
+      // Same order as the server: by name.
+      const staff = [...others, person].sort((a, b) => a.fullName.localeCompare(b.fullName));
+      return { ...current, value: { status: 'ok', staff } };
+    });
+  }
+
+  return { state, retry, add };
 }

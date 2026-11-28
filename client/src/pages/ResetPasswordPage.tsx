@@ -7,7 +7,42 @@ import { routes } from '../config/site';
 
 type View = 'form' | 'expired' | 'success';
 
+/** `reset` opens from a password reset email; `invite` from the staff invite email (SSPMW-271). */
+export type PasswordPageMode = 'reset' | 'invite';
+
+const copy = {
+  reset: {
+    heading: 'Choose a new password',
+    passwordLabel: 'New password',
+    passwordPlaceholder: 'Enter a new password',
+    missingPassword: 'Enter a new password.',
+    saveLabel: 'Save new password',
+    failed: 'We could not save your new password. Try again.',
+    successHeading: 'Password changed',
+    successTitle: 'Your new password is saved',
+    successMessage: 'Log in with your new password to continue.',
+    expiredTitle: 'This reset link has expired',
+    expiredMessage: 'Reset links work for 1 hour. Send a new one to continue.',
+  },
+  invite: {
+    heading: 'Set your password',
+    passwordLabel: 'Password',
+    passwordPlaceholder: 'Enter a password',
+    missingPassword: 'Enter a password.',
+    saveLabel: 'Save password',
+    failed: 'We could not save your password. Try again.',
+    successHeading: 'Password set',
+    successTitle: 'Your password is saved',
+    successMessage: 'Log in with your email and new password to use the staff portal.',
+    expiredTitle: 'This invite link has expired',
+    expiredMessage:
+      'Invite links work for 1 hour. Ask the owner who invited you to send a new invite.',
+  },
+} as const;
+
 type ResetPasswordPageProps = {
+  /** Which email opened the page. Defaults to a password reset. */
+  mode?: PasswordPageMode;
   /** Whether the reset link was valid when the page opened. Later changes are ignored. */
   linkValid: boolean;
   onSave: (password: string) => Promise<UpdatePasswordResult>;
@@ -16,13 +51,18 @@ type ResetPasswordPageProps = {
 type FieldErrors = { password?: string; confirm?: string };
 type SaveProblem = 'unreachable' | 'failed';
 
-const problemMessages: Record<SaveProblem, string> = {
-  unreachable: 'We could not reach the server. Check your connection and try again.',
-  failed: 'We could not save your new password. Try again.',
-};
+const UNREACHABLE_MESSAGE = 'We could not reach the server. Check your connection and try again.';
 
-/** Reset password page from the Figma "Reset password" frames (SSPMW-313). */
-export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPageProps) {
+/**
+ * Reset password page from the Figma "Reset password" frames (SSPMW-313). The
+ * invite email's Set password page (SSPMW-271) is the same screen with its own words.
+ */
+export default function ResetPasswordPage({
+  mode = 'reset',
+  linkValid,
+  onSave,
+}: ResetPasswordPageProps) {
+  const text = copy[mode];
   const navigate = useNavigate();
   // The view is set once from the link and then only by what happens on this
   // page. Signing out after a successful save must not flip it to "expired".
@@ -54,7 +94,7 @@ export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPa
     const confirm = String(data.get('confirm') ?? '');
 
     const nextErrors: FieldErrors = {};
-    if (!password) nextErrors.password = 'Enter a new password.';
+    if (!password) nextErrors.password = text.missingPassword;
     else if (password.length < MIN_PASSWORD_LENGTH)
       nextErrors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
     if (!confirm) nextErrors.confirm = 'Type the same password again.';
@@ -90,12 +130,12 @@ export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPa
     return (
       <StaffAuthLayout>
         <h1 ref={headingRef} tabIndex={-1} className="type-h2 outline-none">
-          Password changed
+          {text.successHeading}
         </h1>
         {showBanner && (
           <SuccessBanner
-            title="Your new password is saved"
-            message="Log in with your new password to continue."
+            title={text.successTitle}
+            message={text.successMessage}
             onDismiss={() => setShowBanner(false)}
           />
         )}
@@ -110,21 +150,25 @@ export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPa
     return (
       <StaffAuthLayout>
         <h1 ref={headingRef} tabIndex={-1} className="type-h2 outline-none">
-          Choose a new password
+          {text.heading}
         </h1>
         {showBanner && (
           <ErrorBanner
-            title="This reset link has expired"
-            message="Reset links work for 1 hour. Send a new one to continue."
+            title={text.expiredTitle}
+            message={text.expiredMessage}
             onDismiss={() => setShowBanner(false)}
           />
         )}
-        <Button
-          className="w-full"
-          onClick={() => navigate(routes.staffForgotPassword, { replace: true })}
-        >
-          Send a new link
-        </Button>
+        {/* A new invite has to come from an owner (Add employee sends it again), so the
+            invite screen offers no self-serve link. Forgot password is for set passwords. */}
+        {mode === 'reset' && (
+          <Button
+            className="w-full"
+            onClick={() => navigate(routes.staffForgotPassword, { replace: true })}
+          >
+            Send a new link
+          </Button>
+        )}
         <Link to={routes.staffLogin} className="type-label text-walnut underline">
           Back to log in
         </Link>
@@ -135,17 +179,20 @@ export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPa
   return (
     <StaffAuthLayout>
       <h1 ref={headingRef} tabIndex={-1} className="type-h2 outline-none">
-        Choose a new password
+        {text.heading}
       </h1>
       {problem && (
-        <ErrorBanner message={problemMessages[problem]} onDismiss={() => setProblem(null)} />
+        <ErrorBanner
+          message={problem === 'unreachable' ? UNREACHABLE_MESSAGE : text.failed}
+          onDismiss={() => setProblem(null)}
+        />
       )}
       <form className="flex flex-col gap-5" noValidate onSubmit={handleSubmit}>
         <Input
-          label="New password"
+          label={text.passwordLabel}
           type="password"
           name="password"
-          placeholder="Enter a new password"
+          placeholder={text.passwordPlaceholder}
           autoComplete="new-password"
           hint={`Use at least ${MIN_PASSWORD_LENGTH} characters.`}
           error={errors.password}
@@ -159,7 +206,7 @@ export default function ResetPasswordPage({ linkValid, onSave }: ResetPasswordPa
           error={errors.confirm}
         />
         <Button type="submit" className="w-full" disabled={submitting}>
-          Save new password
+          {text.saveLabel}
         </Button>
       </form>
     </StaffAuthLayout>

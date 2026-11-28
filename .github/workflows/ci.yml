@@ -69,3 +69,35 @@ jobs:
         run: npm run test:submission-db
         env:
           SUBMISSION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+  invite-flow:
+    name: Staff invite flow test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      # Postgres, Auth, REST, the API gateway and the local mail viewer: what an
+      # invite needs from inviting through set-password and sign-in (SSPMW-281).
+      - run: >-
+          npx supabase start
+          -x realtime,storage-api,imgproxy,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      - name: Read the local stack's address and keys
+        run: |
+          npx supabase status -o json > "$RUNNER_TEMP/supabase-status.json"
+          node -e '
+            const s = require(process.argv[1]);
+            const pick = (...keys) => keys.map((k) => s[k]).find(Boolean) ?? "";
+            const lines = [
+              `INVITE_FLOW_SUPABASE_URL=${pick("API_URL")}`,
+              `INVITE_FLOW_PUBLISHABLE_KEY=${pick("ANON_KEY", "PUBLISHABLE_KEY")}`,
+              `INVITE_FLOW_SERVICE_ROLE_KEY=${pick("SERVICE_ROLE_KEY", "SECRET_KEY")}`,
+              `INVITE_FLOW_MAIL_URL=${pick("MAILPIT_URL", "INBUCKET_URL")}`,
+            ];
+            const { EOL } = require("os");
+            require("fs").appendFileSync(process.env.GITHUB_ENV, lines.join(EOL) + EOL);
+          ' "$RUNNER_TEMP/supabase-status.json"
+      - run: npm run test:invite-flow

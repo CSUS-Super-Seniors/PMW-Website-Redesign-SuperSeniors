@@ -17,7 +17,7 @@ export type StaffListResult =
   | { status: 'no-access' }
   | { status: 'error' };
 
-function isStaffAccount(value: unknown): value is StaffAccount {
+export function isStaffAccount(value: unknown): value is StaffAccount {
   if (!value || typeof value !== 'object') return false;
   const row = value as Record<string, unknown>;
   return (

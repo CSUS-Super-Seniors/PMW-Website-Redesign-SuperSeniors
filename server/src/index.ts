@@ -10,6 +10,7 @@ import { createEstimatePhotosBackend } from './estimatePhotos.js';
 import { createInquiryBackend } from './inquiries.js';
 import { createJobBackend } from './jobs.js';
 import { createStaffBackend } from './staff.js';
+import { createStaffInviteBackend } from './staffInvite.js';
 import { warnIfOwnerNoticeUnavailable } from './ownerNoticeEmail.js';
 import {
   createEstimateSubmissionBackend,
@@ -44,6 +45,9 @@ try {
     ),
     declineEmail: createDeclineEmailFromConfig(config),
     staff: createStaffBackend(supabase),
+    staffInvite: createStaffInviteBackend(supabase, {
+      ownerPortalOrigin: config.ownerPortalOrigin,
+    }),
     jobs: createJobBackend(supabase),
   }).listen(config.port, '0.0.0.0', () => {
     console.log(`API listening on port ${config.port}`);

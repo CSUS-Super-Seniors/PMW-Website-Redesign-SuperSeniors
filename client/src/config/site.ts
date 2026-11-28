@@ -1,4 +1,4 @@
-import { businessContact, inquiryListPath } from '@pmw/validation';
+import { STAFF_SET_PASSWORD_PATH, businessContact, inquiryListPath } from '@pmw/validation';
 export { inquiryDetailPath } from '@pmw/validation';
 
 /**
@@ -34,6 +34,8 @@ export const routes = {
   staffForgotPassword: '/staff/forgot-password',
   staffSessionExpired: '/staff/session-expired',
   staffResetPassword: '/staff/reset-password',
+  /** Opens from the staff invite email (SSPMW-271). */
+  staffSetPassword: STAFF_SET_PASSWORD_PATH,
   portalHome: '/portal/dashboard',
   portalSchedule: '/portal/schedule',
   portalInquiries: inquiryListPath,

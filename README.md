@@ -61,6 +61,7 @@ jobs and local development commands are unchanged.
 | `npm run db:seed`                | Load the Figma sample data into `SEED_DATABASE_URL` (local, dev or staging). Refuses production     |
 | `npm run test:seed`              | Rerun `supabase/seed.sql` against `SEED_TEST_DATABASE_URL` and check the result (CI runs it)        |
 | `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase         |
+| `npm run test:invite-flow`       | Test a staff invite through set-password and sign-in against a local Supabase stack (CI runs it)    |
 
 ## Environment variables
 
@@ -78,6 +79,16 @@ Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 | `SEED_ALLOWED_PROJECT_REFS` | Dev and staging Supabase project refs the seed may run against (comma-separated)            |
 | `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
 | `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
+
+Test-only settings for `npm run test:invite-flow` (leave them blank and plain `npm test` skips that test). Point them at a local Supabase stack, never a hosted project. Because the test creates and deletes accounts, it only accepts `http://` addresses on this machine (`localhost`, `127.0.0.1`, `[::1]`), plus private network addresses you list in `INVITE_FLOW_ALLOWED_HOSTS`.
+
+| Variable                       | Purpose                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `INVITE_FLOW_SUPABASE_URL`     | Local Supabase API URL from `npx supabase status`                                                |
+| `INVITE_FLOW_PUBLISHABLE_KEY`  | That stack's publishable (anon) key                                                              |
+| `INVITE_FLOW_SERVICE_ROLE_KEY` | That stack's service role key                                                                    |
+| `INVITE_FLOW_MAIL_URL`         | Optional. The stack's mail viewer. Defaults to port 54324 on the `INVITE_FLOW_SUPABASE_URL` host |
+| `INVITE_FLOW_ALLOWED_HOSTS`    | Optional. Private addresses (such as `192.168.0.20`) of a local stack on another computer        |
 
 ### Client (`client/.env`)
 
@@ -696,12 +707,34 @@ After `npm run db:start`, run `npx supabase status`. It prints the local API URL
 
 Local Auth settings come from `supabase/config.toml`. After changing that file, run `npm run db:stop` and `npm run db:start` so local Supabase picks it up. Set the same values in each hosted Supabase project (dev, staging, production) under **Authentication** in the dashboard:
 
-- **URL Configuration:** the Site URL is that environment's website address, and **Redirect URLs** includes `<site address>/staff/reset-password`, so the password reset email opens the Reset password page.
+- **URL Configuration:** the Site URL is that environment's website address, and **Redirect URLs** includes `<site address>/staff/reset-password` and `<site address>/staff/set-password`, so the password reset email opens Reset password and the staff invite email opens Set password.
 - **Sign In / Providers > Email:** minimum password length of 8, to match the Reset password page, and email OTP expiration of 3600 seconds, because the pages say reset links work for 1 hour.
 - **Emails > SMTP Settings:** send through Resend (SSPMW-354). The built-in sender only allows 2 emails per hour. When the hourly email limit is used up, Forgot password still shows "Check your email" (so it never reveals who has an account), but no email goes out.
-- **Emails > Templates > Reset Password:** keep the link as `{{ .ConfirmationURL }}`. The Reset password page reads the sign-in from that link.
+- **Emails > Templates > Reset Password** and **Invite user** (N4, SSPMW-354): keep the link as `{{ .ConfirmationURL }}`. The Reset password and Set password pages read the sign-in from that link.
 
 Locally, Auth emails such as password resets never leave your computer. Open http://127.0.0.1:54324 to read them. `npm run verify:password-reset` checks the whole reset flow against local Supabase: the email arrives, its link opens `/staff/reset-password`, the new password signs in, the old one stops working, and a used link shows as expired. It uses the `server/.env` values.
+
+### Adding staff by invite (SSPMW-271 / SSPMW-276 / SSPMW-279 / SSPMW-281)
+
+On **Staff accounts**, an owner chooses **Add employee** and enters a full name, email and role (Employee or Owner). Missing fields and an invalid email show errors in the dialog, and nothing is sent. The person gets an invite email with a set-password link, so no one has to share a password.
+
+- Owner-only `POST /api/staff/invite` takes `{ "fullName", "email", "role" }`. The server checks the body again with the shared `staffInviteSchema` (`shared/src/staffInvite.ts`), even though the dialog already checked it. Employees get 403 before the body is read.
+- The server invites through the Supabase Admin API (`auth.admin.inviteUserByEmail`) with the service role key, which never leaves the server. Supabase Auth sends the email through its SMTP settings (Resend, SSPMW-354). Then the server adds the `staff_profiles` row with the chosen role and status `active`, and the person shows on the list with Last login "Never". If the row cannot be added, the new account is deleted so its link stops working.
+- The link opens `/staff/set-password`. The address comes from `OWNER_PORTAL_ORIGIN`, never from request headers, so set it in each environment. Without it, or if a hosted project's Redirect URLs leave Set password out, Supabase sends the link to the Site URL. A working link is still forwarded to Set password, but an expired or used one lands on the home page with no message, because Supabase's error does not say which email it came from.
+- Set password is the Reset password screen with its own wording. It checks that the link's session belongs to the invited account, saves the password, signs the link session out and sends the person to Staff login.
+- Invite links work for 1 hour (the email OTP expiration). Inviting the same email again before they set a password sends them a new link. Their account, name and role stay as they were, and the dialog says the invite was sent again. The expired-invite screen tells the person to ask the owner who invited them for a new invite. It has no **Send a new link** button, because Forgot password is for people who already set a password.
+- An email that already belongs to a signed-up account gets 409 on the email field. A used-up Auth email limit gets 429.
+
+| HTTP | Result                                                                                   |
+| ---- | ---------------------------------------------------------------------------------------- |
+| 201  | `{ staff, resent }`. `staff` is the Staff accounts row. `resent` is true for a re-invite |
+| 400  | `fieldErrors` for `fullName`, `email` or `role`, or `formErrors` for extra fields        |
+| 403  | Not an active owner                                                                      |
+| 409  | The email already has an account                                                         |
+| 429  | Supabase Auth's hourly email limit is used up                                            |
+| 503  | Supabase could not send the invite or save the profile                                   |
+
+Apply `20261127000000_grant_service_role_staff_profiles_insert.sql`. It grants the service role INSERT on `staff_profiles`, and `supabase/tests/staff_profiles_service_role.test.sql` checks that employees still cannot add staff. `npm run test:invite-flow` runs the whole flow against a local Supabase stack: the owner invites, the email arrives, its link opens Set password, the person saves a password, signs in and gets the chosen role. It also checks that employees and bad input are refused and send nothing. CI's **Staff invite flow test** job starts Supabase and runs it.
 
 ### Finding or creating a customer (SSPMW-385)
 
