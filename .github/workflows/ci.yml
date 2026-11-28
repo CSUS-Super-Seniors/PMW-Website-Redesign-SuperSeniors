@@ -69,3 +69,7 @@ jobs:
         run: npm run test:submission-db
         env:
           SUBMISSION_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - name: Test owner-only staff changes and session revocation
+        run: npm run test:staff-management-db
+        env:
+          STAFF_MANAGEMENT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres

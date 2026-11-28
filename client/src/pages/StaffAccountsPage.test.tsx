@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { Session } from '@supabase/supabase-js';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +39,8 @@ const sam = {
   status: 'inactive',
 };
 
+const activeSam = { ...sam, status: 'active' as const };
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -46,14 +49,26 @@ function jsonResponse(status: number, body: unknown) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
+type MutationResponse = ReturnType<typeof jsonResponse> | 'pending';
+
 // Answers /api/me with the given role, and /api/staff with each response in turn.
-function fakeServer(staffResponses: ReturnType<typeof jsonResponse>[] | 'pending', role = 'owner') {
+function fakeServer(
+  staffResponses: ReturnType<typeof jsonResponse>[] | 'pending',
+  role = 'owner',
+  mutationResponses: MutationResponse[] = [],
+) {
   let staffCalls = 0;
-  const fakeFetch = vi.fn(async (url: string) => {
+  let mutationCalls = 0;
+  const fakeFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/me') return jsonResponse(200, { role });
     if (url === '/api/staff') {
       if (staffResponses === 'pending') return new Promise<never>(() => {});
       return staffResponses[Math.min(staffCalls++, staffResponses.length - 1)];
+    }
+    if (url.startsWith('/api/staff/') && init?.method) {
+      const answer = mutationResponses[Math.min(mutationCalls++, mutationResponses.length - 1)];
+      if (answer === 'pending') return new Promise<never>(() => {});
+      return answer ?? jsonResponse(500, {});
     }
     throw new Error(`Unexpected request: ${url}`);
   });
@@ -93,7 +108,7 @@ describe('StaffAccountsPage', () => {
     const headers = within(table)
       .getAllByRole('columnheader')
       .map((header) => header.textContent);
-    expect(headers).toEqual(['Name', 'Email', 'Role', 'Last login', 'Status']);
+    expect(headers).toEqual(['Name', 'Email', 'Role', 'Last login', 'Status', 'Actions']);
 
     const rows = within(table).getAllByRole('row');
     expect(rows).toHaveLength(3);
@@ -109,6 +124,10 @@ describe('StaffAccountsPage', () => {
     for (const text of ['Sam Rivera', 'No email on file', 'Employee', 'Never', 'Inactive']) {
       expect(within(rows[2]).getByText(text)).toBeInTheDocument();
     }
+    expect(within(rows[2]).getByText('Inactive account')).toBeInTheDocument();
+    expect(within(rows[2]).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(rows[1]).getByText('Your account')).toBeInTheDocument();
+    expect(within(rows[1]).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('shows all five fields on each phone card', async () => {
@@ -130,6 +149,10 @@ describe('StaffAccountsPage', () => {
     for (const text of ['Sam Rivera', 'Employee', 'Inactive', 'No email on file', 'Never']) {
       expect(within(cards[1]).getByText(text)).toBeInTheDocument();
     }
+    expect(within(cards[1]).getByText('Inactive account')).toBeInTheDocument();
+    expect(within(cards[1]).queryByRole('button')).not.toBeInTheDocument();
+    expect(within(cards[0]).getByText('Your account')).toBeInTheDocument();
+    expect(within(cards[0]).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('shows the table from the md breakpoint up and the cards below it', async () => {
@@ -186,5 +209,166 @@ describe('StaffAccountsPage', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     expect(fakeFetch.mock.calls.some(([url]) => url === '/api/staff')).toBe(false);
+  });
+
+  it('changes an employee role and updates the desktop list', async () => {
+    const user = userEvent.setup();
+    const fakeFetch = fakeServer([jsonResponse(200, { staff: [activeSam] })], 'owner', [
+      jsonResponse(200, { staff: { id: sam.id, role: 'owner' } }),
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    await user.click(within(row).getByRole('button', { name: 'Change role for Sam Rivera' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Change role for Sam Rivera' });
+    expect(within(dialog).getByLabelText('New role')).toHaveValue('owner');
+    await user.click(within(dialog).getByRole('button', { name: 'Save role' }));
+
+    expect(await within(table).findByText('Owner')).toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('Role updated');
+    expect(
+      fakeFetch.mock.calls.some(
+        ([url, init]) =>
+          url === `/api/staff/${sam.id}` &&
+          init?.method === 'PATCH' &&
+          init.body === JSON.stringify({ role: 'owner' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('requires confirmation before removal and Cancel sends no request', async () => {
+    const user = userEvent.setup();
+    const fakeFetch = fakeServer([jsonResponse(200, { staff: [activeSam] })]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    const removeButton = within(row).getByRole('button', { name: 'Remove Sam Rivera' });
+    await user.click(removeButton);
+
+    const dialog = await screen.findByRole('dialog', { name: 'Remove staff account?' });
+    expect(dialog).toHaveTextContent('Sam Rivera will lose access');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(removeButton);
+    expect(
+      fakeFetch.mock.calls.some(
+        ([url, init]) => url === `/api/staff/${sam.id}` && init?.method === 'DELETE',
+      ),
+    ).toBe(false);
+    expect(within(table).getByText('Sam Rivera')).toBeInTheDocument();
+  });
+
+  it('removes the account only after confirmation and shows the success toast', async () => {
+    const user = userEvent.setup();
+    const fakeFetch = fakeServer([jsonResponse(200, { staff: [activeSam] })], 'owner', [
+      jsonResponse(200, { removed: true, revokedSessions: 2 }),
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    await user.click(within(row).getByRole('button', { name: 'Remove Sam Rivera' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Remove staff account?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Employee removed');
+    const updatedRow = within(table).getByRole('row', { name: /Sam Rivera/ });
+    expect(within(updatedRow).getByText('Inactive')).toBeInTheDocument();
+    expect(within(updatedRow).getByText('Inactive account')).toBeInTheDocument();
+    expect(within(updatedRow).queryByRole('button')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Staff accounts' }));
+    expect(
+      fakeFetch.mock.calls.some(
+        ([url, init]) => url === `/api/staff/${sam.id}` && init?.method === 'DELETE',
+      ),
+    ).toBe(true);
+  });
+
+  it('shows permission errors for failed role changes without closing the dialog', async () => {
+    const user = userEvent.setup();
+    fakeServer([jsonResponse(200, { staff: [activeSam] })], 'owner', [
+      jsonResponse(403, { error: 'Active owner access required.' }),
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    await user.click(within(row).getByRole('button', { name: 'Change role for Sam Rivera' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Change role for Sam Rivera' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save role' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'You do not have permission to change staff accounts.',
+    );
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(within(table).getByText('Employee')).toBeInTheDocument();
+  });
+
+  it('shows last-owner conflicts and server failures in the removal dialog', async () => {
+    const user = userEvent.setup();
+    fakeServer([jsonResponse(200, { staff: [activeSam] })], 'owner', [
+      jsonResponse(409, { error: 'The last active owner cannot be removed.' }),
+      jsonResponse(500, {}),
+    ]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    await user.click(within(row).getByRole('button', { name: 'Remove Sam Rivera' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Remove staff account?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The last active owner cannot be removed.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The request could not be completed. Check your connection and try again.',
+    );
+    expect(within(table).getByText('Sam Rivera')).toBeInTheDocument();
+  });
+
+  it('prevents duplicate removal requests and keeps a pending dialog open on Escape', async () => {
+    const user = userEvent.setup();
+    const fakeFetch = fakeServer([jsonResponse(200, { staff: [activeSam] })], 'owner', ['pending']);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    await user.click(within(row).getByRole('button', { name: 'Remove Sam Rivera' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Remove staff account?' });
+    const confirmButton = within(dialog).getByRole('button', { name: 'Remove' });
+    await user.click(confirmButton);
+
+    expect(within(dialog).getByRole('button', { name: 'Removing...' })).toBeDisabled();
+    await user.click(confirmButton);
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(
+      fakeFetch.mock.calls.filter(
+        ([url, init]) => url === `/api/staff/${sam.id}` && init?.method === 'DELETE',
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('renders management actions in both desktop tables and phone cards', async () => {
+    fakeServer([jsonResponse(200, { staff: [activeSam] })]);
+    renderPage();
+
+    const table = await screen.findByRole('table', { name: 'Staff accounts' });
+    const row = within(table).getByRole('row', { name: /Sam Rivera/ });
+    expect(within(row).getByRole('button', { name: 'Change role for Sam Rivera' })).toBeVisible();
+    expect(within(row).getByRole('button', { name: 'Remove Sam Rivera' })).toBeVisible();
+
+    const cards = screen.getByRole('list');
+    expect(within(cards).getByRole('button', { name: 'Change role for Sam Rivera' })).toBeVisible();
+    expect(within(cards).getByRole('button', { name: 'Remove Sam Rivera' })).toBeVisible();
+    expect(table.closest('div.hidden')).toHaveClass('md:block');
+    expect(cards).toHaveClass('md:hidden');
   });
 });

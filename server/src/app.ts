@@ -72,6 +72,16 @@ function readDeclineBody(body: unknown): { notifyCustomer: boolean } | null {
   return { notifyCustomer };
 }
 
+function readStaffRoleBody(body: unknown): 'owner' | 'employee' | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const keys = Object.keys(body);
+  const { role } = body as { role?: unknown };
+  if (keys.length !== 1 || keys[0] !== 'role' || (role !== 'owner' && role !== 'employee')) {
+    return null;
+  }
+  return role;
+}
+
 /**
  * The submit handler runs after the rate limit, honeypot and service-area check, so
  * `res.locals.inServiceArea` is always `true` there. It still validates the rest of
@@ -384,6 +394,87 @@ export function createApp(
       res.json({ staff: await staff.listStaff() });
     } catch {
       res.status(503).json({ error: 'Staff list is temporarily unavailable.' });
+    }
+  });
+  api.patch('/staff/:staffId', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const staffId = String(req.params.staffId);
+    if (!UUID_PATTERN.test(staffId)) {
+      res.status(400).json({ error: 'A valid staff ID is required.' });
+      return;
+    }
+    const role = readStaffRoleBody(req.body);
+    if (!role) {
+      res.status(400).json({ error: 'Role must be either owner or employee.' });
+      return;
+    }
+    if (!staff) {
+      res.status(503).json({ error: 'Staff management is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await staff.changeRole(req.staff!.userId, staffId, role);
+      if (result.outcome === 'updated') {
+        res.json({ staff: { id: staffId, role: result.role } });
+        return;
+      }
+      if (result.outcome === 'not_found') {
+        res.status(404).json({ error: 'Staff account not found.' });
+        return;
+      }
+      if (result.outcome === 'self_lockout') {
+        res.status(409).json({ error: 'You cannot change your own role.' });
+        return;
+      }
+      if (result.outcome === 'last_owner') {
+        res.status(409).json({ error: 'The last active owner cannot be demoted.' });
+        return;
+      }
+      if (result.outcome === 'forbidden') {
+        res.status(403).json({ error: 'Active owner access required.' });
+        return;
+      }
+      res.status(400).json({ error: 'Invalid staff role change.' });
+    } catch {
+      res.status(503).json({ error: 'Staff account change failed.' });
+    }
+  });
+  api.delete('/staff/:staffId', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const staffId = String(req.params.staffId);
+    if (!UUID_PATTERN.test(staffId)) {
+      res.status(400).json({ error: 'A valid staff ID is required.' });
+      return;
+    }
+    if (!staff) {
+      res.status(503).json({ error: 'Staff management is temporarily unavailable.' });
+      return;
+    }
+    try {
+      const result = await staff.removeStaff(req.staff!.userId, staffId);
+      if (result.outcome === 'removed') {
+        res.json({ removed: true, revokedSessions: result.revokedSessions });
+        return;
+      }
+      if (result.outcome === 'not_found') {
+        res.status(404).json({ error: 'Staff account not found.' });
+        return;
+      }
+      if (result.outcome === 'self_lockout') {
+        res.status(409).json({ error: 'You cannot remove your own account.' });
+        return;
+      }
+      if (result.outcome === 'last_owner') {
+        res.status(409).json({ error: 'The last active owner cannot be removed.' });
+        return;
+      }
+      if (result.outcome === 'forbidden') {
+        res.status(403).json({ error: 'Active owner access required.' });
+        return;
+      }
+      res.status(400).json({ error: 'Invalid staff removal request.' });
+    } catch {
+      res.status(503).json({ error: 'Staff account removal failed.' });
     }
   });
   // Add customer (SSPMW-363). The body is checked with the same schema as the form, and

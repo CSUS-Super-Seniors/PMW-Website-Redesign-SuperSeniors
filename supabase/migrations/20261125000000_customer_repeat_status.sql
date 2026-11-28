@@ -34,4 +34,3 @@ comment on view public.customer_repeat_status is
 -- Read only, and never for anonymous visitors.
 revoke all on public.customer_repeat_status from public, anon, authenticated, service_role;
 grant select on public.customer_repeat_status to authenticated, service_role;
-
