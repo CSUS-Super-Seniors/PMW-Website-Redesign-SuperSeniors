@@ -80,7 +80,7 @@ Copy `server/.env.example` to `server/.env`. Never commit `.env` files or keys.
 | `SEED_BLOCKED_PROJECT_REFS` | Production project refs. The seed always refuses these, even if they are also allowed       |
 | `SEED_TEST_DATABASE_URL`    | Local database for `npm run test:seed`. Its changes are rolled back. Leave blank to skip it |
 
-Test-only settings for `npm run test:invite-flow` (leave them blank and plain `npm test` skips that test). Point them at a local Supabase stack, never a hosted project. The test refuses `supabase.co` addresses because it creates and deletes accounts.
+Test-only settings for `npm run test:invite-flow` (leave them blank and plain `npm test` skips that test). Point them at a local Supabase stack, never a hosted project. Because the test creates and deletes accounts, it only accepts `http://` addresses on this machine (`localhost`, `127.0.0.1`, `[::1]`), plus private network addresses you list in `INVITE_FLOW_ALLOWED_HOSTS`.
 
 | Variable                       | Purpose                                                                                          |
 | ------------------------------ | ------------------------------------------------------------------------------------------------ |
@@ -88,6 +88,7 @@ Test-only settings for `npm run test:invite-flow` (leave them blank and plain `n
 | `INVITE_FLOW_PUBLISHABLE_KEY`  | That stack's publishable (anon) key                                                              |
 | `INVITE_FLOW_SERVICE_ROLE_KEY` | That stack's service role key                                                                    |
 | `INVITE_FLOW_MAIL_URL`         | Optional. The stack's mail viewer. Defaults to port 54324 on the `INVITE_FLOW_SUPABASE_URL` host |
+| `INVITE_FLOW_ALLOWED_HOSTS`    | Optional. Private addresses (such as `192.168.0.20`) of a local stack on another computer        |
 
 ### Client (`client/.env`)
 
@@ -710,7 +711,7 @@ On **Staff accounts**, an owner chooses **Add employee** and enters a full name,
 - The server invites through the Supabase Admin API (`auth.admin.inviteUserByEmail`) with the service role key, which never leaves the server. Supabase Auth sends the email through its SMTP settings (Resend, SSPMW-354). Then the server adds the `staff_profiles` row with the chosen role and status `active`, and the person shows on the list with Last login "Never". If the row cannot be added, the new account is deleted so its link stops working.
 - The link opens `/staff/set-password`. The address comes from `OWNER_PORTAL_ORIGIN`, never from request headers, so set it in each environment. Without it, or if a hosted project's Redirect URLs leave Set password out, Supabase sends the link to the Site URL. A working link is still forwarded to Set password, but an expired or used one lands on the home page with no message, because Supabase's error does not say which email it came from.
 - Set password is the Reset password screen with its own wording. It checks that the link's session belongs to the invited account, saves the password, signs the link session out and sends the person to Staff login.
-- Invite links work for 1 hour (the email OTP expiration). Inviting the same email again before they set a password sends them a new link. Their account, name and role stay as they were, and the dialog says the invite was sent again. An expired-invite screen also offers **Send a new link**, which goes through Forgot password.
+- Invite links work for 1 hour (the email OTP expiration). Inviting the same email again before they set a password sends them a new link. Their account, name and role stay as they were, and the dialog says the invite was sent again. The expired-invite screen tells the person to ask the owner who invited them for a new invite. It has no **Send a new link** button, because Forgot password is for people who already set a password.
 - An email that already belongs to a signed-up account gets 409 on the email field. A used-up Auth email limit gets 429.
 
 | HTTP | Result                                                                                   |

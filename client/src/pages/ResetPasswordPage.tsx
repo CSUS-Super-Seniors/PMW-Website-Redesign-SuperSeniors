@@ -36,7 +36,7 @@ const copy = {
     successMessage: 'Log in with your email and new password to use the staff portal.',
     expiredTitle: 'This invite link has expired',
     expiredMessage:
-      'Invite links work for 1 hour. Send a new link to the email address your invite went to.',
+      'Invite links work for 1 hour. Ask the owner who invited you to send a new invite.',
   },
 } as const;
 
@@ -159,12 +159,16 @@ export default function ResetPasswordPage({
             onDismiss={() => setShowBanner(false)}
           />
         )}
-        <Button
-          className="w-full"
-          onClick={() => navigate(routes.staffForgotPassword, { replace: true })}
-        >
-          Send a new link
-        </Button>
+        {/* A new invite has to come from an owner (Add employee sends it again), so the
+            invite screen offers no self-serve link. Forgot password is for set passwords. */}
+        {mode === 'reset' && (
+          <Button
+            className="w-full"
+            onClick={() => navigate(routes.staffForgotPassword, { replace: true })}
+          >
+            Send a new link
+          </Button>
+        )}
         <Link to={routes.staffLogin} className="type-label text-walnut underline">
           Back to log in
         </Link>

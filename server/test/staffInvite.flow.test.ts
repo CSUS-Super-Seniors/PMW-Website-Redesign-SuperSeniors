@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config.js';
 import { createStaffBackend } from '../src/staff.js';
 import { createStaffInviteBackend } from '../src/staffInvite.js';
 import { createAuthBackend, createSupabaseAdmin } from '../src/supabase.js';
+import { checkInviteFlowUrl } from './support/inviteFlowTarget.js';
 
 /**
  * The whole Add employee flow (SSPMW-271 / SSPMW-281) against a real local Supabase
@@ -34,18 +35,17 @@ if (process.env.npm_lifecycle_event === 'test:invite-flow' && !url) {
   );
 }
 
-// It creates and deletes accounts, so it must never point at a hosted project.
-if (url) {
-  const { protocol, hostname } = new URL(url);
-  assert(
-    protocol === 'http:' && !/supabase\.(co|in|net)$/.test(hostname),
-    'INVITE_FLOW_SUPABASE_URL must be a local Supabase stack, never a hosted project.',
-  );
-}
+// It creates and deletes accounts, so it only runs against a local stack: this
+// machine, or a private address listed in INVITE_FLOW_ALLOWED_HOSTS.
+const allowedHosts = process.env.INVITE_FLOW_ALLOWED_HOSTS;
+const stackUrl = url ? checkInviteFlowUrl('INVITE_FLOW_SUPABASE_URL', url, allowedHosts) : null;
 
-const mailUrl =
-  process.env.INVITE_FLOW_MAIL_URL?.trim() ||
-  (url ? `${new URL(url).protocol}//${new URL(url).hostname}:54324` : '');
+const explicitMailUrl = process.env.INVITE_FLOW_MAIL_URL?.trim();
+const mailUrl = explicitMailUrl
+  ? checkInviteFlowUrl('INVITE_FLOW_MAIL_URL', explicitMailUrl, allowedHosts).origin
+  : stackUrl
+    ? `${stackUrl.protocol}//${stackUrl.hostname}:54324`
+    : '';
 
 type MailSearch = { messages?: { ID: string }[] };
 type MailMessage = { HTML?: string; Text?: string };

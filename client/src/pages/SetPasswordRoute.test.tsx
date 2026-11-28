@@ -108,10 +108,17 @@ describe('SetPasswordRoute (SSPMW-271)', () => {
     renderRoute({ session: sam });
 
     expect(screen.getByText('This invite link has expired')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Invite links work for 1 hour. Ask the owner who invited you to send a new invite.',
+      ),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
+    // A new invite comes from an owner, so there is no Forgot password shortcut here.
+    expect(screen.queryByRole('button', { name: 'Send a new link' })).not.toBeInTheDocument();
 
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Send a new link' }));
-    expect(screen.getByText('Forgot password page')).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('link', { name: 'Back to log in' }));
+    expect(screen.getByText('Staff login page')).toBeInTheDocument();
   });
 
   it('does not accept a password reset link on the Set password page', () => {
