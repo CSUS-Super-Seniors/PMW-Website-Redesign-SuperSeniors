@@ -43,24 +43,25 @@ jobs and local development commands are unchanged.
 
 ## Scripts (run from the repo root)
 
-| Script                           | What it does                                                                                        |
-| -------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `npm run dev:client`             | Start the Vite dev server                                                                           |
-| `npm run dev:server`             | Start the API with auto reload                                                                      |
-| `npm run lint`                   | ESLint across client and server                                                                     |
-| `npm run format`                 | Format everything with Prettier                                                                     |
-| `npm run format:check`           | Check formatting (what CI runs)                                                                     |
-| `npm run typecheck`              | TypeScript check for both workspaces                                                                |
-| `npm test`                       | Vitest for both workspaces                                                                          |
-| `npm run build`                  | Production build of client and server                                                               |
-| `npm run db:start`               | Start the local Supabase stack (needs Docker)                                                       |
-| `npm run db:stop`                | Stop the local Supabase stack                                                                       |
-| `npm run db:migration -- <name>` | Create a new empty migration file in `supabase/migrations` (does not apply it)                      |
-| `npm run db:migrate`             | Apply new migrations to the local database                                                          |
-| `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data |
-| `npm run db:seed`                | Load the Figma sample data into `SEED_DATABASE_URL` (local, dev or staging). Refuses production     |
-| `npm run test:seed`              | Rerun `supabase/seed.sql` against `SEED_TEST_DATABASE_URL` and check the result (CI runs it)        |
-| `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase         |
+| Script                           | What it does                                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `npm run dev:client`             | Start the Vite dev server                                                                              |
+| `npm run dev:server`             | Start the API with auto reload                                                                         |
+| `npm run lint`                   | ESLint across client and server                                                                        |
+| `npm run format`                 | Format everything with Prettier                                                                        |
+| `npm run format:check`           | Check formatting (what CI runs)                                                                        |
+| `npm run typecheck`              | TypeScript check for both workspaces                                                                   |
+| `npm test`                       | Vitest for both workspaces                                                                             |
+| `npm run build`                  | Production build of client and server                                                                  |
+| `npm run db:start`               | Start the local Supabase stack (needs Docker)                                                          |
+| `npm run db:stop`                | Stop the local Supabase stack                                                                          |
+| `npm run db:migration -- <name>` | Create a new empty migration file in `supabase/migrations` (does not apply it)                         |
+| `npm run db:migrate`             | Apply new migrations to the local database                                                             |
+| `npm run db:reset`               | Rebuild the local database from all migrations and `supabase/seed.sql`. Deletes existing local data    |
+| `npm run db:seed`                | Load the Figma sample data into `SEED_DATABASE_URL` (local, dev or staging). Refuses production        |
+| `npm run test:seed`              | Rerun `supabase/seed.sql` against `SEED_TEST_DATABASE_URL` and check the result (CI runs it)           |
+| `npm run test:job-number-db`     | Test job-number assignment, uniqueness, immutability, cancellation and deletion against local Supabase |
+| `npm run verify:storage`         | Verify bucket settings, access controls, signed URLs, and expiration against local Supabase            |
 
 ## Environment variables
 
@@ -969,3 +970,24 @@ GitHub Actions runs the existing **Lint, format, and test** check and the new
 A repository admin must mark both job checks as required under the `main`
 branch protection rule (or repository ruleset) before a failing test can
 prevent merging. Use the exact check names above after an initial PR run.
+
+## Job number sequence (SSPMW-330)
+
+Jobs receive `J-` numbers from the existing `job_number_seq`; a check constraint
+enforces the `J-` followed by digits format, the unique constraint rejects duplicates,
+and a trigger prevents changing a number after assignment. Valid explicit numbers remain
+available for seed data. Database integration tests cover automatic and concurrent
+assignment on separate Postgres connections, format validation, duplicate rejection,
+cancellation, immutability and no reuse after deletion. Tests clean up their jobs and
+customers; sequence gaps are expected.
+
+Run against local Supabase after applying migrations. Set
+`JOB_NUMBER_TEST_DATABASE_URL` in your shell to
+`postgresql://postgres:<local-password>@127.0.0.1:54322/postgres`, then run:
+
+```bash
+npm run test:job-number-db
+```
+
+The test refuses hosted Supabase and non-local hosts or ports. CI runs it in the local
+Supabase RLS job.
