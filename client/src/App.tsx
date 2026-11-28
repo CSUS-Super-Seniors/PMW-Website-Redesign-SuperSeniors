@@ -7,9 +7,9 @@ import { business, routes } from './config/site';
 import AddCustomerPage from './pages/AddCustomerPage';
 import ContactPage from './pages/ContactPage';
 import CustomersSection from './components/customers/CustomersSection';
-import CustomersComingSoonPage from './pages/CustomersComingSoonPage';
 import DesignTokensPage from './pages/DesignTokensPage';
 import EstimateRequestPage from './pages/EstimateRequestPage';
+import CustomersPage from './pages/CustomersPage';
 import InquiriesPage from './pages/InquiriesPage';
 import InquiryDetailPage from './pages/InquiryDetailPage';
 import JobsPage from './pages/JobsPage';
@@ -50,7 +50,7 @@ export default function App() {
             <Route path="inquiries" element={<InquiriesPage />} />
             <Route path="inquiries/:inquiryId" element={<InquiryDetailPage />} />
             <Route path="customers" element={<CustomersSection />}>
-              <Route index element={<CustomersComingSoonPage />} />
+              <Route index element={<CustomersPage />} />
               <Route path="new" element={<AddCustomerPage />} />
               <Route path="*" element={<PlaceholderPage />} />
             </Route>

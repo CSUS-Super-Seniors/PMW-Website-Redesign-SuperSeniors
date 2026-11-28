@@ -20,6 +20,7 @@ import type { Config } from './config.js';
 import type { AuthBackend } from './supabase.js';
 import { requireOwner, requireStaff } from './auth.js';
 import type { StaffBackend } from './staff.js';
+import { parseCustomerListQuery, type CustomerBackend } from './customers.js';
 import type { AcceptInquiryBackend } from './acceptInquiry.js';
 import type { CreateCustomerBackend } from './createCustomer.js';
 import {
@@ -52,6 +53,8 @@ export interface AppOptions {
   acceptInquiry?: AcceptInquiryBackend;
   /** Emails the customer when an owner declines their request (SSPMW-172, SSPMW-215). */
   declineEmail?: DeclineEmailSender;
+  /** Reads the owner's customer list (SSPMW-338). */
+  customers?: CustomerBackend;
   /** Saves a customer the owner adds by hand (SSPMW-363). */
   createCustomer?: CreateCustomerBackend;
   /** Reads the jobs list for staff (SSPMW-305). */
@@ -97,6 +100,7 @@ export function createApp(
     acceptInquiry: acceptBackend,
     declineEmail,
     staff,
+    customers,
     createCustomer: createCustomerBackend,
     jobs,
   }: AppOptions = {},
@@ -372,6 +376,34 @@ export function createApp(
       res.json({ ...result, page, pageSize });
     } catch {
       res.status(503).json({ error: 'Estimate requests are temporarily unavailable.' });
+    }
+  });
+  // Owner customer list with search, filters and paging (SSPMW-338). Employees are
+  // refused by requireOwner above, before any customer data is read.
+  api.get('/customers', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const query = parseCustomerListQuery(req.query);
+    if (!query.ok) {
+      res.status(400).json({ error: query.error });
+      return;
+    }
+    if (!customers) {
+      res.status(503).json({ error: 'Customers are temporarily unavailable.' });
+      return;
+    }
+    try {
+      const { page, pageSize, search, status, lastJobFrom, lastJobTo } = query;
+      const result = await customers.listCustomers({
+        page,
+        pageSize,
+        search,
+        status,
+        lastJobFrom,
+        lastJobTo,
+      });
+      res.json({ ...result, page, pageSize });
+    } catch {
+      res.status(503).json({ error: 'Customers are temporarily unavailable.' });
     }
   });
   api.get('/staff', async (_req, res) => {

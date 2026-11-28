@@ -395,7 +395,7 @@ describe('App', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('links owners from Customers to Add customer until the list is built', async () => {
+  it('links owners from the customer list to Add customer', async () => {
     fakeServerRole('owner');
     const user = userEvent.setup();
     renderApp('/portal/customers', { session: staffSession });
