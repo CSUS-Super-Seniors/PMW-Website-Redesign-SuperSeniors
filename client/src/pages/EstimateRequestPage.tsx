@@ -124,13 +124,18 @@ export default function EstimateRequestPage() {
       }
 
       if (!response.ok) {
+        const fallbackMessage =
+          response.status >= 500
+            ? 'We could not send your request right now. Your information is still in the form. Please try again.'
+            : 'We could not send your request. Your information is still in the form. Please try again.';
         const message =
+          response.status < 500 &&
           typeof responseBody === 'object' &&
           responseBody !== null &&
           'error' in responseBody &&
           typeof responseBody.error === 'string'
             ? responseBody.error
-            : 'We could not send your request. Your information is still in the form. Please try again.';
+            : fallbackMessage;
         throw new Error(message);
       }
       if (

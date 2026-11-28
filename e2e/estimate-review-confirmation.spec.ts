@@ -133,7 +133,11 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath(`estimate-pending-${width}.png`) });
 
     releaseFirstRequest();
-    await expect(dialog.getByText('Temporary server error. Please retry.')).toBeVisible();
+    await expect(
+      dialog.getByText(
+        'We could not send your request right now. Your information is still in the form. Please try again.',
+      ),
+    ).toBeVisible();
     await expect(review.getByText('ana@example.com', { exact: true })).toBeVisible();
     const initialRequest = submissions[0];
     expect(initialRequest).toMatchObject({
@@ -147,7 +151,10 @@ for (const width of [1280, 390]) {
     );
 
     await dialog.getByRole('button', { name: 'Submit request', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Thanks, Ana!' })).toBeVisible();
+    const thanksHeading = page.getByRole('heading', { name: 'Thanks, Ana!' });
+    await expect(thanksHeading).toBeVisible();
+    await expect(thanksHeading).toHaveAttribute('tabindex', '-1');
+    await expect(thanksHeading).toBeFocused();
     expect(submissions).toHaveLength(2);
     expect(submissions[1]).toEqual(initialRequest);
     await expect(

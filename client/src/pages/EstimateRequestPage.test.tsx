@@ -217,7 +217,10 @@ describe('estimate review and edit flow', () => {
       within(screen.getByRole('dialog')).getByRole('button', { name: 'Submit request' }),
     );
 
-    expect(await screen.findByRole('heading', { name: 'Thanks, Ana!' })).toBeInTheDocument();
+    const thanksHeading = await screen.findByRole('heading', { name: 'Thanks, Ana!' });
+    expect(thanksHeading).toBeInTheDocument();
+    expect(thanksHeading).toHaveAttribute('tabindex', '-1');
+    expect(thanksHeading).toHaveFocus();
     const submission = fetchMock.mock.calls.find(([url]) => url === '/api/estimates');
     expect(submission).toBeDefined();
     expect(submission?.[1]).toMatchObject({
@@ -271,6 +274,29 @@ describe('estimate review and edit flow', () => {
     expect(secondBody).toEqual(firstBody);
     expect(secondBody.submission_id).toBe(firstBody.submission_id);
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/estimates')).toHaveLength(2);
+  });
+
+  it('shows a friendly generic message for server errors instead of the backend error', async () => {
+    const submit = vi
+      .fn<(init: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        Response.json({ error: 'Database password or internal stack details' }, { status: 503 }),
+      );
+    const { user } = await setup(false, submit);
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    const dialog = screen.getByRole('dialog', { name: 'Submit estimate request?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Submit request' }));
+
+    expect(
+      await screen.findByText(
+        'We could not send your request right now. Your information is still in the form. Please try again.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText('Database password or internal stack details'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(values['Email address'])).toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
   });
 
   it('allows normal home navigation after the server confirms the submission', async () => {

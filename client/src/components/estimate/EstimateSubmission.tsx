@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button } from '../ui/Button';
 import { ConfirmationDialog } from '../ui/ConfirmationDialog';
@@ -25,7 +25,12 @@ export default function EstimateSubmission({
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const submitting = useRef(false);
+  const thanksHeadingRef = useRef<HTMLHeadingElement>(null);
   const dialogOpen = isOpen ?? confirmOpen;
+
+  useEffect(() => {
+    if (submitted) thanksHeadingRef.current?.focus();
+  }, [submitted]);
 
   async function handleSubmit() {
     if (submitting.current || submitted) return;
@@ -69,7 +74,7 @@ export default function EstimateSubmission({
       <section className="mx-auto w-full max-w-190 rounded-xl border border-neutral-300 bg-white p-6 md:p-8">
         <p className="type-overline text-amber-dark">Step 4 of 4</p>
 
-        <h1 className="type-h2 mt-4">
+        <h1 ref={thanksHeadingRef} tabIndex={-1} className="type-h2 mt-4">
           {firstName.trim() ? `Thanks, ${firstName.trim()}!` : 'Thanks!'}
         </h1>
 
